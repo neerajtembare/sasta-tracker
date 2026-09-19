@@ -60,12 +60,12 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   const scrubIndexRef = useRef<number | null>(scrubIndex);
   scrubIndexRef.current = scrubIndex;
 
-  // Base Map Tile Style
-  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'topo' | 'street'>(
+  // Base Map Tile Style (100% free, zero API key dependencies)
+  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'osm' | 'street'>(
     isLight ? 'street' : 'dark'
   );
 
-  // Sync map style when global theme changes unless user explicitly picked satellite/topo
+  // Sync map style when global theme changes unless user explicitly picked satellite/osm
   useEffect(() => {
     if (isLight && mapStyle === 'dark') {
       setMapStyle('street');
@@ -266,9 +266,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         maxZoom: 18,
         opacity: 0.85,
       }).addTo(map);
-    } else if (mapStyle === 'topo') {
-      L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-        maxZoom: 17,
+    } else if (mapStyle === 'osm') {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
       }).addTo(map);
     }
 
@@ -810,12 +811,13 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               Satellite
             </button>
             <button
-              onClick={() => setMapStyle('topo')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer hidden sm:inline-block ${
-                mapStyle === 'topo' ? 'bg-sky-500 text-slate-950 font-bold' : subText
+              onClick={() => setMapStyle('osm')}
+              className={`px-2 py-1 rounded uppercase cursor-pointer ${
+                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold' : subText
               }`}
+              title="OpenStreetMap Standard Global Map (Free, Zero API Key)"
             >
-              Topo
+              OSM
             </button>
           </div>
 

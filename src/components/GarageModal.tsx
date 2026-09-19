@@ -32,6 +32,7 @@ interface GarageModalProps {
   currentAnalysis?: RideAnalysis | null;
   onSelectRide: (gpxContent: string, name: string) => void;
   onLoadSample: () => void;
+  onCloseTrack?: () => void;
   theme?: AppTheme;
 }
 
@@ -41,6 +42,7 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   currentAnalysis,
   onSelectRide,
   onLoadSample,
+  onCloseTrack,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -159,13 +161,29 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                   downloadFile(gpx, `${currentAnalysis.name.replace(/\s+/g, '_')}.gpx`);
                 }}
                 title="Download GPX file"
-                className={`px-3.5 py-1.5 border rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 border rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                   isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700' : 'bg-[#0d131a] hover:bg-[#1c2633] border-sky-500/40 text-sky-400'
                 }`}
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export GPX</span>
+                <span>Export</span>
               </button>
+
+              {onCloseTrack && (
+                <button
+                  onClick={() => {
+                    onCloseTrack();
+                    onClose();
+                  }}
+                  title="Unload this track from the analyzer"
+                  className={`px-3 py-1.5 border rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isLight ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700' : 'bg-rose-950/30 hover:bg-rose-900/40 border-rose-500/30 text-rose-400'
+                  }`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Unload</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -301,8 +319,23 @@ export const GarageModal: React.FC<GarageModalProps> = ({
           </div>
 
           {/* User Saved Rides */}
-          <div className={`text-[10px] font-mono uppercase tracking-wider font-bold pt-3 mb-1 ${subTextColor}`}>
-            SAVED RIDES IN YOUR BROWSER ({rides.length}):
+          <div className="flex items-center justify-between pt-3 mb-1">
+            <div className={`text-[10px] font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
+              SAVED RIDES IN YOUR BROWSER ({rides.length}):
+            </div>
+            {rides.length > 0 && (
+              <button
+                onClick={() => {
+                  if (window.confirm('Delete all saved rides from your browser garage?')) {
+                    localStorage.removeItem('sasta_garage_rides');
+                    setRides([]);
+                  }
+                }}
+                className="text-[10px] font-mono text-rose-400 hover:text-rose-300 underline cursor-pointer"
+              >
+                Clear All
+              </button>
+            )}
           </div>
 
           {rides.length > 0 ? (

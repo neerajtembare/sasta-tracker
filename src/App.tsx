@@ -110,6 +110,12 @@ export default function App() {
     downloadFile(gpxText, `${safeName}.gpx`);
   };
 
+  const handleCloseTrack = () => {
+    setAnalysis(null);
+    setScrubIndex(null);
+    setCurrentTab('home');
+  };
+
   // Stop handlers
   const handleOpenAddStop = (pt?: TrackPoint | null) => {
     setStopToEdit(null);
@@ -245,6 +251,7 @@ export default function App() {
               onEditRideName={() => setIsRideNameEditorOpen(true)}
               onOpenStops={() => handleOpenAddStop()}
               onOpenCalibration={() => setIsCalibrationOpen(true)}
+              onCloseTrack={handleCloseTrack}
               theme={theme}
             />
 
@@ -400,6 +407,7 @@ export default function App() {
           handleFileLoaded(gpxText, name);
         }}
         onLoadSample={handleLoadSample}
+        onCloseTrack={handleCloseTrack}
         theme={theme}
       />
 

@@ -10,7 +10,8 @@ import {
   SlidersHorizontal,
   Clock,
   Compass,
-  Milestone
+  Milestone,
+  X
 } from 'lucide-react';
 
 interface HeroTelemetryProps {
@@ -25,6 +26,7 @@ interface HeroTelemetryProps {
   onEditRideName?: () => void;
   onOpenStops?: () => void;
   onOpenCalibration?: () => void;
+  onCloseTrack?: () => void;
   theme?: AppTheme;
 }
 
@@ -34,6 +36,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
   onEditRideName,
   onOpenStops,
   onOpenCalibration,
+  onCloseTrack,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -123,6 +126,21 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 <span>Calibrate</span>
+              </button>
+            )}
+
+            {onCloseTrack && (
+              <button
+                onClick={onCloseTrack}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
+                    : 'bg-rose-950/30 text-rose-400 border-rose-500/30 hover:bg-rose-500/20'
+                }`}
+                title="Close and unload this track"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Close Track</span>
               </button>
             )}
           </div>

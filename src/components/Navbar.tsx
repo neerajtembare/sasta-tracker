@@ -12,12 +12,13 @@ import {
 import { AppTheme } from '../types';
 
 interface NavbarProps {
-  currentTab: 'analysis' | 'cockpit' | 'faq';
-  setCurrentTab: (tab: 'analysis' | 'cockpit' | 'faq') => void;
+  currentTab: 'home' | 'analysis' | 'cockpit' | 'faq';
+  setCurrentTab: (tab: 'home' | 'analysis' | 'cockpit' | 'faq') => void;
   onLoadSample: () => void;
   onUploadClick: () => void;
   onOpenGarage: () => void;
   onExportGpx: () => void;
+  onHomeClick?: () => void;
   isRecordingLive: boolean;
   rideName: string;
   theme: AppTheme;
@@ -31,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onUploadClick,
   onOpenGarage,
   onExportGpx,
+  onHomeClick,
   isRecordingLive,
   rideName,
   theme,
@@ -46,11 +48,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           : 'bg-[#0d131a]/95 border-[#1e2a38]'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
         {/* Brand identity */}
-        <div className="flex items-center gap-3">
+        <div 
+          onClick={onHomeClick}
+          title="Return to Home / Upload"
+          className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0"
+        >
           <div
-            className={`w-9 h-9 border rounded-lg flex items-center justify-center text-base shadow-sm ${
+            className={`w-8 h-8 sm:w-9 sm:h-9 border rounded-lg flex items-center justify-center text-sm sm:text-base shadow-sm ${
               isLight
                 ? 'bg-slate-100 border-sky-500/40 text-slate-800'
                 : 'bg-[#131b24] border-sky-500/40 text-white'
@@ -59,20 +65,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             🏍️
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span
-                className={`font-heading font-black tracking-tight text-base sm:text-lg ${
+                className={`font-heading font-black tracking-tight text-sm sm:text-lg ${
                   isLight ? 'text-slate-900' : 'text-white'
                 }`}
               >
                 SASTA <span className="text-sky-500">TRACKER</span>
               </span>
-              <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/15 text-sky-500 border border-sky-500/30 rounded uppercase tracking-wider">
-                100% FREE
+              <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-mono font-bold bg-sky-500/15 text-sky-500 border border-sky-500/30 rounded uppercase tracking-wider">
+                FREE
               </span>
             </div>
             <p
-              className={`text-[11px] font-mono truncate max-w-[180px] sm:max-w-xs ${
+              className={`text-[10px] sm:text-[11px] font-mono truncate max-w-[120px] sm:max-w-xs ${
                 isLight ? 'text-slate-500' : 'text-[#8f9ca8]'
               }`}
             >
@@ -81,9 +87,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Navigation Mode Switcher */}
+        {/* Desktop Navigation Mode Switcher (Hidden on mobile & small tablets since they have bottom nav) */}
         <div
-          className={`flex items-center gap-1 p-1 border rounded-lg transition-colors ${
+          className={`hidden md:flex items-center gap-1 p-1 border rounded-lg transition-colors ${
             isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]'
           }`}
         >
@@ -99,7 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Gauge className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Ride Stats</span>
+            <span>Ride Stats</span>
           </button>
 
           <button
@@ -114,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Radio className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Record Ride</span>
+            <span>Record Ride</span>
             {isRecordingLive && (
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             )}
@@ -135,12 +141,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Help, GPS Accuracy & Tips"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Tips & Help</span>
+            <span>Help Guide</span>
           </button>
         </div>
 
         {/* Quick action buttons & Theme Toggle */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Global Light/Dark Theme Switcher */}
           <button
             id="btn-toggle-theme"
@@ -159,14 +165,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="btn-open-garage"
             onClick={onOpenGarage}
             title="Open Saved Rides"
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
               isLight
                 ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
                 : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-sky-400 text-sky-400'
             }`}
           >
             <FolderArchive className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">My Rides</span>
+            <span>My Rides</span>
           </button>
 
           <button
@@ -186,10 +192,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="btn-upload-gpx"
             onClick={onUploadClick}
-            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md cursor-pointer font-sans"
+            title="Upload GPX File"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md cursor-pointer font-sans shrink-0"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Upload GPX</span>
+            <span className="hidden sm:inline">Upload GPX</span>
           </button>
         </div>
       </div>

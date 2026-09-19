@@ -715,30 +715,30 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }`}
     >
       {/* Map Header Toolbar */}
-      <div className={`px-3 sm:px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2.5 ${headerBg}`}>
+      <div className={`px-3 sm:px-4 py-2 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${headerBg}`}>
         {/* Left: GPS Track identity & Out-and-back detection indicator */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider truncate">
             {analysis.name || 'GPS Ride Route'}
           </span>
-          <span className={`text-xs font-mono ${subText}`}>
-            ({analysis.points.length} GPS Fixes)
+          <span className={`text-[11px] sm:text-xs font-mono shrink-0 ${subText}`}>
+            ({analysis.points.length} fixes)
           </span>
 
           {/* Out & Back Detected Badge */}
           {turnaroundIndex > 0 && (
             <div className="flex items-center gap-1.5 ml-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">
                 <ArrowLeftRight className="w-3 h-3" />
-                <span>Out & Back Route</span>
+                <span>Out & Back</span>
               </span>
             </div>
           )}
         </div>
 
         {/* Right: Map view & Route mode controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap max-w-full">
           {/* Out & Back Route Mode Selector (When out-and-back route detected) */}
           {turnaroundIndex > 0 && (
             <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
@@ -895,18 +895,18 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           </div>
 
           {/* Timestamp & Distance Scrubber Bar */}
-          <div className="flex items-center justify-between text-[11px] font-mono">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono gap-1">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-sky-400 font-bold">{formatTime(elapsedSeconds)}</span>
               <span className={subText}>/</span>
               <span className={subText}>{formatTime(totalDuration)}</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span>
-                DIST: <strong className={isLight ? 'text-slate-900' : 'text-white'}>{currentPoint.distanceFromStartKm.toFixed(1)} km</strong> / {analysis.totalDistanceKm.toFixed(1)} km
+            <div className="flex items-center gap-1.5 sm:gap-3 truncate text-right">
+              <span className="truncate">
+                {currentPoint.distanceFromStartKm.toFixed(1)} / {analysis.totalDistanceKm.toFixed(1)} km
               </span>
-              <span className={subText}>
+              <span className={`shrink-0 ${subText}`}>
                 ({Math.round((currentIndex / Math.max(1, activePoints.length - 1)) * 100)}%)
               </span>
             </div>
@@ -914,8 +914,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         </div>
 
         {/* Playback Controls and Telemetry Snapshot */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-200/20">
-          <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-1.5 border-t border-slate-200/20">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <button
               onClick={() => onScrubChange(0)}
               title="Reset to Start"

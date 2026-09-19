@@ -29,7 +29,7 @@ import {
 interface GarageModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentAnalysis: RideAnalysis;
+  currentAnalysis?: RideAnalysis | null;
   onSelectRide: (gpxContent: string, name: string) => void;
   onLoadSample: () => void;
   theme?: AppTheme;
@@ -57,6 +57,7 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   if (!isOpen) return null;
 
   const handleSaveCurrent = () => {
+    if (!currentAnalysis) return;
     const gpxText = exportAnalysisToGPX(currentAnalysis);
     saveRideToGarage({
       name: currentAnalysis.name,
@@ -111,63 +112,63 @@ export const GarageModal: React.FC<GarageModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
+        </div>        {/* Action bar for active loaded ride */}
+        {currentAnalysis && (
+          <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-3 ${activeRideBg}`}>
+            <div>
+              <div className={`text-[10px] font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
+                ACTIVE TRACK IN ANALYZER:
+              </div>
+              <div className="text-sm font-bold font-mono truncate max-w-xs sm:max-w-md">
+                {currentAnalysis.name}
+              </div>
+              <div className={`text-[11px] font-mono flex items-center gap-2 mt-0.5 ${subTextColor}`}>
+                <span>{currentAnalysis.totalDistanceKm.toFixed(1)} km</span>
+                <span>•</span>
+                <span className="text-rose-500 font-bold">Max {currentAnalysis.maxSpeedKmh.toFixed(0)} km/h</span>
+              </div>
+            </div>
 
-        {/* Action bar for active loaded ride */}
-        <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-3 ${activeRideBg}`}>
-          <div>
-            <div className={`text-[10px] font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
-              ACTIVE TRACK IN ANALYZER:
-            </div>
-            <div className="text-sm font-bold font-mono truncate max-w-xs sm:max-w-md">
-              {currentAnalysis.name}
-            </div>
-            <div className={`text-[11px] font-mono flex items-center gap-2 mt-0.5 ${subTextColor}`}>
-              <span>{currentAnalysis.totalDistanceKm.toFixed(1)} km</span>
-              <span>•</span>
-              <span className="text-rose-500 font-bold">Max {currentAnalysis.maxSpeedKmh.toFixed(0)} km/h</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSaveCurrent}
+                className={`px-3.5 py-1.5 text-xs font-mono font-bold flex items-center gap-1.5 rounded-xl border transition-all cursor-pointer shadow-sm ${
+                  savedSuccess
+                    ? 'bg-emerald-500 border-emerald-500 text-slate-950 font-black'
+                    : isLight
+                    ? 'bg-white hover:bg-slate-100 border-slate-300 text-emerald-700'
+                    : 'bg-[#0d131a] hover:bg-[#1c2633] border-emerald-500/40 text-emerald-400'
+                }`}
+              >
+                {savedSuccess ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save to Garage</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  const gpx = exportAnalysisToGPX(currentAnalysis);
+                  downloadFile(gpx, `${currentAnalysis.name.replace(/\s+/g, '_')}.gpx`);
+                }}
+                title="Download GPX file"
+                className={`px-3.5 py-1.5 border rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700' : 'bg-[#0d131a] hover:bg-[#1c2633] border-sky-500/40 text-sky-400'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export GPX</span>
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSaveCurrent}
-              className={`px-3.5 py-1.5 text-xs font-mono font-bold flex items-center gap-1.5 rounded-xl border transition-all cursor-pointer shadow-sm ${
-                savedSuccess
-                  ? 'bg-emerald-500 border-emerald-500 text-slate-950 font-black'
-                  : isLight
-                  ? 'bg-white hover:bg-slate-100 border-slate-300 text-emerald-700'
-                  : 'bg-[#0d131a] hover:bg-[#1c2633] border-emerald-500/40 text-emerald-400'
-              }`}
-            >
-              {savedSuccess ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Saved!</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save to Garage</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                const gpx = exportAnalysisToGPX(currentAnalysis);
-                downloadFile(gpx, `${currentAnalysis.name.replace(/\s+/g, '_')}.gpx`);
-              }}
-              title="Download GPX file"
-              className={`px-3.5 py-1.5 border rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-sky-700' : 'bg-[#0d131a] hover:bg-[#1c2633] border-sky-500/40 text-sky-400'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export GPX</span>
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Saved Rides & Built-in Samples List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5">

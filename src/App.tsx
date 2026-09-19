@@ -18,14 +18,17 @@ import { GarageModal } from './components/GarageModal';
 import { StopEditorModal } from './components/StopEditorModal';
 import { RideDetailsEditorModal } from './components/RideDetailsEditorModal';
 import { RideCalibrationModal } from './components/RideCalibrationModal';
+import { LandingView } from './components/LandingView';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
 import { SAMPLE_GPX_DATA, SAMPLE_GPX_NAME } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme } from './types';
-import { Radio, Gauge, HelpCircle, FolderArchive } from 'lucide-react';
+import { Radio, Gauge, HelpCircle, FolderArchive, Home } from 'lucide-react';
+
+export type AppTab = 'home' | 'analysis' | 'cockpit' | 'faq';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'analysis' | 'cockpit' | 'faq'>('analysis');
+  const [currentTab, setCurrentTab] = useState<AppTab>('home');
   const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const [isRecordingLive, setIsRecordingLive] = useState<boolean>(false);
@@ -56,22 +59,13 @@ export default function App() {
 
   const uploadZoneRef = useRef<HTMLDivElement>(null);
 
-  // Load sample ride on first mount
-  useEffect(() => {
+  const handleLoadSample = (gpxData?: string, name?: string) => {
     try {
-      const parsed = parseGPX(SAMPLE_GPX_DATA);
-      parsed.name = SAMPLE_GPX_NAME;
+      const dataToParse = gpxData || SAMPLE_GPX_DATA;
+      const parsed = parseGPX(dataToParse);
+      parsed.name = name || SAMPLE_GPX_NAME;
       setAnalysis(parsed);
-    } catch (err: any) {
-      console.error('Error loading default sample GPX:', err);
-    }
-  }, []);
-
-  const handleLoadSample = () => {
-    try {
-      const parsed = parseGPX(SAMPLE_GPX_DATA);
-      parsed.name = SAMPLE_GPX_NAME;
-      setAnalysis(parsed);
+      setScrubIndex(null);
       setCurrentTab('analysis');
       setErrorMessage(null);
     } catch (err: any) {
@@ -206,6 +200,7 @@ export default function App() {
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
+        onHomeClick={() => setCurrentTab('home')}
         onLoadSample={handleLoadSample}
         onUploadClick={triggerUploadClick}
         onOpenGarage={() => setIsGarageOpen(true)}
@@ -217,7 +212,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6 space-y-4 sm:space-y-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6 space-y-4 sm:space-y-6">
         {/* Error message alert */}
         {errorMessage && (
           <div className="p-3 bg-red-950/60 border border-red-500/50 text-red-300 font-sans text-xs rounded-lg flex items-center justify-between">
@@ -228,7 +223,19 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 1: Ride Stats & Analysis */}
+        {/* Tab 0: Landing Page (Default & Mobile Onboarding) */}
+        {(currentTab === 'home' || (currentTab === 'analysis' && !analysis)) && (
+          <div className="animate-in fade-in duration-300">
+            <LandingView
+              onFileLoaded={handleFileLoaded}
+              onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
+              onStartRecording={() => setCurrentTab('cockpit')}
+              theme={theme}
+            />
+          </div>
+        )}
+
+        {/* Tab 1: Ride Stats & Telemetry Analysis */}
         {currentTab === 'analysis' && analysis && (
           <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-300">
             {/* Hero Metrics Bar with Edit Ride Name & Calibration */}
@@ -285,7 +292,7 @@ export default function App() {
               theme={theme}
             />
 
-            {/* Upload Zone */}
+            {/* Upload Zone for analyzing another file */}
             <div ref={uploadZoneRef} className="pt-2">
               <UploadZone
                 onFileLoaded={handleFileLoaded}
@@ -317,13 +324,32 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-4 py-2 flex items-center justify-around text-[11px] font-mono ${
-        theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
-      }`}>
+      {/* Mobile Bottom Navigation Bar (Optimized for one-hand thumb reach) */}
+      <div 
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+        className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-2 flex items-center justify-around text-[10px] font-mono ${
+          theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
+        }`}
+      >
         <button
-          onClick={() => setCurrentTab('analysis')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${
+          onClick={() => setCurrentTab('home')}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
+            currentTab === 'home' ? 'text-sky-500 font-bold' : theme === 'light' ? 'text-slate-500' : 'text-[#8f9ca8]'
+          }`}
+        >
+          <Home className="w-4 h-4" />
+          <span>Home</span>
+        </button>
+
+        <button
+          onClick={() => {
+            if (!analysis) {
+              handleLoadSample();
+            } else {
+              setCurrentTab('analysis');
+            }
+          }}
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
             currentTab === 'analysis' ? 'text-sky-500 font-bold' : theme === 'light' ? 'text-slate-500' : 'text-[#8f9ca8]'
           }`}
         >
@@ -333,7 +359,7 @@ export default function App() {
 
         <button
           onClick={() => setCurrentTab('cockpit')}
-          className={`flex flex-col items-center gap-1 relative cursor-pointer ${
+          className={`flex flex-col items-center gap-1 relative cursor-pointer transition-colors ${
             currentTab === 'cockpit' ? 'text-cyan-500 font-bold' : theme === 'light' ? 'text-slate-500' : 'text-[#8f9ca8]'
           }`}
         >
@@ -346,7 +372,7 @@ export default function App() {
 
         <button
           onClick={() => setIsGarageOpen(true)}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
             theme === 'light' ? 'text-emerald-600' : 'text-emerald-400'
           }`}
         >
@@ -356,7 +382,7 @@ export default function App() {
 
         <button
           onClick={() => setCurrentTab('faq')}
-          className={`flex flex-col items-center gap-1 cursor-pointer ${
+          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
             currentTab === 'faq' ? (theme === 'light' ? 'text-slate-900 font-bold' : 'text-white font-bold') : theme === 'light' ? 'text-slate-500' : 'text-[#8f9ca8]'
           }`}
         >
@@ -366,18 +392,16 @@ export default function App() {
       </div>
 
       {/* Saved Rides Garage Modal */}
-      {analysis && (
-        <GarageModal
-          isOpen={isGarageOpen}
-          onClose={() => setIsGarageOpen(false)}
-          currentAnalysis={analysis}
-          onSelectRide={(gpxText, name) => {
-            handleFileLoaded(gpxText, name);
-          }}
-          onLoadSample={handleLoadSample}
-          theme={theme}
-        />
-      )}
+      <GarageModal
+        isOpen={isGarageOpen}
+        onClose={() => setIsGarageOpen(false)}
+        currentAnalysis={analysis}
+        onSelectRide={(gpxText, name) => {
+          handleFileLoaded(gpxText, name);
+        }}
+        onLoadSample={handleLoadSample}
+        theme={theme}
+      />
 
       {/* Stop Add / Edit Modal */}
       {analysis && (

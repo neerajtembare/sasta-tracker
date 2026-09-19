@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "Kinetic MotoGPX — Motorcycle Telemetry & Logger",
-  "short_name": "MotoGPX",
-  "description": "High-performance motorcycle GPX telemetry lab, live GPS logger, and speed heatmap analyzer.",
+  "name": "Sasta Tracker — Free GPS Motorcycle Telemetry",
+  "short_name": "Sasta Tracker",
+  "description": "Free, private GPS motorcycle telemetry analyzer, live cockpit logger, speed heatmaps, lean angles, and pit stop tracker.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#090c0a",
-  "theme_color": "#090c0a",
+  "background_color": "#080c10",
+  "theme_color": "#080c10",
   "icons": [
     {
       "src": "/icon.svg",

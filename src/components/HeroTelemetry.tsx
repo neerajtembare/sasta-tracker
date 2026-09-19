@@ -11,7 +11,8 @@ import {
   Clock,
   Compass,
   Milestone,
-  X
+  X,
+  Share2
 } from 'lucide-react';
 
 interface HeroTelemetryProps {
@@ -26,6 +27,7 @@ interface HeroTelemetryProps {
   onEditRideName?: () => void;
   onOpenStops?: () => void;
   onOpenCalibration?: () => void;
+  onOpenShare?: () => void;
   onCloseTrack?: () => void;
   theme?: AppTheme;
 }
@@ -36,6 +38,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
   onEditRideName,
   onOpenStops,
   onOpenCalibration,
+  onOpenShare,
   onCloseTrack,
   theme = 'dark',
 }) => {
@@ -112,6 +115,21 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded uppercase">
                 Odo: {analysis.userDistanceOverrideKm} km
               </span>
+            )}
+
+            {onOpenShare && (
+              <button
+                onClick={onOpenShare}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25'
+                }`}
+                title="Create 4:5 Instagram/WhatsApp Story ride card"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Story</span>
+              </button>
             )}
 
             {onOpenCalibration && (

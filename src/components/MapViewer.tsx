@@ -880,6 +880,28 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
       {/* VIDEO-PLAYER STYLE SCRUBBER & SIMULATION CONTROLLER */}
       <div className={`p-3 sm:p-4 border-t space-y-2.5 ${scrubBarBg}`}>
+        {/* Floating Scrubber Mini-HUD for Mobile Thumb Scrubbing */}
+        <div className={`flex items-center justify-between text-[11px] sm:text-xs font-mono px-2.5 py-1.5 rounded-lg border transition-colors ${
+          isLight
+            ? 'bg-sky-50/80 border-sky-200 text-sky-800 shadow-sm'
+            : 'bg-sky-500/10 border-sky-500/20 text-sky-300'
+        }`}>
+          <div className="flex items-center gap-2 font-bold truncate">
+            <span className="text-sky-400">⚡ {currentPoint.speedKmh.toFixed(1)} km/h</span>
+            <span className="opacity-30">|</span>
+            <span>⛰️ {currentPoint.ele !== null ? `${Math.round(currentPoint.ele)}m` : '—'}</span>
+          </div>
+          <div className="flex items-center gap-2 font-bold shrink-0">
+            <span className="text-amber-400">
+              📐 {currentPoint.estimatedLeanAngle ? `${Math.round(currentPoint.estimatedLeanAngle)}° lean` : '0°'}
+            </span>
+            <span className="opacity-30">|</span>
+            <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>
+              📍 {currentPoint.distanceFromStartKm.toFixed(1)} km
+            </span>
+          </div>
+        </div>
+
         {/* Scrubber Range Slider */}
         <div className="space-y-1">
           <div className="relative flex items-center">

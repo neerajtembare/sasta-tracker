@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPX Analyzer — Ride Insights</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --surface: #151c27;
+      --surface2: #1c2636;
+      --surface3: #243044;
+      --border: rgba(255,255,255,0.07);
+      --border-strong: rgba(255,255,255,0.12);
+      --text: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+      --accent-glow: rgba(59, 130, 246, 0.35);
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.12);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.12);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.12);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(167, 139, 250, 0.06), transparent);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      font-size: 1.2rem;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    header h1 {
+      font-size: 1.7rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-top: 4px;
+    }
+
+    .upload-zone {
+      position: relative;
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+
+    .upload-zone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 0%, var(--accent-soft), transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: var(--surface2);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(59, 130, 246, 0.12);
+    }
+
+    .upload-zone:hover::before,
+    .upload-zone.dragover::before { opacity: 1; }
+
+    .upload-zone .icon-wrap {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 14px;
+      background: var(--accent-soft);
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-size: 1.6rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .upload-zone h2 {
+      font-size: 1.1rem;
+      font-weight: 650;
+      margin-bottom: 4px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .upload-zone p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .upload-zone input[type="file"] { display: none; }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 36px;
+    }
+
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid var(--border-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error {
+      background: var(--danger-soft);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 18px;
+      display: none;
+      font-size: 0.9rem;
+    }
+
+    #results {
+      display: none;
+      animation: fadeUp 0.4s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .hero-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 12px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-stat::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.55;
+    }
+
+    .hero-stat .value {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+
+    .hero-stat .label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-top: 5px;
+      font-weight: 500;
+    }
+
+    .hero-stat .unit {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-left: 2px;
+    }
+
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .section-header h3 {
+      font-size: 0.9rem;
+      font-weight: 650;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-header h3 span.icon {
+      width: 26px;
+      height: 26px;
+      background: var(--surface3);
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      font-size: 0.85rem;
+    }
+
+    #map {
+      height: 420px;
+      border-radius: 12px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+    }
+
+    .leaflet-container { font-family: 'Inter', sans-serif; }
+
+    .map-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    .map-legend span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot.start { background: var(--success); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .dot.end { background: var(--danger); box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+
+    .speed-scale {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .speed-bar {
+      width: 100px;
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+    }
+
+    .activity-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: #93c5fd;
+      border: 1px solid rgba(59,130,246,0.25);
+    }
+
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 220px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 12px;
+    }
+
+    .stat-card .label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+      font-weight: 500;
+    }
+
+    .stat-card .value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-card .sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 24px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.84rem;
+    }
+
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .key { color: var(--text-muted); }
+    .detail-row .val { font-weight: 500; text-align: right; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 550;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.66rem;
+      font-weight: 600;
+    }
+
+    .badge.moving { background: var(--success-soft); color: #4ade80; }
+    .badge.slow { background: var(--warning-soft); color: #fbbf24; }
+    .badge.stop { background: var(--danger-soft); color: #f87171; }
+
+    footer {
+      text-align: center;
+      margin-top: 36px;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+    }
+
+    @media (max-width: 780px) {
+      .hero-stats { grid-template-columns: 1fr 1fr; }
+      .charts-row { grid-template-columns: 1fr; }
+      .details-grid { grid-template-columns: 1fr; }
+      #map { height: 300px; }
+    }
+
+    @media (max-width: 420px) {
+      .hero-stat .value { font-size: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🚴</div>
+        <h1>GPX Analyzer</h1>
+      </div>
+      <p>Ride insights for bike &amp; car — speed, elevation, moving time &amp; more</p>
+    </header>
+
+    <div class="upload-zone" id="dropzone">
+      <div class="icon-wrap">📂</div>
+      <h2>Drop your GPX file here</h2>
+      <p>or click to browse · GPSLogger, Garmin, Strava, Komoot…</p>
+      <input type="file" id="fileInput" accept=".gpx,application/gpx+xml,text/xml" />
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div style="color:var(--text-secondary);font-size:0.9rem">Analyzing ride…</div>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div id="results">
+      <div class="hero-stats" id="heroStats"></div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3><span class="icon">🗺️</span> Route · colored by speed</h3>
+          <div id="activityBadge"></div>
+        </div>
+        <div id="map"></div>
+        <div class="map-footer">
+          <div class="map-legend">
+            <span><i class="dot start"></i> Start</span>
+            <span><i class="dot end"></i> End</span>
+          </div>
+          <div class="speed-scale">
+            <span>Slow</span>
+            <div class="speed-bar"></div>
+            <span>Fast</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="rideStats"></div>
+
+      <div class="charts-row">
+        <div class="section" style="margin-bottom:0">
+          <div class="section-header">
+            <h3><span class="icon">⚡</span> Speed</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="speedChart"></canvas>
+          </div>
+        </div>
+        <div class="section" style="margin-bottom:0">
+          <div class="section-header">
+            <h3><span class="icon">📈</span> Elevation</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="elevationChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3><span class="icon">📋</span> Track Details</h3>
+        </div>
+        <div class="details-grid" id="details"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3><span class="icon">📏</span> Segments</h3>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Distance</th>
+                <th>Time</th>
+                <th>Speed</th>
+                <th>Elev Δ</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="segmentsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Fully client-side · your files never leave this browser
+    </footer>
+  </div>
+
+  <script>
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2)**2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatDuration(sec) {
+      if (sec == null || isNaN(sec)) return '—';
+      if (sec < 60) return Math.round(sec) + 's';
+      const m = Math.floor(sec / 60);
+      const s = Math.round(sec % 60);
+      if (m < 60) return s > 0 ? m + 'm ' + s + 's' : m + 'm';
+      const h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
+
+    function formatTime(iso) {
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          timeZoneName: 'short'
+        });
+      } catch { return iso; }
+    }
+
+    function speedClass(ms) {
+      if (ms < 0.5) return 'stop';
+      if (ms < 2) return 'slow';
+      return 'moving';
+    }
+
+    function guessActivity(avgKmh) {
+      if (avgKmh < 7) return { label: 'Walking / Hiking', emoji: '🚶' };
+      if (avgKmh < 22) return { label: 'Cycling', emoji: '🚴' };
+      if (avgKmh < 70) return { label: 'Car / Motorbike', emoji: '🚗' };
+      return { label: 'High-speed', emoji: '🏎️' };
+    }
+
+    function speedToColor(kmh, maxKmh) {
+      const t = Math.max(0, Math.min(1, kmh / Math.max(maxKmh, 1)));
+      let r, g, b;
+      if (t < 0.5) {
+        const u = t * 2;
+        r = Math.round(34 + u * (234 - 34));
+        g = Math.round(197 + u * (179 - 197));
+        b = Math.round(94 + u * (8 - 94));
+      } else {
+        const u = (t - 0.5) * 2;
+        r = Math.round(234 + u * (239 - 234));
+        g = Math.round(179 + u * (68 - 179));
+        b = Math.round(8 + u * (68 - 8));
+      }
+      return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
+    function parseGPX(text) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'application/xml');
+        if (!doc.querySelector('parsererror')) {
+          const ns = 'http://www.topografix.com/GPX/1/1';
+          const gpxtpx = 'http://www.garmin.com/xmlschemas/TrackPointExtension/v2';
+          let pts = [
+            ...doc.getElementsByTagNameNS(ns, 'trkpt'),
+            ...doc.getElementsByTagName('trkpt'),
+            ...doc.getElementsByTagNameNS(ns, 'rtept'),
+            ...doc.getElementsByTagName('rtept'),
+          ];
+          pts = [...new Set(pts)];
+          if (pts.length === 0) pts = [...doc.querySelectorAll('[lat][lon]')];
+
+          if (pts.length >= 2) {
+            const points = pts.map(pt => {
+              const lat = parseFloat(pt.getAttribute('lat'));
+              const lon = parseFloat(pt.getAttribute('lon'));
+              const eleEl = pt.getElementsByTagNameNS(ns, 'ele')[0] || pt.getElementsByTagName('ele')[0];
+              const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+              const timeEl = pt.getElementsByTagNameNS(ns, 'time')[0] || pt.getElementsByTagName('time')[0];
+              const time = timeEl ? timeEl.textContent.trim() : null;
+              let speed = null;
+              const speedEl = pt.getElementsByTagNameNS(gpxtpx, 'speed')[0] ||
+                              pt.querySelector('speed') || pt.getElementsByTagName('speed')[0];
+              if (speedEl) speed = parseFloat(speedEl.textContent);
+              return { lat, lon, ele, time, speed };
+            }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+            if (points.length >= 2) return points;
+          }
+        }
+      } catch (e) {
+        console.warn('DOMParser failed', e);
+      }
+
+      const pointRegex = /<(?:trkpt|rtept|wpt)\s+[^>]*lat=["']([+-]?\d+\.?\d*)["'][^>]*lon=["']([+-]?\d+\.?\d*)["'][^>]*>([\s\S]*?)<\/(?:trkpt|rtept|wpt)>/gi;
+      const pointRegex2 = /<(?:trkpt|rtept|wpt)\s+[^>]*lon=["']([+-]?\d+\.?\d*)["'][^>]*lat=["']([+-]?\d+\.?\d*)["'][^>]*>([\s\S]*?)<\/(?:trkpt|rtept|wpt)>/gi;
+
+      const points = [];
+      const extract = (inner) => {
+        const eleM = inner.match(/<ele[^>]*>([^<]+)<\/ele>/i);
+        const timeM = inner.match(/<time[^>]*>([^<]+)<\/time>/i);
+        const speedM = inner.match(/<speed[^>]*>([^<]+)<\/speed>/i);
+        return {
+          ele: eleM ? parseFloat(eleM[1]) : null,
+          time: timeM ? timeM[1].trim() : null,
+          speed: speedM ? parseFloat(speedM[1]) : null
+        };
+      };
+
+      let match;
+      while ((match = pointRegex.exec(text)) !== null) {
+        const lat = parseFloat(match[1]), lon = parseFloat(match[2]);
+        if (!isNaN(lat) && !isNaN(lon)) points.push({ lat, lon, ...extract(match[3]) });
+      }
+      if (points.length < 2) {
+        while ((match = pointRegex2.exec(text)) !== null) {
+          const lon = parseFloat(match[1]), lat = parseFloat(match[2]);
+          if (!isNaN(lat) && !isNaN(lon)) points.push({ lat, lon, ...extract(match[3]) });
+        }
+      }
+
+      if (points.length < 2) {
+        const hasGpx = /<gpx[\s>]/i.test(text);
+        const hasTrkpt = /<trkpt[\s>]/i.test(text);
+        let hint = 'Could not find enough track points.';
+        if (!hasGpx) hint = 'This does not look like a GPX file.';
+        else if (!hasTrkpt) hint = 'GPX found, but no track points.';
+        else hint = 'Found track points but could not parse coordinates.';
+        throw new Error(hint);
+      }
+      return points;
+    }
+
+    function analyze(points) {
+      let totalDist = 0;
+      const segments = [];
+      let eleGain = 0, eleLoss = 0;
+      let movingTime = 0, stoppedTime = 0;
+      let movingDist = 0;
+      const MOVING_THRESHOLD = 1.0;
+
+      for (let i = 1; i < points.length; i++) {
+        const d = haversine(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+        totalDist += d;
+
+        let dt = 0;
+        if (points[i].time && points[i-1].time) {
+          dt = (new Date(points[i].time) - new Date(points[i-1].time)) / 1000;
+          if (dt < 0) dt = 0;
+        }
+
+        let elevDelta = null;
+        if (points[i].ele != null && points[i-1].ele != null) {
+          elevDelta = points[i].ele - points[i-1].ele;
+          if (elevDelta > 0) eleGain += elevDelta;
+          else eleLoss += -elevDelta;
+        }
+
+        let speed = dt > 0 ? d / dt : 0;
+        if (points[i].speed != null && !isNaN(points[i].speed)) {
+          speed = points[i].speed;
+        }
+
+        if (speed >= MOVING_THRESHOLD) {
+          movingTime += dt;
+          movingDist += d;
+        } else {
+          stoppedTime += dt;
+        }
+
+        segments.push({ dist: d, time: dt, speed, elevDelta });
+      }
+
+      const startTime = points[0].time ? new Date(points[0].time) : null;
+      const endTime = points[points.length-1].time ? new Date(points[points.length-1].time) : null;
+      const duration = (startTime && endTime) ? Math.max(0, (endTime - startTime) / 1000) : null;
+
+      const elevations = points.map(p => p.ele).filter(e => e != null);
+      const speeds = segments.map(s => s.speed);
+      const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+      const overallAvg = (duration && duration > 0) ? totalDist / duration : 0;
+      const movingAvg = (movingTime > 0) ? movingDist / movingTime : 0;
+
+      let cum = 0;
+      const speedProfile = segments.map((s, i) => {
+        cum += s.dist;
+        return {
+          distKm: cum / 1000,
+          speedKmh: s.speed * 3.6,
+          elev: points[i + 1] ? points[i + 1].ele : null
+        };
+      });
+
+      return {
+        points, segments, totalDist, duration, startTime, endTime,
+        eleGain, eleLoss,
+        elevMin: elevations.length ? Math.min(...elevations) : null,
+        elevMax: elevations.length ? Math.max(...elevations) : null,
+        elevStart: points[0].ele,
+        elevEnd: points[points.length-1].ele,
+        maxSpeed, overallAvg, movingAvg, movingTime, stoppedTime, movingDist, speedProfile
+      };
+    }
+
+    let map = null;
+    let speedChart = null;
+    let elevChart = null;
+
+    function renderHero(a) {
+      const distKm = a.totalDist / 1000;
+      const avgKmh = a.overallAvg * 3.6;
+      const maxKmh = a.maxSpeed * 3.6;
+      const movingKmh = a.movingAvg * 3.6;
+
+      const items = [
+        {
+          value: distKm >= 1 ? distKm.toFixed(2) : Math.round(a.totalDist),
+          unit: distKm >= 1 ? 'km' : 'm',
+          label: 'Distance'
+        },
+        {
+          value: formatDuration(a.duration),
+          unit: '',
+          label: 'Elapsed'
+        },
+        {
+          value: movingKmh > 0 ? movingKmh.toFixed(1) : avgKmh.toFixed(1),
+          unit: 'km/h',
+          label: 'Avg Moving'
+        },
+        {
+          value: maxKmh.toFixed(1),
+          unit: 'km/h',
+          label: 'Max Speed'
+        }
+      ];
+
+      document.getElementById('heroStats').innerHTML = items.map(i =>
+        '<div class="hero-stat"><div class="value">' + i.value +
+        '<span class="unit">' + i.unit + '</span></div><div class="label">' +
+        i.label + '</div></div>'
+      ).join('');
+
+      const act = guessActivity(movingKmh || avgKmh);
+      document.getElementById('activityBadge').innerHTML =
+        '<div class="activity-badge">' + act.emoji + ' ' + act.label + '</div>';
+    }
+
+    function renderRideStats(a) {
+      const cards = [
+        {
+          label: 'Moving Time',
+          value: formatDuration(a.movingTime),
+          sub: a.duration ? Math.round(a.movingTime / a.duration * 100) + '% of total' : ''
+        },
+        {
+          label: 'Stopped Time',
+          value: formatDuration(a.stoppedTime),
+          sub: a.duration ? Math.round(a.stoppedTime / a.duration * 100) + '% of total' : ''
+        },
+        {
+          label: 'Elev Gain',
+          value: a.eleGain != null ? '+' + a.eleGain.toFixed(0) + ' m' : '—',
+          sub: a.elevMin != null ? 'min ' + a.elevMin.toFixed(0) + ' m' : ''
+        },
+        {
+          label: 'Elev Loss',
+          value: a.eleLoss != null ? '−' + a.eleLoss.toFixed(0) + ' m' : '—',
+          sub: a.elevMax != null ? 'max ' + a.elevMax.toFixed(0) + ' m' : ''
+        },
+        {
+          label: 'Overall Avg',
+          value: (a.overallAvg * 3.6).toFixed(1) + ' km/h',
+          sub: 'includes stops'
+        },
+        {
+          label: 'Points',
+          value: a.points.length,
+          sub: a.segments.length + ' segments'
+        }
+      ];
+
+      document.getElementById('rideStats').innerHTML = cards.map(c =>
+        '<div class="stat-card"><div class="label">' + c.label +
+        '</div><div class="value">' + c.value + '</div>' +
+        (c.sub ? '<div class="sub">' + c.sub + '</div>' : '') + '</div>'
+      ).join('');
+    }
+
+    function renderMap(a) {
+      if (map) { map.remove(); map = null; }
+
+      const latlngs = a.points.map(p => [p.lat, p.lon]);
+      map = L.map('map', { zoomControl: true }).fitBounds(latlngs, { padding: [32, 32] });
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        maxZoom: 19,
+        subdomains: 'abcd'
+      }).addTo(map);
+
+      const maxKmh = Math.max(a.maxSpeed * 3.6, 1);
+
+      for (let i = 0; i < a.segments.length; i++) {
+        const s = a.segments[i];
+        const kmh = s.speed * 3.6;
+        const color = speedToColor(kmh, maxKmh);
+        L.polyline(
+          [[a.points[i].lat, a.points[i].lon], [a.points[i+1].lat, a.points[i+1].lon]],
+          {
+            color: color,
+            weight: 5,
+            opacity: 0.92,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }
+        ).addTo(map).bindTooltip(kmh.toFixed(1) + ' km/h', { sticky: true });
+      }
+
+      L.polyline(latlngs, {
+        color: '#3b82f6',
+        weight: 10,
+        opacity: 0.12,
+        lineCap: 'round'
+      }).addTo(map);
+
+      L.circleMarker(latlngs[0], {
+        radius: 8, color: '#fff', weight: 2,
+        fillColor: '#22c55e', fillOpacity: 1
+      }).addTo(map).bindPopup('<b>Start</b>');
+
+      L.circleMarker(latlngs[latlngs.length-1], {
+        radius: 8, color: '#fff', weight: 2,
+        fillColor: '#ef4444', fillOpacity: 1
+      }).addTo(map).bindPopup('<b>End</b>');
+
+      setTimeout(function() { map.invalidateSize(); }, 100);
+    }
+
+    function renderCharts(a) {
+      const labels = a.speedProfile.map(p => p.distKm.toFixed(2));
+      const speeds = a.speedProfile.map(p => p.speedKmh);
+      const elevs = a.points.map(p => p.ele);
+
+      let cum = 0;
+      const elevLabels = a.points.map(function(p, i) {
+        if (i > 0) cum += haversine(a.points[i-1].lat, a.points[i-1].lon, p.lat, p.lon);
+        return (cum / 1000).toFixed(2);
+      });
+
+      const commonScales = {
+        x: {
+          title: { display: true, text: 'Distance (km)', color: '#64748b', font: { size: 11 } },
+          ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.06)' }
+        },
+        y: {
+          ticks: { color: '#64748b', font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.06)' }
+        }
+      };
+
+      const sctx = document.getElementById('speedChart').getContext('2d');
+      if (speedChart) speedChart.destroy();
+      const sgrad = sctx.createLinearGradient(0, 0, 0, 220);
+      sgrad.addColorStop(0, 'rgba(251, 191, 36, 0.35)');
+      sgrad.addColorStop(1, 'rgba(251, 191, 36, 0.02)');
+
+      speedChart = new Chart(sctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: speeds,
+            borderColor: '#fbbf24',
+            backgroundColor: sgrad,
+            fill: true,
+            tension: 0.3,
+            pointRadius: speeds.length > 50 ? 0 : 2.5,
+            pointHoverRadius: 4,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1c2636',
+              titleColor: '#f1f5f9',
+              bodyColor: '#94a3b8',
+              borderColor: 'rgba(255,255,255,0.08)',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: function(items) { return 'Distance: ' + items[0].label + ' km'; },
+                label: function(item) { return 'Speed: ' + (item.raw != null ? item.raw.toFixed(1) : '—') + ' km/h'; }
+              }
+            }
+          },
+          scales: {
+            x: commonScales.x,
+            y: Object.assign({}, commonScales.y, {
+              title: { display: true, text: 'Speed (km/h)', color: '#64748b', font: { size: 11 } }
+            })
+          }
+        }
+      });
+
+      const ectx = document.getElementById('elevationChart').getContext('2d');
+      if (elevChart) elevChart.destroy();
+      const egrad = ectx.createLinearGradient(0, 0, 0, 220);
+      egrad.addColorStop(0, 'rgba(96, 165, 250, 0.35)');
+      egrad.addColorStop(1, 'rgba(96, 165, 250, 0.02)');
+
+      elevChart = new Chart(ectx, {
+        type: 'line',
+        data: {
+          labels: elevLabels,
+          datasets: [{
+            data: elevs,
+            borderColor: '#60a5fa',
+            backgroundColor: egrad,
+            fill: true,
+            tension: 0.3,
+            pointRadius: elevs.length > 50 ? 0 : 2.5,
+            pointHoverRadius: 4,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1c2636',
+              titleColor: '#f1f5f9',
+              bodyColor: '#94a3b8',
+              borderColor: 'rgba(255,255,255,0.08)',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: function(items) { return 'Distance: ' + items[0].label + ' km'; },
+                label: function(item) { return 'Elevation: ' + (item.raw != null ? item.raw.toFixed(1) : '—') + ' m'; }
+              }
+            }
+          },
+          scales: {
+            x: commonScales.x,
+            y: Object.assign({}, commonScales.y, {
+              title: { display: true, text: 'Elevation (m)', color: '#64748b', font: { size: 11 } }
+            })
+          }
+        }
+      });
+    }
+
+    function renderDetails(a) {
+      const rows = [
+        ['Start time', a.startTime ? formatTime(a.startTime.toISOString()) : '—'],
+        ['End time', a.endTime ? formatTime(a.endTime.toISOString()) : '—'],
+        ['Elapsed time', formatDuration(a.duration)],
+        ['Moving time', formatDuration(a.movingTime)],
+        ['Stopped time', formatDuration(a.stoppedTime)],
+        ['Start coordinates', a.points[0].lat.toFixed(6) + ', ' + a.points[0].lon.toFixed(6)],
+        ['End coordinates', a.points[a.points.length-1].lat.toFixed(6) + ', ' + a.points[a.points.length-1].lon.toFixed(6)],
+        ['Elevation range', a.elevMin != null
+          ? a.elevMin.toFixed(0) + ' – ' + a.elevMax.toFixed(0) + ' m'
+          : '—']
+      ];
+
+      const mid = Math.ceil(rows.length / 2);
+      function makeCol(arr) {
+        return arr.map(function(pair) {
+          return '<div class="detail-row"><span class="key">' + pair[0] +
+            '</span><span class="val">' + pair[1] + '</span></div>';
+        }).join('');
+      }
+
+      document.getElementById('details').innerHTML =
+        '<div>' + makeCol(rows.slice(0, mid)) + '</div><div>' + makeCol(rows.slice(mid)) + '</div>';
+    }
+
+    function renderSegments(a) {
+      document.getElementById('segmentsBody').innerHTML = a.segments.map(function(s, i) {
+        const status = speedClass(s.speed);
+        const statusLabel = status === 'stop' ? 'Stopped' : status === 'slow' ? 'Slow' : 'Moving';
+        return '<tr><td style="color:var(--text-muted)">' + (i + 1) + '</td><td>' +
+          (s.dist >= 1000 ? (s.dist/1000).toFixed(2) + ' km' : Math.round(s.dist) + ' m') +
+          '</td><td>' + (s.time > 0 ? formatDuration(s.time) : '—') +
+          '</td><td>' + (s.speed * 3.6).toFixed(1) + ' km/h</td><td>' +
+          (s.elevDelta != null ? (s.elevDelta >= 0 ? '+' : '') + s.elevDelta.toFixed(1) + ' m' : '—') +
+          '</td><td><span class="badge ' + status + '">' + statusLabel + '</span></td></tr>';
+      }).join('');
+    }
+
+    function processFile(file) {
+      const errorEl = document.getElementById('error');
+      const loadingEl = document.getElementById('loading');
+      const resultsEl = document.getElementById('results');
+
+      errorEl.style.display = 'none';
+      resultsEl.style.display = 'none';
+      loadingEl.style.display = 'block';
+
+      if (!file) {
+        loadingEl.style.display = 'none';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        setTimeout(function() {
+          try {
+            const points = parseGPX(e.target.result);
+            const analysis = analyze(points);
+
+            loadingEl.style.display = 'none';
+            resultsEl.style.display = 'block';
+
+            renderHero(analysis);
+            renderMap(analysis);
+            renderRideStats(analysis);
+            renderCharts(analysis);
+            renderDetails(analysis);
+            renderSegments(analysis);
+
+            resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } catch (err) {
+            console.error(err);
+            loadingEl.style.display = 'none';
+            errorEl.innerHTML = '<strong>Could not parse this file</strong><br>' +
+              (err.message || 'Unknown error') +
+              '<br><small style="opacity:0.75">Make sure it is a valid .gpx file.</small>';
+            errorEl.style.display = 'block';
+          }
+        }, 160);
+      };
+      reader.onerror = function() {
+        loadingEl.style.display = 'none';
+        errorEl.textContent = 'Failed to read the file';
+        errorEl.style.display = 'block';
+      };
+      reader.readAsText(file);
+    }
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropzone.addEventListener('click', function() { fileInput.click(); });
+    dropzone.addEventListener('dragover', function(e) { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('dragover'); });
+    dropzone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', function(e) {
+      if (e.target.files[0]) processFile(e.target.files[0]);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Kinetic MotoGPX — Motorcycle Telemetry & Logger",
+  "short_name": "MotoGPX",
+  "description": "High-performance motorcycle GPX telemetry lab, live GPS logger, and speed heatmap analyzer.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#090c0a",
+  "theme_color": "#090c0a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

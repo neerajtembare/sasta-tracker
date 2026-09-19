@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#090c0a" rx="96"/>
+  <!-- Chamfered geometric shield -->
+  <polygon points="64,64 448,64 448,360 256,448 64,360" fill="#111512" stroke="#1a201c" stroke-width="8"/>
+  <!-- Kinetic Volt Zap -->
+  <polygon points="280,96 160,280 248,280 200,416 352,232 264,232" fill="#d2ff00" filter="drop-shadow(0 0 16px rgba(210,255,0,0.6))"/>
+  <!-- Cyan Accent Ticks -->
+  <line x1="120" y1="120" x2="160" y2="120" stroke="#00f0ff" stroke-width="8" stroke-linecap="round"/>
+  <line x1="352" y1="380" x2="392" y2="380" stroke="#00f0ff" stroke-width="8" stroke-linecap="round"/>
+</svg>

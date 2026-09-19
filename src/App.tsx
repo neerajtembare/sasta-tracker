@@ -19,13 +19,20 @@ import { StopEditorModal } from './components/StopEditorModal';
 import { RideDetailsEditorModal } from './components/RideDetailsEditorModal';
 import { RideCalibrationModal } from './components/RideCalibrationModal';
 import { LandingView } from './components/LandingView';
+import { JourneyTimeline } from './components/JourneyTimeline';
+import { CorneringProfileCard } from './components/CorneringProfileCard';
+import { RideStoryModal } from './components/RideStoryModal';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
 import { SAMPLE_GPX_DATA, SAMPLE_GPX_NAME } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme } from './types';
-import { Radio, Gauge, HelpCircle, FolderArchive, Home } from 'lucide-react';
+import { 
+  Radio, Gauge, HelpCircle, FolderArchive, Home,
+  Map as MapIcon, Activity, History, Bike as BikeIcon 
+} from 'lucide-react';
 
 export type AppTab = 'home' | 'analysis' | 'cockpit' | 'faq';
+export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('home');
@@ -55,6 +62,8 @@ export default function App() {
   const [defaultStopPoint, setDefaultStopPoint] = useState<TrackPoint | null>(null);
   const [isRideNameEditorOpen, setIsRideNameEditorOpen] = useState<boolean>(false);
   const [isCalibrationOpen, setIsCalibrationOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
 
   const uploadZoneRef = useRef<HTMLDivElement>(null);
@@ -243,71 +252,167 @@ export default function App() {
 
         {/* Tab 1: Ride Stats & Telemetry Analysis */}
         {currentTab === 'analysis' && analysis && (
-          <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-300">
-            {/* Hero Metrics Bar with Edit Ride Name & Calibration */}
+          <div className="space-y-4 animate-in fade-in duration-300">
+            {/* Hero Metrics Bar with Edit Ride Name, Calibration & Share Story */}
             <HeroTelemetry
               analysis={analysis}
               activeScrubPoint={activeScrubPoint}
               onEditRideName={() => setIsRideNameEditorOpen(true)}
               onOpenStops={() => handleOpenAddStop()}
               onOpenCalibration={() => setIsCalibrationOpen(true)}
+              onOpenShare={() => setIsShareModalOpen(true)}
               onCloseTrack={handleCloseTrack}
               theme={theme}
             />
 
-            {/* Key Ride Insights (Lean Angle, Max Velocity Burst, Fuel Efficiency) */}
-            <RideInsightsCard
-              analysis={analysis}
-              onOpenCalibration={() => setIsCalibrationOpen(true)}
-              theme={theme}
-            />
+            {/* Sticky Segmented Sub-Tab Switcher */}
+            <div className={`sticky top-[58px] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${
+              theme === 'light' ? 'bg-slate-100/90' : 'bg-[#080c10]/90'
+            }`}>
+              <div className={`flex items-center p-1 rounded-xl border text-xs font-mono font-bold shadow-md overflow-x-auto no-scrollbar gap-1 ${
+                theme === 'light' ? 'bg-white border-slate-200 text-slate-600' : 'bg-[#0d131a] border-[#1e2a38] text-[#8f9ca8]'
+              }`}>
+                <button
+                  onClick={() => setAnalysisSubTab('map')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'map'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <MapIcon className="w-3.5 h-3.5" />
+                  <span>Map & Scrub</span>
+                </button>
 
-            {/* Speed Zone Dwell Histogram (Velocity Distribution) */}
-            <SpeedZoneHistogram 
-              analysis={analysis}
-              theme={theme} 
-            />
+                <button
+                  onClick={() => setAnalysisSubTab('telemetry')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'telemetry'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>Telemetry & Lean</span>
+                </button>
 
-            {/* Map Viewer & Speed Heatmap with Stop Locating */}
-            <MapViewer
-              analysis={analysis}
-              scrubIndex={scrubIndex}
-              onScrubChange={setScrubIndex}
-              onOpenAddStopAtPoint={(pt) => handleOpenAddStop(pt)}
-              onEditStop={(stop) => handleOpenEditStop(stop)}
-              focusedCoordinate={focusedCoordinate}
-              theme={theme}
-            />
+                <button
+                  onClick={() => setAnalysisSubTab('timeline')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap relative ${
+                    analysisSubTab === 'timeline'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>Timeline</span>
+                  {analysis.pitStops.length > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                      analysisSubTab === 'timeline' ? 'bg-slate-950 text-sky-400' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {analysis.pitStops.length}
+                    </span>
+                  )}
+                </button>
 
-            {/* Synchronized Telemetry Charts */}
-            <TelemetryCharts
-              analysis={analysis}
-              scrubIndex={scrubIndex}
-              onScrubChange={setScrubIndex}
-              theme={theme}
-            />
-
-            {/* Speed Traps, Stops & Ride Sections with Centering Callback */}
-            <SpeedTrapsAndSectors
-              analysis={analysis}
-              onSelectCoordinate={(lat, lon, label) => {
-                setFocusedCoordinate({ lat, lon, label });
-              }}
-              onOpenAddStop={() => handleOpenAddStop()}
-              onEditStop={(stop) => handleOpenEditStop(stop)}
-              onDeleteStop={(stopId) => handleDeleteStop(stopId)}
-              theme={theme}
-            />
-
-            {/* Upload Zone for analyzing another file */}
-            <div ref={uploadZoneRef} className="pt-2">
-              <UploadZone
-                onFileLoaded={handleFileLoaded}
-                onLoadSample={handleLoadSample}
-                currentRideName={analysis.name}
-                theme={theme}
-              />
+                <button
+                  onClick={() => setAnalysisSubTab('bike')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'bike'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <BikeIcon className="w-3.5 h-3.5" />
+                  <span>Bike & Fuel</span>
+                </button>
+              </div>
             </div>
+
+            {/* TAB 1: Map Route & Scrubber View */}
+            {analysisSubTab === 'map' && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <MapViewer
+                  analysis={analysis}
+                  scrubIndex={scrubIndex}
+                  onScrubChange={setScrubIndex}
+                  onOpenAddStopAtPoint={(pt) => handleOpenAddStop(pt)}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  focusedCoordinate={focusedCoordinate}
+                  theme={theme}
+                />
+              </div>
+            )}
+
+            {/* TAB 2: Telemetry, Lean Profile & Histograms */}
+            {analysisSubTab === 'telemetry' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <CorneringProfileCard 
+                  analysis={analysis}
+                  theme={theme}
+                />
+
+                <SpeedZoneHistogram 
+                  analysis={analysis}
+                  theme={theme} 
+                />
+
+                <TelemetryCharts
+                  analysis={analysis}
+                  scrubIndex={scrubIndex}
+                  onScrubChange={setScrubIndex}
+                  theme={theme}
+                />
+              </div>
+            )}
+
+            {/* TAB 3: Chronological Journey Timeline & Strava Splits */}
+            {analysisSubTab === 'timeline' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <JourneyTimeline
+                  analysis={analysis}
+                  onSelectCoordinate={(lat, lon, label) => {
+                    setFocusedCoordinate({ lat, lon, label });
+                    setAnalysisSubTab('map');
+                  }}
+                  onOpenAddStop={() => handleOpenAddStop()}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  theme={theme}
+                />
+
+                <SpeedTrapsAndSectors
+                  analysis={analysis}
+                  onSelectCoordinate={(lat, lon, label) => {
+                    setFocusedCoordinate({ lat, lon, label });
+                    setAnalysisSubTab('map');
+                  }}
+                  onOpenAddStop={() => handleOpenAddStop()}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  onDeleteStop={(stopId) => handleDeleteStop(stopId)}
+                  theme={theme}
+                />
+              </div>
+            )}
+
+            {/* TAB 4: Motorcycle Machine & Fuel Economics */}
+            {analysisSubTab === 'bike' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <RideInsightsCard
+                  analysis={analysis}
+                  onOpenCalibration={() => setIsCalibrationOpen(true)}
+                  theme={theme}
+                />
+
+                <div ref={uploadZoneRef} className="pt-2">
+                  <UploadZone
+                    onFileLoaded={handleFileLoaded}
+                    onLoadSample={handleLoadSample}
+                    currentRideName={analysis.name}
+                    theme={theme}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -443,6 +548,16 @@ export default function App() {
           onClose={() => setIsCalibrationOpen(false)}
           analysis={analysis}
           onSaveCalibration={handleSaveCalibration}
+          theme={theme}
+        />
+      )}
+
+      {/* 4:5 Instagram / WhatsApp Story Share Card Modal */}
+      {analysis && (
+        <RideStoryModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          analysis={analysis}
           theme={theme}
         />
       )}

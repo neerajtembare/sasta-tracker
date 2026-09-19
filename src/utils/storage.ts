@@ -7,11 +7,18 @@ export interface SavedRide {
   maxSpeedKmh: number;
 }
 
-const STORAGE_KEY = 'kinetic_motogpx_garage';
+const STORAGE_KEY = 'sasta_tracker_garage';
+const OLD_STORAGE_KEY = 'kinetic_motogpx_garage';
 
 export function getGarageRides(): SavedRide[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(OLD_STORAGE_KEY);
+      if (raw) {
+        localStorage.setItem(STORAGE_KEY, raw);
+      }
+    }
     if (!raw) return [];
     return JSON.parse(raw);
   } catch (e) {

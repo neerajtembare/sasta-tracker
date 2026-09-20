@@ -7,7 +7,8 @@ import {
   FolderArchive,
   Download,
   Sun,
-  Moon
+  Moon,
+  Home
 } from 'lucide-react';
 import { AppTheme } from '../types';
 
@@ -21,6 +22,7 @@ interface NavbarProps {
   onHomeClick?: () => void;
   isRecordingLive: boolean;
   rideName: string;
+  hasActiveRide: boolean;
   theme: AppTheme;
   onToggleTheme: () => void;
 }
@@ -35,6 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onHomeClick,
   isRecordingLive,
   rideName,
+  hasActiveRide,
   theme,
   onToggleTheme,
 }) => {
@@ -50,10 +53,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
         {/* Brand identity */}
-        <div 
+        <button 
+          id="btn-nav-home"
+          type="button"
           onClick={onHomeClick}
           title="Return to Home / Upload"
-          className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0"
+          className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 focus:outline-hidden focus:ring-2 focus:ring-sky-500 rounded-lg"
         >
           <div
             className={`w-8 h-8 sm:w-9 sm:h-9 border rounded-lg flex items-center justify-center text-sm sm:text-base shadow-sm ${
@@ -85,14 +90,29 @@ export const Navbar: React.FC<NavbarProps> = ({
               {rideName}
             </p>
           </div>
-        </div>
+        </button>
 
-        {/* Desktop Navigation Mode Switcher (Hidden on mobile & small tablets since they have bottom nav) */}
+        {/* Desktop Navigation Mode Switcher */}
         <div
           className={`hidden md:flex items-center gap-1 p-1 border rounded-lg transition-colors ${
             isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]'
           }`}
         >
+          <button
+            id="tab-btn-home"
+            onClick={() => setCurrentTab('home')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+              currentTab === 'home'
+                ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                : isLight
+                ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'
+                : 'text-[#8f9ca8] hover:text-sky-400 hover:bg-[#1a2530]'
+            }`}
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Home</span>
+          </button>
+
           <button
             id="tab-btn-analysis"
             onClick={() => setCurrentTab('analysis')}
@@ -106,6 +126,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Gauge className="w-3.5 h-3.5" />
             <span>Ride Stats</span>
+            {hasActiveRide && (
+              <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? 'bg-slate-950' : 'bg-emerald-400'}`} />
+            )}
           </button>
 
           <button
@@ -175,19 +198,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>My Rides</span>
           </button>
 
-          <button
-            id="btn-export-gpx"
-            onClick={onExportGpx}
-            title="Download Clean GPX File"
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
-              isLight
-                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-emerald-700'
-                : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-emerald-400 text-emerald-400'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Export GPX</span>
-          </button>
+          {hasActiveRide && (
+            <button
+              id="btn-export-gpx"
+              onClick={onExportGpx}
+              title="Download Clean GPX File"
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-emerald-700'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-emerald-400 text-emerald-400'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Export GPX</span>
+            </button>
+          )}
 
           <button
             id="btn-upload-gpx"

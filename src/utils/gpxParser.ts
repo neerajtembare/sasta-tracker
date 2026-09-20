@@ -104,6 +104,11 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           speedMs = dt > 0 ? stepDistM / dt : 0;
         }
 
+        // Outlier protection: if instantaneous speed exceeds 80 m/s (~288 km/h) due to GPS multipath jitter
+        if (speedMs > 80 && prev.speed > 0) {
+          speedMs = Math.min(speedMs, prev.speed * 1.4);
+        }
+
         if (ele !== null && prev.ele !== null) {
           const deltaEle = ele - prev.ele;
           if (deltaEle > 0) segElevGain += deltaEle;
@@ -457,6 +462,18 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     splitStartKm = splitEndKm;
   }
 
+  // Calculate bounding box
+  const lats = allPoints.map(p => p.lat);
+  const lons = allPoints.map(p => p.lon);
+  const boundingBox = {
+    minLat: Math.min(...lats),
+    maxLat: Math.max(...lats),
+    minLon: Math.min(...lons),
+    maxLon: Math.max(...lons),
+  };
+
+  const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh);
+
   return {
     name: trackName,
     points: allPoints,
@@ -483,5 +500,24 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     pitStops,
     speedTraps,
     splits,
+    boundingBox,
+    activityType,
   };
+}
+
+export function guessActivity(avgKmh: number, maxKmh: number): {
+  label: string;
+  emoji: string;
+  category: 'walking' | 'cycling' | 'motorbike' | 'racing';
+} {
+  if (maxKmh > 130 || avgKmh > 75) {
+    return { label: 'High-Speed Track', emoji: '🏎️', category: 'racing' };
+  }
+  if (avgKmh >= 24 || maxKmh > 55) {
+    return { label: 'Motorbike / Vehicle', emoji: '🏍️', category: 'motorbike' };
+  }
+  if (avgKmh >= 8 || maxKmh > 20) {
+    return { label: 'Cycling Ride', emoji: '🚴', category: 'cycling' };
+  }
+  return { label: 'Walking / Hike', emoji: '🚶', category: 'walking' };
 }

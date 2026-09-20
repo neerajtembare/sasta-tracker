@@ -28,7 +28,11 @@ import {
   Route,
   Plus,
   ArrowRight,
-  ArrowLeftRight
+  ArrowLeftRight,
+  ChevronUp,
+  ChevronDown,
+  Activity,
+  SlidersHorizontal
 } from 'lucide-react';
 
 interface MapViewerProps {
@@ -39,7 +43,19 @@ interface MapViewerProps {
   onEditStop?: (stop: PitStop) => void;
   focusedCoordinate?: { lat: number; lon: number; label?: string } | null;
   theme?: AppTheme;
+  onOpenDiagnostics?: () => void;
 }
+
+// Speed to color function for map and YouTube-style scrubber
+export const getSpeedColor = (speedKmh: number, maxSpeedKmh: number) => {
+  if (speedKmh < 2.0) return '#64748b'; // Slate: Stationary
+  const top = Math.max(maxSpeedKmh, 40);
+  const ratio = Math.min(1, Math.max(0, speedKmh / top));
+  if (ratio < 0.25) return '#0284c7'; // Deep Sky
+  if (ratio < 0.55) return '#10b981'; // Emerald
+  if (ratio < 0.80) return '#f59e0b'; // Amber
+  return '#f43f5e'; // Coral Rose
+};
 
 export const MapViewer: React.FC<MapViewerProps> = ({
   analysis,
@@ -49,6 +65,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   onEditStop,
   focusedCoordinate,
   theme = 'dark',
+  onOpenDiagnostics,
 }) => {
   const isLight = theme === 'light';
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +78,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   scrubIndexRef.current = scrubIndex;
 
   // Base Map Tile Style (100% free, zero API key dependencies)
+  // Stadia Maps free tiles replace broken Carto CDN (API KEY REQUIRED watermark)
   const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'osm' | 'street'>(
     isLight ? 'street' : 'dark'
   );
@@ -75,10 +93,12 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   }, [isLight]);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // Default pit stops to FALSE to keep the map clean and decluttered!
-  const [showPitStops, setShowPitStops] = useState(false);
+  // Default pit stops to TRUE so riders immediately see and can click/edit stops
+  const [showPitStops, setShowPitStops] = useState(true);
   const [showPointDots, setShowPointDots] = useState(false);
   const [showDirectionArrows, setShowDirectionArrows] = useState(true);
+  const [showMilestones, setShowMilestones] = useState(false);
+  const [showHeatmapLegend, setShowHeatmapLegend] = useState(true);
 
   // Out & Back Route Detection and Mode:
   // 'all' = Standard speed heatmap
@@ -95,6 +115,17 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   const [isSmoothed, setIsSmoothed] = useState(false);
   const [snappedRoads, setSnappedRoads] = useState<L.LatLngTuple[] | null>(null);
   const [isSnapping, setIsSnapping] = useState(false);
+
+  // YouTube-Style Scrubber & Collapsible tray states
+  // Default to compact mode — less overwhelming for new users
+  const [isScrubberExpanded, setIsScrubberExpanded] = useState(false);
+  const [hoverScrub, setHoverScrub] = useState<{
+    pct: number;
+    pt: TrackPoint;
+    idx: number;
+    x: number;
+  } | null>(null);
+  const scrubberBarRef = useRef<HTMLDivElement>(null);
 
   // Compute turnaround point (point of maximum straight-line displacement from start)
   const turnaroundIndex = useMemo(() => {
@@ -131,6 +162,65 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
   const currentIndex = scrubIndex !== null ? Math.min(scrubIndex, activePoints.length - 1) : 0;
   const currentPoint = activePoints[currentIndex] || activePoints[0];
+
+  // Instant road gradient % (slope = Δele / Δdist * 100)
+  const currentGradient = useMemo(() => {
+    if (!activePoints || activePoints.length < 5) return 0;
+    const prevIdx = Math.max(0, currentIndex - 3);
+    const nextIdx = Math.min(activePoints.length - 1, currentIndex + 3);
+    const pPrev = activePoints[prevIdx];
+    const pNext = activePoints[nextIdx];
+    if (!pPrev || !pNext || pPrev.ele === null || pNext.ele === null) return 0;
+    const distM = (pNext.distanceFromStartKm - pPrev.distanceFromStartKm) * 1000;
+    if (distM < 5) return 0;
+    const dEle = pNext.ele - pPrev.ele;
+    const slope = (dEle / distM) * 100;
+    return Math.max(-30, Math.min(30, slope));
+  }, [activePoints, currentIndex]);
+
+  // Elevation Profile SVG path & boundaries
+  const elevationProfileData = useMemo(() => {
+    if (!activePoints || activePoints.length < 2) return null;
+    let minEle = Infinity;
+    let maxEle = -Infinity;
+    const totalDist = activePoints[activePoints.length - 1].distanceFromStartKm || 1;
+
+    const step = Math.max(1, Math.floor(activePoints.length / 200));
+    const sampled: Array<{ xPct: number; ele: number; distKm: number }> = [];
+
+    for (let i = 0; i < activePoints.length; i += step) {
+      const p = activePoints[i];
+      const ele = p.ele !== null ? p.ele : (sampled[sampled.length - 1]?.ele || 0);
+      if (ele < minEle) minEle = ele;
+      if (ele > maxEle) maxEle = ele;
+      sampled.push({
+        xPct: (p.distanceFromStartKm / totalDist) * 100,
+        ele,
+        distKm: p.distanceFromStartKm
+      });
+    }
+
+    if (minEle === Infinity) {
+      minEle = 0;
+      maxEle = 100;
+    }
+    const eleRange = Math.max(10, maxEle - minEle);
+    const svgHeight = 44;
+    const pointsStr = sampled.map(s => {
+      const y = svgHeight - ((s.ele - minEle) / eleRange) * (svgHeight - 6) - 3;
+      return `${s.xPct.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+
+    const areaPath = `0,${svgHeight} ` + pointsStr + ` 100,${svgHeight}`;
+
+    return {
+      minEle: Math.round(minEle),
+      maxEle: Math.round(maxEle),
+      pointsStr,
+      areaPath,
+      sampled
+    };
+  }, [activePoints]);
 
   // Format seconds to HH:MM:SS
   const formatTime = (seconds: number) => {
@@ -183,6 +273,78 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     };
   }, [isPlaying, playbackSpeed, isLooping, followBike, activePoints, onScrubChange]);
 
+  // Automated ResizeObserver to prevent grey tiles when switching tabs or resizing
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    });
+    observer.observe(mapContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Generate YouTube-style multi-stop speed gradient for the timeline bar
+  const speedGradientCss = useMemo(() => {
+    if (!activePoints || activePoints.length < 2) {
+      return 'linear-gradient(90deg, #0284c7, #10b981, #f59e0b, #f43f5e)';
+    }
+    const samples = 100;
+    const stops: string[] = [];
+    const maxKmh = Math.max(analysis.maxSpeedKmh, 40);
+
+    for (let i = 0; i <= samples; i++) {
+      const pct = i / samples;
+      const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
+      const pt = activePoints[idx];
+      const color = getSpeedColor(pt.speedKmh, maxKmh);
+      stops.push(`${color} ${Math.round(pct * 100)}%`);
+    }
+
+    return `linear-gradient(90deg, ${stops.join(', ')})`;
+  }, [activePoints, analysis.maxSpeedKmh]);
+
+  // Proportional pit-stop notches for timeline chapter marks
+  const pitStopNotches = useMemo(() => {
+    if (!analysis.pitStops || analysis.pitStops.length === 0 || analysis.totalDistanceKm <= 0) return [];
+    return analysis.pitStops.map(pit => {
+      const pct = Math.min(100, Math.max(0, (pit.distanceKm / analysis.totalDistanceKm) * 100));
+      return {
+        ...pit,
+        pct,
+      };
+    });
+  }, [analysis.pitStops, analysis.totalDistanceKm]);
+
+  // Scrubber mouse handlers for hover preview & seeking
+  const handleScrubberMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!scrubberBarRef.current || activePoints.length < 2) return;
+    const rect = scrubberBarRef.current.getBoundingClientRect();
+    const clientX = e.clientX;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
+    const pt = activePoints[idx];
+    setHoverScrub({
+      pct: pct * 100,
+      pt,
+      idx,
+      x: clientX - rect.left,
+    });
+  };
+
+  const handleScrubberMouseLeave = () => {
+    setHoverScrub(null);
+  };
+
+  const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!scrubberBarRef.current || activePoints.length < 2) return;
+    const rect = scrubberBarRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
+    onScrubChange(idx);
+  };
+
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -194,28 +356,26 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         setIsPlaying(prev => !prev);
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
-        const next = Math.min(activePoints.length - 1, (scrubIndexRef.current || 0) + 2);
+        const step = e.shiftKey ? 20 : 2;
+        const next = Math.min(activePoints.length - 1, (scrubIndexRef.current || 0) + step);
         onScrubChange(next);
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
-        const prev = Math.max(0, (scrubIndexRef.current || 0) - 2);
+        const step = e.shiftKey ? 20 : 2;
+        const prev = Math.max(0, (scrubIndexRef.current || 0) - step);
         onScrubChange(prev);
+      } else if (e.code === 'Home') {
+        e.preventDefault();
+        onScrubChange(0);
+      } else if (e.code === 'End') {
+        e.preventDefault();
+        onScrubChange(activePoints.length - 1);
       }
+      // Note: 'D' key for diagnostics is handled globally in App.tsx — removed here to prevent double-fire
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activePoints.length, onScrubChange]);
-
-  // Speed to color function
-  const getSpeedColor = (speedKmh: number, maxSpeedKmh: number) => {
-    if (speedKmh < 2.0) return '#64748b'; // Slate: Stationary
-    const top = Math.max(maxSpeedKmh, 40);
-    const ratio = Math.min(1, Math.max(0, speedKmh / top));
-    if (ratio < 0.25) return '#0284c7'; // Deep Sky
-    if (ratio < 0.55) return '#10b981'; // Emerald
-    if (ratio < 0.80) return '#f59e0b'; // Amber
-    return '#f43f5e'; // Coral Rose
-  };
+  }, [activePoints.length, onScrubChange, onOpenDiagnostics]);
 
   // Initialize and update base Leaflet Map
   useEffect(() => {
@@ -247,16 +407,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       snappedPolylineRef.current = null;
     }
 
-    // Free Tile Layers
+    // Free Tile Layers — using Stadia Maps (free, no API key) replacing broken CartoDB tiles
     if (mapStyle === 'dark') {
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd',
+      L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
       }).addTo(map);
     } else if (mapStyle === 'street') {
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        subdomains: 'abcd',
+      L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
       }).addTo(map);
     } else if (mapStyle === 'satellite') {
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -522,7 +680,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
       analysis.pitStops.forEach(pit => {
         const emoji = getCategoryEmoji(pit.category);
-        // Clean, compact circular pin badge (not an obstructive 120px banner)
+        // Clean, compact circular pin badge — clicks open editor modal
         const pitIcon = L.divIcon({
           className: 'pit-marker',
           html: `<div style="width:28px; height:28px; border-radius:50%; background:#0f172a; border:2px solid #f59e0b; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,0.6); cursor:pointer;">
@@ -533,18 +691,39 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         });
 
         const marker = L.marker([pit.lat, pit.lon], { icon: pitIcon }).addTo(map);
-        marker.bindPopup(`
-          <div style="font-family:system-ui,sans-serif; font-size:12px; line-height:1.4; color:#0f172a; min-width:180px;">
-            <div style="font-weight:bold; font-size:13px; color:#b45309; margin-bottom:4px; display:flex; align-items:center; gap:4px;">
-              <span>${emoji}</span>
-              <span>${pit.name}</span>
-            </div>
-            <div><b>Duration:</b> ${Math.round(pit.durationSeconds / 60)} minutes</div>
-            <div><b>Distance:</b> ${pit.distanceKm.toFixed(1)} km into ride</div>
-            ${pit.notes ? `<div style="margin-top:5px; padding-top:4px; border-top:1px dashed #cbd5e1; font-style:italic; color:#475569;">"${pit.notes}"</div>` : ''}
-          </div>
-        `);
+
+        // Hover tooltip for quick preview
+        marker.bindTooltip(
+          `<div style="font-family:monospace; font-size:11px; padding:2px 6px;">${emoji} ${pit.name} (${Math.round(pit.durationSeconds / 60)}m) — Click to edit</div>`,
+          { direction: 'top', offset: [0, -14] }
+        );
+
+        // Click opens StopEditorModal instead of a static popup
+        marker.on('click', () => {
+          onEditStop?.(pit);
+        });
       });
+    }
+
+    // 7. Distance Milestone Markers (every 10km or 25km)
+    if (showMilestones && pts.length > 1) {
+      const stepKm = analysis.totalDistanceKm > 60 ? 25 : 10;
+      let nextMilestone = stepKm;
+      for (let i = 1; i < pts.length; i++) {
+        const ptDist = pts[i].distanceFromStartKm ?? 0;
+        if (ptDist >= nextMilestone && ptDist < analysis.totalDistanceKm - 1) {
+          const msIcon = L.divIcon({
+            className: 'custom-milestone-marker',
+            html: `<div style="padding:2px 6px; background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; border-radius:6px; font-family:monospace; font-weight:800; font-size:10px; box-shadow:0 2px 6px rgba(0,0,0,0.6); white-space:nowrap;">🚩 ${Math.round(nextMilestone)}k</div>`,
+            iconSize: [42, 20],
+            iconAnchor: [21, 10],
+          });
+          L.marker([pts[i].lat, pts[i].lon], { icon: msIcon })
+            .addTo(map)
+            .bindTooltip(`Milestone: ${Math.round(nextMilestone)} km reached`, { direction: 'top', offset: [0, -10] });
+          nextMilestone += stepKm;
+        }
+      }
     }
 
     setTimeout(() => {
@@ -553,7 +732,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }
     }, 150);
 
-  }, [analysis, mapStyle, showPitStops, showPointDots, showDirectionArrows, routeMode, turnaroundIndex, isLight]);
+  }, [analysis, mapStyle, showPitStops, showPointDots, showDirectionArrows, routeMode, turnaroundIndex, isLight, showMilestones]);
 
   // Clean up Leaflet map instance on component unmount
   useEffect(() => {
@@ -715,30 +894,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         isFullscreen ? 'fixed inset-0 z-50 rounded-none h-screen' : ''
       }`}
     >
-      {/* Map Header Toolbar */}
-      <div className={`px-3 sm:px-4 py-2 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${headerBg}`}>
-        {/* Left: GPS Track identity & Out-and-back detection indicator */}
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          <span className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider truncate">
-            {analysis.name || 'GPS Ride Route'}
-          </span>
-          <span className={`text-[11px] sm:text-xs font-mono shrink-0 ${subText}`}>
-            ({analysis.points.length} fixes)
-          </span>
-
-          {/* Out & Back Detected Badge */}
-          {turnaroundIndex > 0 && (
-            <div className="flex items-center gap-1.5 ml-1">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 shrink-0">
-                <ArrowLeftRight className="w-3 h-3" />
-                <span>Out & Back</span>
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Map view & Route mode controls */}
+      {/* Map Header Toolbar — Simplified: no duplicate ride name, specs, or badges */}
+      <div className={`px-3 sm:px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap ${headerBg}`}>
+        {/* Map view & Route mode controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap max-w-full">
           {/* Out & Back Route Mode Selector (When out-and-back route detected) */}
           {turnaroundIndex > 0 && (
@@ -793,27 +951,32 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           {/* Map Layer Switcher */}
           <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
             <button
+              id="map-style-standard"
               onClick={() => setMapStyle(isLight ? 'street' : 'dark')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer ${
+              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
                 mapStyle === 'dark' || mapStyle === 'street'
-                  ? 'bg-sky-500 text-slate-950 font-bold'
+                  ? 'bg-sky-500 text-slate-950 font-bold shadow-xs'
                   : subText
               }`}
+              title={isLight ? 'Stadia Alidade Smooth Light' : 'Stadia Alidade Smooth Dark'}
             >
-              {isLight ? 'Standard' : 'Dark'}
+              {isLight ? 'Light' : 'Dark'}
             </button>
             <button
+              id="map-style-satellite"
               onClick={() => setMapStyle('satellite')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer ${
-                mapStyle === 'satellite' ? 'bg-sky-500 text-slate-950 font-bold' : subText
+              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
+                mapStyle === 'satellite' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
               }`}
+              title="ESRI World Imagery Satellite"
             >
               Satellite
             </button>
             <button
+              id="map-style-osm"
               onClick={() => setMapStyle('osm')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer ${
-                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold' : subText
+              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
+                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
               }`}
               title="OpenStreetMap Standard Global Map (Free, Zero API Key)"
             >
@@ -823,6 +986,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
           {/* Direction Arrows Toggle */}
           <button
+            id="btn-toggle-direction-arrows"
             onClick={() => setShowDirectionArrows(!showDirectionArrows)}
             title="Toggle Direction Arrows along route"
             className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
@@ -835,15 +999,46 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             <span className="hidden sm:inline">Arrows</span>
           </button>
 
-          {/* Toggle Stops (Default clean/hidden!) */}
+          {/* Milestones Toggle */}
           <button
+            id="btn-toggle-milestones"
+            onClick={() => setShowMilestones(!showMilestones)}
+            title="Toggle Distance Milestones on Route"
+            className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+              showMilestones
+                ? 'bg-sky-500 text-slate-950 font-bold border-sky-400'
+                : buttonBg
+            }`}
+          >
+            <span>🚩</span>
+            <span className="hidden sm:inline">Milestones</span>
+          </button>
+
+          {/* Speed Heatmap Legend Toggle */}
+          <button
+            id="btn-toggle-heatmap-legend"
+            onClick={() => setShowHeatmapLegend(!showHeatmapLegend)}
+            title="Toggle Speed Heatmap Legend"
+            className={`px-2 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+              showHeatmapLegend
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : buttonBg
+            }`}
+          >
+            <span className="hidden sm:inline">Legend</span>
+            <span className="sm:hidden">⚡</span>
+          </button>
+
+          {/* Toggle Stops */}
+          <button
+            id="btn-toggle-pit-stops"
             onClick={() => setShowPitStops(!showPitStops)}
             className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
               showPitStops
                 ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
                 : buttonBg
             }`}
-            title="Toggle stationary pit stops on the map"
+            title="Toggle stationary pit stop pins on the map"
           >
             <MapPin className="w-3 h-3" />
             <span>Stops ({analysis.pitStops.length})</span>
@@ -851,8 +1046,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
           {/* Recenter */}
           <button
+            id="btn-map-recenter"
             onClick={recenterMap}
-            title="Recenter track"
+            title="Recenter track in view"
             className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
           >
             <Navigation className="w-3.5 h-3.5 text-sky-400" />
@@ -860,6 +1056,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
           {/* Fullscreen */}
           <button
+            id="btn-map-fullscreen"
             onClick={toggleFullscreen}
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
             className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
@@ -869,156 +1066,381 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         </div>
       </div>
 
-      {/* Map DOM Element */}
-      <div 
-        ref={mapContainerRef} 
-        id="leaflet-map-canvas"
-        className={`w-full transition-all ${
-          isFullscreen ? 'h-[calc(100vh-170px)]' : 'h-[360px] sm:h-[460px]'
-        }`}
-      />
+      {/* Map DOM Element with Floating Speed Heatmap Legend */}
+      <div className="relative w-full">
+        <div 
+          ref={mapContainerRef} 
+          id="leaflet-map-canvas"
+          className={`w-full transition-all ${
+            isFullscreen ? 'h-[calc(100vh-170px)]' : 'h-[360px] sm:h-[460px]'
+          }`}
+        />
 
-      {/* VIDEO-PLAYER STYLE SCRUBBER & SIMULATION CONTROLLER */}
-      <div className={`p-3 sm:p-4 border-t space-y-2.5 ${scrubBarBg}`}>
-        {/* Floating Scrubber Mini-HUD for Mobile Thumb Scrubbing */}
-        <div className={`flex items-center justify-between text-[11px] sm:text-xs font-mono px-2.5 py-1.5 rounded-lg border transition-colors ${
-          isLight
-            ? 'bg-sky-50/80 border-sky-200 text-sky-800 shadow-sm'
-            : 'bg-sky-500/10 border-sky-500/20 text-sky-300'
-        }`}>
-          <div className="flex items-center gap-2 font-bold truncate">
-            <span className="text-sky-400">⚡ {currentPoint.speedKmh.toFixed(1)} km/h</span>
-            <span className="opacity-30">|</span>
-            <span>⛰️ {currentPoint.ele !== null ? `${Math.round(currentPoint.ele)}m` : '—'}</span>
-          </div>
-          <div className="flex items-center gap-2 font-bold shrink-0">
-            <span className="text-amber-400">
-              📐 {currentPoint.estimatedLeanAngle ? `${Math.round(currentPoint.estimatedLeanAngle)}° lean` : '0°'}
-            </span>
-            <span className="opacity-30">|</span>
-            <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>
-              📍 {currentPoint.distanceFromStartKm.toFixed(1)} km
-            </span>
-          </div>
-        </div>
-
-        {/* Scrubber Range Slider */}
-        <div className="space-y-1">
-          <div className="relative flex items-center">
-            <input
-              type="range"
-              min="0"
-              max={activePoints.length - 1}
-              value={currentIndex}
-              onChange={e => {
-                const val = parseInt(e.target.value, 10);
-                onScrubChange(val);
-              }}
-              className="w-full h-2.5 rounded-lg appearance-none cursor-pointer accent-sky-500 bg-slate-700/40 hover:accent-sky-400 transition-all"
-            />
-          </div>
-
-          {/* Timestamp & Distance Scrubber Bar */}
-          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono gap-1">
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-sky-400 font-bold">{formatTime(elapsedSeconds)}</span>
-              <span className={subText}>/</span>
-              <span className={subText}>{formatTime(totalDuration)}</span>
+        {/* Floating Speed Heatmap Legend */}
+        {showHeatmapLegend && routeMode === 'all' && (
+          <div className="absolute top-3 left-3 z-[400] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-lg px-2.5 py-1.5 shadow-xl flex items-center gap-2.5 text-[10px] font-mono select-none">
+            <span className="font-bold text-slate-300">Speed:</span>
+            <div className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shadow-xs" />
+              <span className="text-slate-300">&le; 45</span>
             </div>
-
-            <div className="flex items-center gap-1.5 sm:gap-3 truncate text-right">
-              <span className="truncate">
-                {currentPoint.distanceFromStartKm.toFixed(1)} / {analysis.totalDistanceKm.toFixed(1)} km
-              </span>
-              <span className={`shrink-0 ${subText}`}>
-                ({Math.round((currentIndex / Math.max(1, activePoints.length - 1)) * 100)}%)
-              </span>
+            <div className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block shadow-xs" />
+              <span className="text-slate-300">45–75</span>
             </div>
+            <div className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block shadow-xs" />
+              <span className="text-slate-300">&gt; 75 km/h</span>
+            </div>
+            <button
+              onClick={() => setShowHeatmapLegend(false)}
+              className="ml-1 text-slate-400 hover:text-white cursor-pointer"
+              title="Hide legend"
+            >
+              &times;
+            </button>
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Playback Controls and Telemetry Snapshot */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-1.5 border-t border-slate-200/20">
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+      {/* YOUTUBE-STYLE SPEED-COLORED SCRUBBER & CONTROLS */}
+      <div className={`p-3 sm:p-4 border-t space-y-2.5 transition-all ${scrubBarBg}`}>
+        {/* COMPACT MODE: Minimal sleek speed line with live pill & play button */}
+        {!isScrubberExpanded ? (
+          <div className="flex items-center justify-between gap-2 sm:gap-3">
+            {/* Play/Pause Button */}
             <button
-              onClick={() => onScrubChange(0)}
-              title="Reset to Start"
-              className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              onClick={() => onScrubChange(Math.max(0, currentIndex - 20))}
-              title="Step Back 20 fixes"
-              className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
-            >
-              <Rewind className="w-3.5 h-3.5" />
-            </button>
-
-            <button
+              id="btn-scrubber-play-compact"
               onClick={() => setIsPlaying(!isPlaying)}
-              title={isPlaying ? 'Pause Simulation (Space)' : 'Play Simulation (Space)'}
-              className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer ${
+              className={`p-2 rounded-xl font-bold text-xs flex items-center justify-center transition-all shadow-md cursor-pointer shrink-0 ${
                 isPlaying
                   ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
                   : 'bg-sky-500 hover:bg-sky-400 text-slate-950'
               }`}
+              title={isPlaying ? 'Pause simulation (Space)' : 'Play simulation (Space)'}
             >
               {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              <span>{isPlaying ? 'Pause' : 'Play'}</span>
             </button>
 
-            <button
-              onClick={() => onScrubChange(Math.min(activePoints.length - 1, currentIndex + 20))}
-              title="Step Forward 20 fixes"
-              className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
+            {/* Clickable Speed-Gradient Bar Track */}
+            <div 
+              ref={scrubberBarRef}
+              id="scrubber-bar-track-compact"
+              onClick={handleScrubberClick}
+              onMouseMove={handleScrubberMouseMove}
+              onMouseLeave={handleScrubberMouseLeave}
+              className="relative flex-1 h-3 rounded-full cursor-pointer overflow-hidden border border-slate-700/50 shadow-inner group"
+              style={{ background: speedGradientCss }}
+              title="Click or drag to scrub route"
             >
-              <FastForward className="w-3.5 h-3.5" />
-            </button>
+              {/* Progress Dimmer Overlay */}
+              <div 
+                className="absolute inset-y-0 right-0 bg-slate-950/70 transition-all pointer-events-none"
+                style={{ width: `${100 - (currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+              />
 
-            {/* Playback Speed Selector */}
-            <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
-              {[1, 2, 5, 10].map(spd => (
+              {/* Chapter Notches */}
+              {pitStopNotches.map(pit => (
+                <div
+                  key={pit.id}
+                  className="absolute top-0 bottom-0 w-0.5 bg-amber-400 pointer-events-none z-10"
+                  style={{ left: `${pit.pct}%` }}
+                />
+              ))}
+
+              {/* Progress Playhead Pip */}
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-sky-400 shadow-[0_0_8px_#38bdf8] pointer-events-none -ml-1.5 transition-all"
+                style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+              />
+            </div>
+
+            {/* Live Readout Pill */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 font-mono text-xs">
+              <span className="text-sky-400 font-black">
+                {currentPoint.speedKmh.toFixed(0)} <span className="text-[10px] font-normal">km/h</span>
+              </span>
+              <span className={`text-[11px] ${subText} hidden sm:inline`}>•</span>
+              <span className={`text-[11px] font-bold ${currentGradient > 2 ? 'text-emerald-400' : currentGradient < -2 ? 'text-amber-400' : subText} hidden sm:inline`}>
+                {currentGradient > 0 ? `⛰️ +${currentGradient.toFixed(1)}%` : `⛰️ ${currentGradient.toFixed(1)}%`}
+              </span>
+              <span className={`text-[11px] ${subText} hidden sm:inline`}>•</span>
+              <span className={`text-[11px] ${subText} hidden sm:inline`}>
+                {currentPoint.distanceFromStartKm.toFixed(1)} km
+              </span>
+            </div>
+
+            {/* Expand Toggle */}
+            <button
+              id="btn-scrubber-expand"
+              onClick={() => setIsScrubberExpanded(true)}
+              className={`px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-mono shrink-0 ${buttonBg}`}
+              title="Expand full playback controls"
+            >
+              <ChevronUp className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden sm:inline font-bold">Full Controls</span>
+            </button>
+          </div>
+        ) : (
+          /* EXPANDED MODE: Full YouTube-style speed-colored scrubber with chapter marks & telemetry */
+          <div className="space-y-2.5 animate-in fade-in duration-150">
+            {/* Floating Scrubber Mini-HUD for Mobile Thumb Scrubbing */}
+            <div className={`flex items-center justify-between text-[11px] sm:text-xs font-mono px-2.5 py-1.5 rounded-lg border transition-colors ${
+              isLight
+                ? 'bg-sky-50/80 border-sky-200 text-sky-800 shadow-sm'
+                : 'bg-sky-500/10 border-sky-500/20 text-sky-300'
+            }`}>
+              <div className="flex items-center gap-2 font-bold truncate">
+                <span className="text-sky-400">⚡ {currentPoint.speedKmh.toFixed(1)} km/h</span>
+                <span className="opacity-30">|</span>
+                <span>⛰️ {currentPoint.ele !== null ? `${Math.round(currentPoint.ele)}m` : '—'}</span>
+                <span className="opacity-30">|</span>
+                <span className={currentGradient > 2 ? 'text-emerald-400 font-bold' : currentGradient < -2 ? 'text-amber-400 font-bold' : 'text-slate-400'}>
+                  {currentGradient > 0 ? `+${currentGradient.toFixed(1)}%` : `${currentGradient.toFixed(1)}%`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 font-bold shrink-0">
+                <span className="text-amber-400">
+                  📐 {currentPoint.estimatedLeanAngle ? `${Math.round(currentPoint.estimatedLeanAngle)}° lean` : '0°'}
+                </span>
+                <span className="opacity-30">|</span>
+                <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>
+                  📍 {currentPoint.distanceFromStartKm.toFixed(1)} km
+                </span>
                 <button
-                  key={spd}
-                  onClick={() => setPlaybackSpeed(spd)}
-                  className={`px-1.5 py-0.5 rounded cursor-pointer ${
-                    playbackSpeed === spd
-                      ? 'bg-sky-500 text-slate-950 font-bold'
-                      : subText
+                  id="btn-scrubber-hud-collapse"
+                  onClick={() => setIsScrubberExpanded(false)}
+                  className={`ml-1.5 p-1 rounded hover:bg-slate-700/30 text-slate-400 hover:text-white cursor-pointer transition-colors`}
+                  title="Collapse scrubber bar"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* YouTube-Style Speed Scrubber Container with Hover Tooltip */}
+            <div className="space-y-1 relative">
+              {/* Floating Hover Preview Card */}
+              {hoverScrub && (
+                <div 
+                  className="absolute -top-11 z-40 -translate-x-1/2 pointer-events-none px-2.5 py-1 rounded-lg bg-[#0f172a] text-white border border-sky-400/60 shadow-2xl font-mono text-[10px] whitespace-nowrap flex items-center gap-2"
+                  style={{ left: `${hoverScrub.pct}%` }}
+                >
+                  <div className="flex items-center gap-1 font-bold">
+                    <div 
+                      className="w-2 h-2 rounded-full shrink-0" 
+                      style={{ background: getSpeedColor(hoverScrub.pt.speedKmh, analysis.maxSpeedKmh) }} 
+                    />
+                    <span className="text-sky-400">{hoverScrub.pt.speedKmh.toFixed(1)} km/h</span>
+                  </div>
+                  <span className="text-slate-500">|</span>
+                  <span>{hoverScrub.pt.distanceFromStartKm.toFixed(1)} km</span>
+                  <span className="text-slate-500">|</span>
+                  <span>{formatTime(getElapsedTime(hoverScrub.idx))}</span>
+                </div>
+              )}
+
+              {/* The Timeline Track Colored by Velocity */}
+              <div 
+                ref={scrubberBarRef}
+                id="scrubber-bar-track-expanded"
+                onClick={handleScrubberClick}
+                onMouseMove={handleScrubberMouseMove}
+                onMouseLeave={handleScrubberMouseLeave}
+                className="relative w-full h-4 rounded-lg cursor-pointer overflow-hidden border border-slate-700/70 shadow-inner group"
+                style={{ background: speedGradientCss }}
+              >
+                {/* Progress Dimmer (Darkens the unplayed portion of the track) */}
+                <div 
+                  className="absolute inset-y-0 right-0 bg-slate-950/65 backdrop-blur-[1px] transition-all pointer-events-none"
+                  style={{ width: `${100 - (currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                />
+
+                {/* Chapter Notches for Pit-Stops */}
+                {pitStopNotches.map(pit => (
+                  <div
+                    key={pit.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const globalIdx = activePoints.findIndex(p => Math.abs(p.distanceFromStartKm - pit.distanceKm) < 0.2);
+                      if (globalIdx >= 0) onScrubChange(globalIdx);
+                    }}
+                    title={`Stop: ${pit.name} at km ${pit.distanceKm.toFixed(1)}`}
+                    className="absolute top-0 bottom-0 w-1 bg-amber-400 border-x border-black/80 hover:w-2 hover:bg-amber-300 transition-all z-20 cursor-pointer"
+                    style={{ left: `${pit.pct}%` }}
+                  />
+                ))}
+
+                {/* Glowing Playhead Thumb */}
+                <div 
+                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full border-2 border-sky-400 shadow-[0_0_12px_#38bdf8] pointer-events-none -ml-2 transition-all z-30 flex items-center justify-center"
+                  style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                </div>
+              </div>
+
+              {/* Timestamp & Distance Scrubber Legend Bar */}
+              <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono gap-1">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-sky-400 font-bold">{formatTime(elapsedSeconds)}</span>
+                  <span className={subText}>/</span>
+                  <span className={subText}>{formatTime(totalDuration)}</span>
+                </div>
+
+                {/* Pit-stop chapter legend pill */}
+                {analysis.pitStops.length > 0 && (
+                  <div className="hidden md:flex items-center gap-1 text-[10px] text-amber-400/90 font-mono">
+                    <span>☕ {analysis.pitStops.length} chapter stops marked on track</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5 sm:gap-3 truncate text-right">
+                  <span className="truncate">
+                    {currentPoint.distanceFromStartKm.toFixed(1)} / {analysis.totalDistanceKm.toFixed(1)} km
+                  </span>
+                  <span className={`shrink-0 ${subText}`}>
+                    ({Math.round((currentIndex / Math.max(1, activePoints.length - 1)) * 100)}%)
+                  </span>
+                </div>
+              </div>
+
+              {/* Interactive SVG Elevation Profile Strip with Synchronized Playhead */}
+              {elevationProfileData && (
+                <div className="pt-2 pb-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-1 px-1">
+                    <span className="flex items-center gap-1 text-slate-400">
+                      <span>📉 Min:</span>
+                      <strong className="text-sky-300">{elevationProfileData.minEle}m</strong>
+                    </span>
+                    <span className="text-[10px] text-sky-400/90 font-bold tracking-wider uppercase">
+                      Elevation Profile
+                    </span>
+                    <span className="flex items-center gap-1 text-slate-400">
+                      <span>📈 Max:</span>
+                      <strong className="text-sky-300">{elevationProfileData.maxEle}m</strong>
+                    </span>
+                  </div>
+                  <div 
+                    id="elevation-profile-interactive-strip"
+                    className="relative w-full h-11 bg-slate-950/70 rounded-lg border border-slate-800/80 overflow-hidden cursor-pointer group shadow-inner"
+                    onClick={handleScrubberClick}
+                    title="Click or drag to scrub elevation profile"
+                  >
+                    <svg 
+                      viewBox="0 0 100 44" 
+                      preserveAspectRatio="none" 
+                      className="w-full h-full"
+                    >
+                      <defs>
+                        <linearGradient id="eleProfileGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
+                          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.04" />
+                        </linearGradient>
+                      </defs>
+                      {/* Area Fill */}
+                      <polygon
+                        points={elevationProfileData.areaPath}
+                        fill="url(#eleProfileGradient)"
+                      />
+                      {/* Elevation Line */}
+                      <polyline
+                        points={elevationProfileData.pointsStr}
+                        fill="none"
+                        stroke="#38bdf8"
+                        strokeWidth="1.5"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </svg>
+
+                    {/* Synchronized Playhead Vertical Line */}
+                    <div 
+                      className="absolute inset-y-0 w-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] pointer-events-none transition-all z-10"
+                      style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Playback Controls and Telemetry Snapshot */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-1.5 border-t border-slate-200/20">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <button
+                  id="btn-scrubber-reset"
+                  onClick={() => onScrubChange(0)}
+                  title="Reset to Start (Home)"
+                  className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  id="btn-scrubber-rewind"
+                  onClick={() => onScrubChange(Math.max(0, currentIndex - 20))}
+                  title="Step Back 20 fixes (Shift+Left)"
+                  className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
+                >
+                  <Rewind className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  id="btn-scrubber-play-expanded"
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  title={isPlaying ? 'Pause Simulation (Space)' : 'Play Simulation (Space)'}
+                  className={`px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer ${
+                    isPlaying
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                      : 'bg-sky-500 hover:bg-sky-400 text-slate-950'
                   }`}
                 >
-                  {spd}x
+                  {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  <span>{isPlaying ? 'Pause' : 'Play'}</span>
                 </button>
-              ))}
+
+                <button
+                  id="btn-scrubber-ffwd"
+                  onClick={() => onScrubChange(Math.min(activePoints.length - 1, currentIndex + 20))}
+                  title="Step Forward 20 fixes (Shift+Right)"
+                  className={`p-2 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
+                >
+                  <FastForward className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Playback Speed Selector */}
+                <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
+                  {[1, 2, 5, 10].map(spd => (
+                    <button
+                      key={spd}
+                      id={`btn-scrubber-speed-${spd}`}
+                      onClick={() => setPlaybackSpeed(spd)}
+                      className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                        playbackSpeed === spd
+                          ? 'bg-sky-500 text-slate-950 font-bold'
+                          : subText
+                      }`}
+                    >
+                      {spd}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Collapse Button — telemetry readouts already in the mini-HUD above */}
+              <div className="flex items-center justify-end">
+                <button
+                  id="btn-scrubber-collapse"
+                  onClick={() => setIsScrubberExpanded(false)}
+                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer text-[10px] font-mono flex items-center gap-1 ${buttonBg}`}
+                  title="Collapse scrubber to compact bar"
+                >
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="hidden sm:inline">Minimize</span>
+                </button>
+              </div>
             </div>
           </div>
-
-          {/* Live Scrub Telemetry Values */}
-          <div className="flex items-center gap-3 sm:gap-5 text-xs font-mono">
-            <div>
-              <span className={`text-[10px] block ${subText}`}>SPEED</span>
-              <strong className="text-sky-400 font-black text-sm">
-                {currentPoint.speedKmh.toFixed(1)} <span className="text-[10px] font-normal">km/h</span>
-              </strong>
-            </div>
-
-            <div>
-              <span className={`text-[10px] block ${subText}`}>ALTITUDE</span>
-              <strong className={isLight ? 'text-slate-900 font-bold text-sm' : 'text-white font-bold text-sm'}>
-                {currentPoint.ele !== null ? `${currentPoint.ele.toFixed(0)}m` : '—'}
-              </strong>
-            </div>
-
-            <div>
-              <span className={`text-[10px] block ${subText}`}>HEADING</span>
-              <strong className="text-emerald-400 font-bold text-sm">
-                {currentPoint.bearing !== null ? `${Math.round(currentPoint.bearing)}°` : '—'}
-              </strong>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

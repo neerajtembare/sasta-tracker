@@ -46,9 +46,14 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
     const finalLeft = Math.round(maxLeft || (analysis.maxEstimatedLean ? analysis.maxEstimatedLean * 0.92 : 36));
     const finalRight = Math.round(maxRight || (analysis.maxEstimatedLean || 40));
 
+    const leftG = (Math.tan((finalLeft * Math.PI) / 180)).toFixed(2);
+    const rightG = (Math.tan((finalRight * Math.PI) / 180)).toFixed(2);
+
     return {
       maxLeft: finalLeft,
       maxRight: finalRight,
+      leftG,
+      rightG,
       deepLeft: Math.max(deepLeft, 8),
       deepRight: Math.max(deepRight, 12),
       moderateSweeps: Math.max(moderateSweeps, 34),
@@ -73,7 +78,7 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
               Cornering & Tire Lean Profile
             </h3>
             <p className={`text-[11px] font-mono ${subText}`}>
-              Apex roll angles and twisty road handling analysis
+              Apex roll angles, lateral acceleration Gs, and twisty road dynamics
             </p>
           </div>
         </div>
@@ -95,11 +100,16 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
             <span className="text-[10px] font-mono text-sky-400 font-bold">{corneringStats.deepLeft} hairpins</span>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <div className="text-3xl sm:text-4xl font-mono font-black text-sky-400">
-              {corneringStats.maxLeft}°
+          <div className="flex items-baseline justify-between flex-wrap gap-1">
+            <div className="flex items-baseline gap-2">
+              <div className="text-3xl sm:text-4xl font-mono font-black text-sky-400">
+                {corneringStats.maxLeft}°
+              </div>
+              <span className="text-xs font-mono text-sky-500 font-bold">LEFT</span>
             </div>
-            <span className="text-xs font-mono text-sky-500 font-bold">LEFT</span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+              {corneringStats.leftG}G
+            </span>
           </div>
 
           {/* Bar indicator */}
@@ -121,11 +131,16 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
             <span className="text-[10px] font-mono text-rose-400 font-bold">{corneringStats.deepRight} hairpins</span>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <div className="text-3xl sm:text-4xl font-mono font-black text-rose-400">
-              {corneringStats.maxRight}°
+          <div className="flex items-baseline justify-between flex-wrap gap-1">
+            <div className="flex items-baseline gap-2">
+              <div className="text-3xl sm:text-4xl font-mono font-black text-rose-400">
+                {corneringStats.maxRight}°
+              </div>
+              <span className="text-xs font-mono text-rose-500 font-bold">RIGHT</span>
             </div>
-            <span className="text-xs font-mono text-rose-500 font-bold">RIGHT</span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+              {corneringStats.rightG}G
+            </span>
           </div>
 
           {/* Bar indicator */}

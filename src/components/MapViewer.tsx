@@ -96,7 +96,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   // Default pit stops to TRUE so riders immediately see and can click/edit stops
   const [showPitStops, setShowPitStops] = useState(true);
   const [showPointDots, setShowPointDots] = useState(false);
-  const [showDirectionArrows, setShowDirectionArrows] = useState(true);
   const [showMilestones, setShowMilestones] = useState(false);
   const [showHeatmapLegend, setShowHeatmapLegend] = useState(true);
 
@@ -159,6 +158,11 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     }
     return analysis.points;
   }, [analysis.points, isSmoothed]);
+
+  // Pre-calculated Leaflet coordinates tuple array to avoid O(N) allocations during playback/scrubbing
+  const activeCoords = useMemo(() => {
+    return activePoints.map(p => [p.lat, p.lon] as L.LatLngTuple);
+  }, [activePoints]);
 
   const currentIndex = scrubIndex !== null ? Math.min(scrubIndex, activePoints.length - 1) : 0;
   const currentPoint = activePoints[currentIndex] || activePoints[0];
@@ -285,25 +289,42 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Generate YouTube-style multi-stop speed gradient for the timeline bar
-  const speedGradientCss = useMemo(() => {
-    if (!activePoints || activePoints.length < 2) {
-      return 'linear-gradient(90deg, #0284c7, #10b981, #f59e0b, #f43f5e)';
-    }
-    const samples = 100;
-    const stops: string[] = [];
-    const maxKmh = Math.max(analysis.maxSpeedKmh, 40);
+  // Speed Profile SVG path & boundaries
+  const speedProfileData = useMemo(() => {
+    if (!activePoints || activePoints.length < 2) return null;
+    const maxSpeed = Math.max(10, analysis.maxSpeedKmh);
+    const totalDist = activePoints[activePoints.length - 1].distanceFromStartKm || 1;
 
-    for (let i = 0; i <= samples; i++) {
-      const pct = i / samples;
-      const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
-      const pt = activePoints[idx];
-      const color = getSpeedColor(pt.speedKmh, maxKmh);
-      stops.push(`${color} ${Math.round(pct * 100)}%`);
+    const step = Math.max(1, Math.floor(activePoints.length / 200));
+    const sampled: Array<{ xPct: number; speed: number; distKm: number }> = [];
+
+    for (let i = 0; i < activePoints.length; i += step) {
+      const p = activePoints[i];
+      const speed = Math.max(0, p.speedKmh);
+      sampled.push({
+        xPct: (p.distanceFromStartKm / totalDist) * 100,
+        speed,
+        distKm: p.distanceFromStartKm,
+      });
     }
 
-    return `linear-gradient(90deg, ${stops.join(', ')})`;
-  }, [activePoints, analysis.maxSpeedKmh]);
+    const svgHeight = 44;
+    const pointsStr = sampled.map(s => {
+      const y = svgHeight - (s.speed / maxSpeed) * (svgHeight - 6) - 3;
+      return `${s.xPct.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+
+    const areaPath = `0,${svgHeight} ` + pointsStr + ` 100,${svgHeight}`;
+
+    return {
+      minSpeed: 0,
+      maxSpeed: Math.round(maxSpeed),
+      avgSpeed: Math.round(analysis.movingAvgSpeedKmh),
+      pointsStr,
+      areaPath,
+      sampled,
+    };
+  }, [activePoints, analysis.maxSpeedKmh, analysis.movingAvgSpeedKmh]);
 
   // Proportional pit-stop notches for timeline chapter marks
   const pitStopNotches = useMemo(() => {
@@ -317,12 +338,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     });
   }, [analysis.pitStops, analysis.totalDistanceKm]);
 
-  // Scrubber mouse handlers for hover preview & seeking
+  // Scrubber mouse & touch handlers for hover preview & seeking
   const handleScrubberMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!scrubberBarRef.current || activePoints.length < 2) return;
-    const rect = scrubberBarRef.current.getBoundingClientRect();
+    if (activePoints.length < 2) return;
+    const targetEl = e.currentTarget || scrubberBarRef.current;
+    if (!targetEl) return;
+    const rect = targetEl.getBoundingClientRect();
     const clientX = e.clientX;
-    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
     const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
     const pt = activePoints[idx];
     setHoverScrub({
@@ -338,11 +361,36 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   };
 
   const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!scrubberBarRef.current || activePoints.length < 2) return;
-    const rect = scrubberBarRef.current.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    if (activePoints.length < 2) return;
+    const targetEl = e.currentTarget || scrubberBarRef.current;
+    if (!targetEl) return;
+    const rect = targetEl.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
     const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
     onScrubChange(idx);
+  };
+
+  // Mobile touch dragging handler for scrubber tracks and dual SVG profile graphs
+  const handleScrubberTouch = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (activePoints.length < 2 || !e.touches || e.touches.length === 0) return;
+    const targetEl = e.currentTarget || scrubberBarRef.current;
+    if (!targetEl) return;
+    const rect = targetEl.getBoundingClientRect();
+    const clientX = e.touches[0].clientX;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    const idx = Math.min(Math.floor(pct * (activePoints.length - 1)), activePoints.length - 1);
+    const pt = activePoints[idx];
+    setHoverScrub({
+      pct: pct * 100,
+      pt,
+      idx,
+      x: clientX - rect.left,
+    });
+    onScrubChange(idx);
+  };
+
+  const handleScrubberTouchEnd = () => {
+    setHoverScrub(null);
   };
 
   // Keyboard shortcut listener
@@ -570,39 +618,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       });
     }
 
-    // 2. Direction Chevrons along track (shows ride flow on overlapping paths)
-    if (showDirectionArrows && pts.length > 15) {
-      const arrowStep = Math.max(12, Math.floor(pts.length / 25));
-      for (let i = 5; i < pts.length - 5; i += arrowStep) {
-        const pt = pts[i];
-        const nextPt = pts[Math.min(pts.length - 1, i + 2)];
-        // Calculate heading
-        const dLon = ((nextPt.lon - pt.lon) * Math.PI) / 180;
-        const lat1 = (pt.lat * Math.PI) / 180;
-        const lat2 = (nextPt.lat * Math.PI) / 180;
-        const y = Math.sin(dLon) * Math.cos(lat2);
-        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-        const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-
-        const isReturnLeg = turnaroundIndex > 0 && i >= turnaroundIndex;
-        const arrowColor = isReturnLeg ? '#f43f5e' : '#38bdf8';
-
-        const arrowIcon = L.divIcon({
-          className: 'dir-arrow',
-          html: `<div style="transform:rotate(${bearing}deg); width:16px; height:16px; display:flex; align-items:center; justify-content:center;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="${arrowColor}">
-              <path d="M12 2L2 22L12 17L22 22L12 2Z" />
-            </svg>
-          </div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        });
-
-        L.marker([pt.lat, pt.lon], { icon: arrowIcon, interactive: false }).addTo(map);
-      }
-    }
-
-    // 3. Clickable GPS Point Dots (optional)
+    // 2. Clickable GPS Point Dots (optional)
     if (showPointDots && pts.length < 600) {
       pts.forEach((pt, idx) => {
         const dotColor = getSpeedColor(pt.speedKmh, maxKmh);
@@ -632,8 +648,18 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
     // 5. Start & Finish Markers
     if (pts.length > 0) {
-      const startPt = pts[0];
-      const endPt = pts[pts.length - 1];
+      let startPt = pts[0];
+      let endPt = pts[pts.length - 1];
+      let startLabel = 'Track Start';
+      let finishLabel = 'Finish Line';
+
+      if (routeMode === 'outbound' && turnaroundIndex > 0) {
+        endPt = pts[turnaroundIndex];
+        finishLabel = 'Turnaround Point';
+      } else if (routeMode === 'return' && turnaroundIndex > 0) {
+        startPt = pts[turnaroundIndex];
+        startLabel = 'Return Leg Start';
+      }
 
       // Start Marker
       const startIcon = L.divIcon({
@@ -644,7 +670,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       });
       L.marker([startPt.lat, startPt.lon], { icon: startIcon })
         .addTo(map)
-        .bindPopup(`<b>Track Start</b><br/>${startPt.time ? new Date(startPt.time).toLocaleTimeString() : ''}`);
+        .bindPopup(`<b>${startLabel}</b><br/>${startPt.time ? new Date(startPt.time).toLocaleTimeString() : ''}`);
 
       // Finish Marker
       const finishIcon = L.divIcon({
@@ -655,7 +681,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       });
       L.marker([endPt.lat, endPt.lon], { icon: finishIcon })
         .addTo(map)
-        .bindPopup(`<b>Finish Line</b><br/>${endPt.time ? new Date(endPt.time).toLocaleTimeString() : ''}`);
+        .bindPopup(`<b>${finishLabel}</b><br/>${endPt.time ? new Date(endPt.time).toLocaleTimeString() : ''}`);
 
       // Fit map bounds safely
       if (allCoords.length > 0) {
@@ -732,7 +758,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }
     }, 150);
 
-  }, [analysis, mapStyle, showPitStops, showPointDots, showDirectionArrows, routeMode, turnaroundIndex, isLight, showMilestones]);
+  }, [analysis, mapStyle, showPitStops, showPointDots, routeMode, turnaroundIndex, isLight, showMilestones]);
 
   // Clean up Leaflet map instance on component unmount
   useEffect(() => {
@@ -785,11 +811,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }
 
       if (traveledPolylineRef.current) {
-        const traveledCoords = activePoints.slice(0, currentIndex + 1).map(p => [p.lat, p.lon] as L.LatLngTuple);
-        traveledPolylineRef.current.setLatLngs(traveledCoords);
+        traveledPolylineRef.current.setLatLngs(activeCoords.slice(0, currentIndex + 1));
       }
     }
-  }, [currentIndex, activePoints]);
+  }, [currentIndex, activePoints, activeCoords]);
 
   // Center and highlight stop / coordinate when selected by user from list
   useEffect(() => {
@@ -891,7 +916,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   return (
     <div
       className={`rounded-2xl border transition-all overflow-hidden flex flex-col shadow-xl ${cardBg} ${
-        isFullscreen ? 'fixed inset-0 z-50 rounded-none h-screen' : ''
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none h-[100dvh]' : ''
       }`}
     >
       {/* Map Header Toolbar — Simplified: no duplicate ride name, specs, or badges */}
@@ -910,7 +935,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 }`}
                 title="Full ride with speed gradient"
               >
-                Speed Heatmap
+                <span className="hidden sm:inline">Speed Heatmap</span>
+                <span className="sm:hidden">Heatmap</span>
               </button>
               <button
                 onClick={() => setRouteMode('split')}
@@ -921,7 +947,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 }`}
                 title="Distinguish Outbound (Cyan) vs Return (Rose) legs side-by-side"
               >
-                Split Out / Back
+                <span className="hidden sm:inline">Split Out / Back</span>
+                <span className="sm:hidden">Split</span>
               </button>
               <button
                 onClick={() => setRouteMode('outbound')}
@@ -984,21 +1011,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             </button>
           </div>
 
-          {/* Direction Arrows Toggle */}
-          <button
-            id="btn-toggle-direction-arrows"
-            onClick={() => setShowDirectionArrows(!showDirectionArrows)}
-            title="Toggle Direction Arrows along route"
-            className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
-              showDirectionArrows
-                ? 'bg-sky-500 text-slate-950 font-bold border-sky-400'
-                : buttonBg
-            }`}
-          >
-            <ArrowRight className="w-3 h-3" />
-            <span className="hidden sm:inline">Arrows</span>
-          </button>
-
           {/* Milestones Toggle */}
           <button
             id="btn-toggle-milestones"
@@ -1033,7 +1045,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           <button
             id="btn-toggle-pit-stops"
             onClick={() => setShowPitStops(!showPitStops)}
-            className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+            className={`px-2 sm:px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
               showPitStops
                 ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
                 : buttonBg
@@ -1041,7 +1053,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             title="Toggle stationary pit stop pins on the map"
           >
             <MapPin className="w-3 h-3" />
-            <span>Stops ({analysis.pitStops.length})</span>
+            <span className="hidden sm:inline">Stops ({analysis.pitStops.length})</span>
+            <span className="sm:hidden">{analysis.pitStops.length}</span>
           </button>
 
           {/* Recenter */}
@@ -1067,12 +1080,12 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       </div>
 
       {/* Map DOM Element with Floating Speed Heatmap Legend */}
-      <div className="relative w-full">
+      <div className="relative w-full flex-1 min-h-0">
         <div 
           ref={mapContainerRef} 
           id="leaflet-map-canvas"
           className={`w-full transition-all ${
-            isFullscreen ? 'h-[calc(100vh-170px)]' : 'h-[360px] sm:h-[460px]'
+            isFullscreen ? 'h-full min-h-[220px]' : 'h-[360px] sm:h-[460px]'
           }`}
         />
 
@@ -1122,35 +1135,37 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
             </button>
 
-            {/* Clickable Speed-Gradient Bar Track */}
+            {/* Clickable Clean Minimal Progress Track */}
             <div 
               ref={scrubberBarRef}
               id="scrubber-bar-track-compact"
               onClick={handleScrubberClick}
               onMouseMove={handleScrubberMouseMove}
               onMouseLeave={handleScrubberMouseLeave}
-              className="relative flex-1 h-3 rounded-full cursor-pointer overflow-hidden border border-slate-700/50 shadow-inner group"
-              style={{ background: speedGradientCss }}
+              onTouchStart={handleScrubberTouch}
+              onTouchMove={handleScrubberTouch}
+              onTouchEnd={handleScrubberTouchEnd}
+              className="relative flex-1 h-3 rounded-full cursor-pointer overflow-hidden bg-slate-900 border border-slate-700/60 shadow-inner group touch-none select-none"
               title="Click or drag to scrub route"
             >
-              {/* Progress Dimmer Overlay */}
+              {/* Progress Fill in vibrant sky/cyan */}
               <div 
-                className="absolute inset-y-0 right-0 bg-slate-950/70 transition-all pointer-events-none"
-                style={{ width: `${100 - (currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                className="h-full bg-gradient-to-r from-sky-500 to-cyan-400 rounded-full transition-all"
+                style={{ width: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
               />
 
               {/* Chapter Notches */}
               {pitStopNotches.map(pit => (
                 <div
                   key={pit.id}
-                  className="absolute top-0 bottom-0 w-0.5 bg-amber-400 pointer-events-none z-10"
+                  className="absolute top-0 bottom-0 w-1 bg-amber-400 pointer-events-none z-10"
                   style={{ left: `${pit.pct}%` }}
                 />
               ))}
 
               {/* Progress Playhead Pip */}
               <div 
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-sky-400 shadow-[0_0_8px_#38bdf8] pointer-events-none -ml-1.5 transition-all"
+                className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full border-2 border-sky-400 shadow-[0_0_8px_#38bdf8] pointer-events-none -ml-1.5 transition-all"
                 style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
               />
             </div>
@@ -1240,20 +1255,23 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 </div>
               )}
 
-              {/* The Timeline Track Colored by Velocity */}
+              {/* The Timeline Track - Clean High Contrast Bar without barcode stripes */}
               <div 
                 ref={scrubberBarRef}
                 id="scrubber-bar-track-expanded"
                 onClick={handleScrubberClick}
                 onMouseMove={handleScrubberMouseMove}
                 onMouseLeave={handleScrubberMouseLeave}
-                className="relative w-full h-4 rounded-lg cursor-pointer overflow-hidden border border-slate-700/70 shadow-inner group"
-                style={{ background: speedGradientCss }}
+                onTouchStart={handleScrubberTouch}
+                onTouchMove={handleScrubberTouch}
+                onTouchEnd={handleScrubberTouchEnd}
+                className="relative w-full h-3.5 rounded-lg cursor-pointer overflow-hidden bg-slate-900 border border-slate-700/80 shadow-inner group touch-none select-none"
+                title="Click or drag to scrub route"
               >
-                {/* Progress Dimmer (Darkens the unplayed portion of the track) */}
+                {/* Progress Fill in vibrant sky/cyan */}
                 <div 
-                  className="absolute inset-y-0 right-0 bg-slate-950/65 backdrop-blur-[1px] transition-all pointer-events-none"
-                  style={{ width: `${100 - (currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                  className="h-full bg-gradient-to-r from-sky-500 to-cyan-400 rounded-lg transition-all"
+                  style={{ width: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
                 />
 
                 {/* Chapter Notches for Pit-Stops */}
@@ -1266,7 +1284,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                       if (globalIdx >= 0) onScrubChange(globalIdx);
                     }}
                     title={`Stop: ${pit.name} at km ${pit.distanceKm.toFixed(1)}`}
-                    className="absolute top-0 bottom-0 w-1 bg-amber-400 border-x border-black/80 hover:w-2 hover:bg-amber-300 transition-all z-20 cursor-pointer"
+                    className="absolute top-0 bottom-0 w-1.5 bg-amber-400 border-x border-black/80 hover:w-2.5 hover:bg-amber-300 transition-all z-20 cursor-pointer"
                     style={{ left: `${pit.pct}%` }}
                   />
                 ))}
@@ -1305,62 +1323,128 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 </div>
               </div>
 
-              {/* Interactive SVG Elevation Profile Strip with Synchronized Playhead */}
-              {elevationProfileData && (
-                <div className="pt-2 pb-1">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-1 px-1">
-                    <span className="flex items-center gap-1 text-slate-400">
-                      <span>📉 Min:</span>
-                      <strong className="text-sky-300">{elevationProfileData.minEle}m</strong>
-                    </span>
-                    <span className="text-[10px] text-sky-400/90 font-bold tracking-wider uppercase">
-                      Elevation Profile
-                    </span>
-                    <span className="flex items-center gap-1 text-slate-400">
-                      <span>📈 Max:</span>
-                      <strong className="text-sky-300">{elevationProfileData.maxEle}m</strong>
-                    </span>
-                  </div>
-                  <div 
-                    id="elevation-profile-interactive-strip"
-                    className="relative w-full h-11 bg-slate-950/70 rounded-lg border border-slate-800/80 overflow-hidden cursor-pointer group shadow-inner"
-                    onClick={handleScrubberClick}
-                    title="Click or drag to scrub elevation profile"
-                  >
-                    <svg 
-                      viewBox="0 0 100 44" 
-                      preserveAspectRatio="none" 
-                      className="w-full h-full"
-                    >
-                      <defs>
-                        <linearGradient id="eleProfileGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
-                          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.04" />
-                        </linearGradient>
-                      </defs>
-                      {/* Area Fill */}
-                      <polygon
-                        points={elevationProfileData.areaPath}
-                        fill="url(#eleProfileGradient)"
-                      />
-                      {/* Elevation Line */}
-                      <polyline
-                        points={elevationProfileData.pointsStr}
-                        fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="1.5"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    </svg>
-
-                    {/* Synchronized Playhead Vertical Line */}
+              {/* DUAL TELEMETRY PROFILES: SPEED GRAPH + ELEVATION GRAPH */}
+              <div className="space-y-2 pt-2 pb-1">
+                {/* 1. Interactive Speed Profile Strip */}
+                {speedProfileData && (
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-0.5 px-1">
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <span>⚡ Min:</span>
+                        <strong className="text-emerald-400">{speedProfileData.minSpeed} km/h</strong>
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-bold tracking-wider uppercase flex items-center gap-1">
+                        Speed Profile <span className="text-slate-500 font-normal hidden sm:inline">(Avg: {speedProfileData.avgSpeed} km/h)</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <span>🚀 Peak:</span>
+                        <strong className="text-emerald-400">{speedProfileData.maxSpeed} km/h</strong>
+                      </span>
+                    </div>
                     <div 
-                      className="absolute inset-y-0 w-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] pointer-events-none transition-all z-10"
-                      style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
-                    />
+                      id="speed-profile-interactive-strip"
+                      className="relative w-full h-11 bg-slate-950/80 rounded-lg border border-slate-800 overflow-hidden cursor-pointer group shadow-inner touch-none select-none"
+                      onClick={handleScrubberClick}
+                      onMouseMove={handleScrubberMouseMove}
+                      onMouseLeave={handleScrubberMouseLeave}
+                      onTouchStart={handleScrubberTouch}
+                      onTouchMove={handleScrubberTouch}
+                      onTouchEnd={handleScrubberTouchEnd}
+                      title="Click or drag to scrub speed profile"
+                    >
+                      <svg 
+                        viewBox="0 0 100 44" 
+                        preserveAspectRatio="none" 
+                        className="w-full h-full"
+                      >
+                        <defs>
+                          <linearGradient id="speedProfileGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.45" />
+                            <stop offset="100%" stopColor="#10b981" stopOpacity="0.04" />
+                          </linearGradient>
+                        </defs>
+                        <polygon
+                          points={speedProfileData.areaPath}
+                          fill="url(#speedProfileGradient)"
+                        />
+                        <polyline
+                          points={speedProfileData.pointsStr}
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="1.5"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </svg>
+
+                      {/* Synchronized Playhead Cursor Line */}
+                      <div 
+                        className="absolute inset-y-0 w-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] pointer-events-none transition-all z-10"
+                        style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* 2. Interactive Elevation Profile Strip */}
+                {elevationProfileData && (
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-0.5 px-1">
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <span>📉 Min:</span>
+                        <strong className="text-sky-300">{elevationProfileData.minEle}m</strong>
+                      </span>
+                      <span className="text-[10px] text-sky-400 font-bold tracking-wider uppercase flex items-center gap-1">
+                        Elevation Profile <span className="text-slate-500 font-normal hidden sm:inline">(+{analysis.elevGainM.toFixed(0)}m Gain)</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <span>📈 Max:</span>
+                        <strong className="text-sky-300">{elevationProfileData.maxEle}m</strong>
+                      </span>
+                    </div>
+                    <div 
+                      id="elevation-profile-interactive-strip"
+                      className="relative w-full h-11 bg-slate-950/80 rounded-lg border border-slate-800 overflow-hidden cursor-pointer group shadow-inner touch-none select-none"
+                      onClick={handleScrubberClick}
+                      onMouseMove={handleScrubberMouseMove}
+                      onMouseLeave={handleScrubberMouseLeave}
+                      onTouchStart={handleScrubberTouch}
+                      onTouchMove={handleScrubberTouch}
+                      onTouchEnd={handleScrubberTouchEnd}
+                      title="Click or drag to scrub elevation profile"
+                    >
+                      <svg 
+                        viewBox="0 0 100 44" 
+                        preserveAspectRatio="none" 
+                        className="w-full h-full"
+                      >
+                        <defs>
+                          <linearGradient id="eleProfileGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
+                            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.04" />
+                          </linearGradient>
+                        </defs>
+                        <polygon
+                          points={elevationProfileData.areaPath}
+                          fill="url(#eleProfileGradient)"
+                        />
+                        <polyline
+                          points={elevationProfileData.pointsStr}
+                          fill="none"
+                          stroke="#38bdf8"
+                          strokeWidth="1.5"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </svg>
+
+                      {/* Synchronized Playhead Vertical Line */}
+                      <div 
+                        className="absolute inset-y-0 w-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] pointer-events-none transition-all z-10"
+                        style={{ left: `${(currentIndex / Math.max(1, activePoints.length - 1)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Playback Controls and Telemetry Snapshot */}

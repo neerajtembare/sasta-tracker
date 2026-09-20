@@ -36,12 +36,12 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
   const labelColor = isLight ? 'text-slate-700' : 'text-slate-300';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div 
-        className={`w-full max-w-md border rounded-2xl overflow-hidden shadow-2xl ${modalBg}`}
+        className={`w-full max-w-md border rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain ${modalBg}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`p-4 border-b flex items-center justify-between ${headerBg}`}>
+        <div className={`p-4 border-b flex items-center justify-between shrink-0 ${headerBg}`}>
           <h2 className="text-base font-bold flex items-center gap-2">
             <Edit3 className="w-4 h-4 text-amber-500" />
             <span>Edit Ride Name</span>
@@ -54,7 +54,7 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto">
           <div>
             <label className={`block text-xs font-bold mb-1.5 uppercase tracking-wide ${labelColor}`}>
               Ride Title

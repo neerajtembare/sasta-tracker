@@ -95,19 +95,11 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
   const currentGForce = (Math.tan((currentLean * Math.PI) / 180)).toFixed(2);
   const maxGForce = (Math.tan(((analysis.maxEstimatedLean || 0) * Math.PI) / 180)).toFixed(2);
 
-  const displaySpeed = activeScrubPoint
-    ? activeScrubPoint.speedKmh.toFixed(1)
-    : analysis.maxSpeedKmh.toFixed(1);
-
   // Effective distance: if user calibrated odometer, use that; otherwise raw GPS distance
   const isCalibrated = Boolean(analysis.userDistanceOverrideKm);
   const totalDisplayDist = isCalibrated
     ? analysis.userDistanceOverrideKm!.toFixed(1)
     : analysis.totalDistanceKm.toFixed(1);
-
-  const currentDist = activeScrubPoint
-    ? activeScrubPoint.distKm.toFixed(1)
-    : totalDisplayDist;
 
   // Recalculate moving avg pace if calibrated distance is present
   const effectiveMovingAvgSpeed = isCalibrated && analysis.movingTimeSeconds > 0
@@ -267,7 +259,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {currentDist}
+                {totalDisplayDist}
               </span>
               <span className="font-mono font-bold text-xs text-sky-500">KM</span>
             </div>
@@ -351,14 +343,14 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {displaySpeed}
+                {analysis.maxSpeedKmh.toFixed(1)}
               </span>
               <span className="font-mono font-bold text-xs text-rose-500">KM/H</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
             <div className={`text-[10px] font-mono ${subText}`}>
-              {activeScrubPoint ? 'Scrubbed velocity' : 'Peak burst velocity'}
+              Peak burst velocity (GPS recorded)
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div className="h-full bg-rose-500 w-full rounded-full" />

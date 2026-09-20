@@ -11,6 +11,17 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+export function calculateForwardBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLon = toRad(lon2 - lon1);
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const y = Math.sin(dLon) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dLon);
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+}
+
 export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAnalysis {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
@@ -115,18 +126,29 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           else segElevLoss += Math.abs(deltaEle);
         }
 
-        if (speedMs > 1.2) {
-          segMovingTime += dt;
+        if (bearingDeg === null) {
+          if (stepDistM > 1.0) {
+            bearingDeg = calculateForwardBearing(prev.lat, prev.lon, lat, lon);
+          } else if (prev.bearing !== null) {
+            bearingDeg = prev.bearing;
+          }
         }
 
-        // Estimate lean angle from heading delta & speed
+        if (speedMs > 1.2) {
+          const movingDt = dt > 60 ? Math.min(dt, stepDistM / Math.max(speedMs, 1.2)) : dt;
+          segMovingTime += movingDt;
+        }
+
+        // Estimate lean angle from heading delta & speed (+ is Right, - is Left)
         let estLean = 0;
         if (bearingDeg !== null && prev.bearing !== null && dt > 0 && speedMs > 3) {
-          let dHeading = Math.abs(bearingDeg - prev.bearing);
-          if (dHeading > 180) dHeading = 360 - dHeading;
-          const radPerSec = (dHeading * Math.PI) / (180 * dt);
+          let diff = bearingDeg - prev.bearing;
+          while (diff > 180) diff -= 360;
+          while (diff < -180) diff += 360;
+          const radPerSec = (diff * Math.PI) / (180 * dt);
           const lateralAcc = speedMs * radPerSec;
-          estLean = Math.min(50, Math.round((Math.atan(lateralAcc / 9.81) * 180) / Math.PI));
+          const leanDeg = (Math.atan(lateralAcc / 9.81) * 180) / Math.PI;
+          estLean = Math.max(-55, Math.min(55, Math.round(leanDeg)));
         }
 
         const point: TrackPoint = {
@@ -236,7 +258,7 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const hdops = allPoints.map(p => p.hdop).filter((h): h is number => h !== null && h > 0);
   const bestHdop = hdops.length ? Math.min(...hdops) : null;
 
-  const leanAngles = allPoints.map(p => p.estimatedLeanAngle || 0);
+  const leanAngles = allPoints.map(p => Math.abs(p.estimatedLeanAngle || 0));
   const maxEstimatedLean = leanAngles.length ? Math.max(...leanAngles) : 0;
 
   // Robust Automated Stop Detection Algorithm (> 5 minutes / 300 seconds)
@@ -336,11 +358,13 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     }
   }
 
-  // Merge stops within 150m of each other to avoid duplicate tags
+  // Merge stops within 150m of each other ONLY if they are also close in route progress (< 2.5 km)
+  // This preserves separate outbound and return stops at the same petrol station or food stall
   const mergedStops: typeof rawStops = [];
   rawStops.forEach(candidate => {
     const existing = mergedStops.find(
-      s => haversineDistance(s.lat, s.lon, candidate.lat, candidate.lon) < 150
+      s => haversineDistance(s.lat, s.lon, candidate.lat, candidate.lon) < 150 &&
+           Math.abs(s.distanceKm - candidate.distanceKm) < 2.5
     );
     if (existing) {
       existing.durationSeconds = Math.max(existing.durationSeconds, candidate.durationSeconds);

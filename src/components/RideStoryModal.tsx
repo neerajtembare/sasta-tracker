@@ -322,8 +322,8 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#0b0f14] border border-[#1e2a38] text-white rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-[#0b0f14] border border-[#1e2a38] text-white rounded-2xl w-full max-w-lg max-h-[92dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3 border-b border-[#1e2a38] flex items-center justify-between bg-[#111922]">
           <div className="flex items-center gap-2">

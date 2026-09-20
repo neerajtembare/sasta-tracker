@@ -171,8 +171,8 @@ export const RideDiagnosticsModal: React.FC<RideDiagnosticsModalProps> = ({
   const tableBorder = isLight ? 'border-slate-200' : 'border-[#1e2a38]';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
-      <div className={`w-full max-w-4xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${cardBg}`}>
+    <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
+      <div className={`w-full max-w-4xl max-h-[92dvh] overscroll-contain rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${cardBg}`}>
         {/* Modal Header */}
         <div className={`px-5 py-4 border-b flex items-center justify-between flex-wrap gap-3 ${statBoxBg}`}>
           <div className="flex items-center gap-2.5 min-w-0">

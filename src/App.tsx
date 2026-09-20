@@ -248,16 +248,19 @@ export default function App() {
     });
   };
 
-  const activeScrubPoint = 
-    analysis && scrubIndex !== null && analysis.points[scrubIndex]
-      ? {
-          speedKmh: analysis.points[scrubIndex].speedKmh,
-          elev: analysis.points[scrubIndex].ele,
-          bearing: analysis.points[scrubIndex].bearing,
-          distKm: analysis.points[scrubIndex].distanceFromStartKm,
-          lean: analysis.points[scrubIndex].estimatedLeanAngle || 0,
-        }
-      : null;
+  const activeScrubPoint = (() => {
+    if (!analysis || scrubIndex === null || analysis.points.length === 0) return null;
+    const clampedIdx = Math.max(0, Math.min(scrubIndex, analysis.points.length - 1));
+    const pt = analysis.points[clampedIdx];
+    if (!pt) return null;
+    return {
+      speedKmh: pt.speedKmh,
+      elev: pt.ele,
+      bearing: pt.bearing,
+      distKm: pt.distanceFromStartKm,
+      lean: pt.estimatedLeanAngle || 0,
+    };
+  })();
 
   return (
     <div className={`min-h-screen transition-colors ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'} pb-16`}>
@@ -306,8 +309,8 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
 
-      {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6 space-y-4 sm:space-y-6">
+      {/* Main Container — pb-28 ensures fixed mobile bottom nav never covers content */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6 pb-28 sm:pb-8 space-y-4 sm:space-y-6">
         {/* Error message alert */}
         {errorMessage && (
           <div className={`p-3 border font-sans text-xs rounded-lg flex items-center justify-between shadow-sm ${

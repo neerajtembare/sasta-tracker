@@ -22,6 +22,12 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
   const isLight = theme === 'light';
   const [name, setName] = useState(currentName);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setName(currentName);
+    }
+  }, [isOpen, currentName]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {

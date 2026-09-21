@@ -218,7 +218,7 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         durationSeconds: segDuration,
         movingTimeSeconds: segMovingTime,
         avgSpeedKmh: segDuration > 0 ? (segDistM / segDuration) * 3.6 : 0,
-        maxSpeedKmh: speeds.length ? Math.max(...speeds) : 0,
+        maxSpeedKmh: speeds.length ? speeds.reduce((max, v) => (v > max ? v : max), 0) : 0,
         elevGain: segElevGain,
         elevLoss: segElevLoss,
       });
@@ -240,26 +240,25 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const movingTimeSeconds = segments.reduce((sum, s) => sum + s.movingTimeSeconds, 0);
   const stoppedTimeSeconds = Math.max(0, totalDurationSeconds - movingTimeSeconds);
 
-  const allSpeeds = allPoints.map(p => p.speedKmh);
-  const maxSpeedKmh = allSpeeds.length ? Math.max(...allSpeeds) : 0;
+  const maxSpeedKmh = allPoints.length ? allPoints.reduce((max, p) => (p.speedKmh > max ? p.speedKmh : max), 0) : 0;
   const overallAvgSpeedKmh = totalDurationSeconds > 0 ? (totalDistanceKm / (totalDurationSeconds / 3600)) : 0;
   const movingAvgSpeedKmh = movingTimeSeconds > 0 ? (totalDistanceKm / (movingTimeSeconds / 3600)) : overallAvgSpeedKmh;
 
   const elevations = allPoints.map(p => p.ele).filter((e): e is number => e !== null);
-  const elevMinM = elevations.length ? Math.min(...elevations) : null;
-  const elevMaxM = elevations.length ? Math.max(...elevations) : null;
+  const elevMinM = elevations.length ? elevations.reduce((min, e) => (e < min ? e : min), elevations[0]) : null;
+  const elevMaxM = elevations.length ? elevations.reduce((max, e) => (e > max ? e : max), elevations[0]) : null;
   const elevGainM = segments.reduce((sum, s) => sum + s.elevGain, 0);
   const elevLossM = segments.reduce((sum, s) => sum + s.elevLoss, 0);
 
   const satellites = allPoints.map(p => p.sat).filter((s): s is number => s !== null && s > 0);
   const avgSatellites = satellites.length ? Math.round(satellites.reduce((a, b) => a + b, 0) / satellites.length) : null;
-  const maxSatellites = satellites.length ? Math.max(...satellites) : null;
+  const maxSatellites = satellites.length ? satellites.reduce((max, s) => (s > max ? s : max), satellites[0]) : null;
 
   const hdops = allPoints.map(p => p.hdop).filter((h): h is number => h !== null && h > 0);
-  const bestHdop = hdops.length ? Math.min(...hdops) : null;
+  const bestHdop = hdops.length ? hdops.reduce((min, h) => (h < min ? h : min), hdops[0]) : null;
 
   const leanAngles = allPoints.map(p => Math.abs(p.estimatedLeanAngle || 0));
-  const maxEstimatedLean = leanAngles.length ? Math.max(...leanAngles) : 0;
+  const maxEstimatedLean = leanAngles.length ? leanAngles.reduce((max, l) => (l > max ? l : max), 0) : 0;
 
   // Robust Automated Stop Detection Algorithm (> 5 minutes / 300 seconds)
   // Flags gaps in activity longer than 5 minutes for user review/categorization
@@ -487,14 +486,14 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   }
 
   // Calculate bounding box
-  const lats = allPoints.map(p => p.lat);
-  const lons = allPoints.map(p => p.lon);
-  const boundingBox = {
-    minLat: Math.min(...lats),
-    maxLat: Math.max(...lats),
-    minLon: Math.min(...lons),
-    maxLon: Math.max(...lons),
-  };
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+  for (const p of allPoints) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+  }
+  const boundingBox = { minLat, maxLat, minLon, maxLon };
 
   const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh);
 

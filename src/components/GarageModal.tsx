@@ -61,15 +61,19 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   const handleSaveCurrent = () => {
     if (!currentAnalysis) return;
     const gpxText = exportAnalysisToGPX(currentAnalysis);
-    saveRideToGarage({
-      name: currentAnalysis.name,
-      distanceKm: currentAnalysis.totalDistanceKm,
-      maxSpeedKmh: currentAnalysis.maxSpeedKmh,
-      gpxContent: gpxText,
-    });
-    setRides(getGarageRides());
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      saveRideToGarage({
+        name: currentAnalysis.name,
+        distanceKm: currentAnalysis.totalDistanceKm,
+        maxSpeedKmh: currentAnalysis.maxSpeedKmh,
+        gpxContent: gpxText,
+      });
+      setRides(getGarageRides());
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (e: any) {
+      alert(e.message || 'Failed to save ride.');
+    }
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {

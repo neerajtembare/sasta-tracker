@@ -845,7 +845,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     }).addTo(map);
 
     if (focusedCoordinate.label) {
-      marker.bindPopup(`<div style="font-family:monospace; font-size:12px; font-weight:bold; color:#0f172a; padding:3px 6px;">${focusedCoordinate.label}</div>`).openPopup();
+      const popupDiv = document.createElement('div');
+      popupDiv.style.cssText = 'font-family:monospace; font-size:12px; font-weight:bold; color:#0f172a; padding:3px 6px;';
+      popupDiv.textContent = focusedCoordinate.label;
+      marker.bindPopup(popupDiv).openPopup();
     }
 
     focusedMarkerRef.current = marker;
@@ -1095,15 +1098,15 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             <span className="font-bold text-slate-300">Speed:</span>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shadow-xs" />
-              <span className="text-slate-300">&le; 45</span>
+              <span className="text-slate-300">&le; {Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.55)}</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block shadow-xs" />
-              <span className="text-slate-300">45–75</span>
+              <span className="text-slate-300">{Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.55)}–{Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.80)}</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block shadow-xs" />
-              <span className="text-slate-300">&gt; 75 km/h</span>
+              <span className="text-slate-300">&gt; {Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.80)} km/h</span>
             </div>
             <button
               onClick={() => setShowHeatmapLegend(false)}

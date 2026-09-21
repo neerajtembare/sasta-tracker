@@ -199,6 +199,15 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     };
   }, []);
 
+  const startNewRecording = () => {
+    recordedPointsRef.current = [];
+    setPointsCount(0);
+    setTotalDistanceMeters(0);
+    setElapsedSeconds(0);
+    lastPositionRef.current = null;
+    startGpsWatch();
+  };
+
   // Geolocation watchPosition
   const startGpsWatch = async () => {
     await requestDeviceOrientationPermission();
@@ -208,13 +217,6 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     }
 
     setGpsError(null);
-    if (!isRecording && !isPaused) {
-      recordedPointsRef.current = [];
-      setPointsCount(0);
-      setTotalDistanceMeters(0);
-      setElapsedSeconds(0);
-      lastPositionRef.current = null;
-    }
     setIsRecording(true);
     setIsPaused(false);
 
@@ -651,7 +653,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
           {!isRecording ? (
             <button
-              onClick={startGpsWatch}
+              onClick={startNewRecording}
               className="px-6 py-3.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono font-black text-sm uppercase tracking-wider flex items-center gap-2 rounded-xl shadow-lg transition-all cursor-pointer hover:shadow-sky-500/20"
             >
               <Play className="w-4 h-4 fill-current" />

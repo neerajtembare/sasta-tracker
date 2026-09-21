@@ -29,18 +29,20 @@ export function getGarageRides(): SavedRide[] {
 
 export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'>): SavedRide {
   const rides = getGarageRides();
+  const id = 'crypto' in window ? crypto.randomUUID() : 'ride_' + Date.now() + Math.random().toString(36).substring(7);
   const newRide: SavedRide = {
     ...ride,
-    id: 'ride_' + Date.now(),
+    id,
     date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
   };
 
-  // Prepend to top and limit to 10 stored rides
-  const updated = [newRide, ...rides.filter(r => r.name !== ride.name)].slice(0, 10);
+  // Prepend to top and limit to 10 stored rides. Don't deduplicate by name, allow multiple saves of same name.
+  const updated = [newRide, ...rides].slice(0, 10);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch (e) {
-    console.warn('LocalStorage limit reached, saving fewer items', e);
+    console.warn('LocalStorage limit reached', e);
+    throw new Error('Storage limit reached. Delete some old rides from the Garage first.');
   }
   return newRide;
 }

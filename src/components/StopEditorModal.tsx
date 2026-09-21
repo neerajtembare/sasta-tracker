@@ -58,13 +58,25 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   const [name, setName] = useState<string>(
     stopToEdit ? stopToEdit.name : (defaultPoint ? `Stop at ${defaultPoint.distanceFromStartKm.toFixed(1)} km` : 'Chai & Snack Break')
   );
-  const [durationMinutes, setDurationMinutes] = useState<number>(
-    stopToEdit ? Math.max(1, Math.round(stopToEdit.durationSeconds / 60)) : 15
-  );
   const [notes, setNotes] = useState<string>(stopToEdit?.notes || '');
+  const [durationStr, setDurationStr] = useState<string>(
+    stopToEdit ? Math.round(stopToEdit.durationSeconds / 60).toString() : '15'
+  );
   const [distanceKm, setDistanceKm] = useState<number>(
     stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0)
   );
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setCategory(stopToEdit ? stopToEdit.category : 'chai');
+      setName(stopToEdit ? stopToEdit.name : (defaultPoint ? `Stop at ${defaultPoint.distanceFromStartKm.toFixed(1)} km` : 'Chai & Snack Break'));
+      setNotes(stopToEdit?.notes || '');
+      setDurationStr(stopToEdit ? Math.round(stopToEdit.durationSeconds / 60).toString() : '15');
+      setDistanceKm(stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0));
+    }
+  }, [isOpen, stopToEdit, defaultPoint]);
+
+  const durationMinutes = Math.max(1, parseInt(durationStr) || 1);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

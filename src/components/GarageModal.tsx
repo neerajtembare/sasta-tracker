@@ -61,15 +61,19 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   const handleSaveCurrent = () => {
     if (!currentAnalysis) return;
     const gpxText = exportAnalysisToGPX(currentAnalysis);
-    saveRideToGarage({
-      name: currentAnalysis.name,
-      distanceKm: currentAnalysis.totalDistanceKm,
-      maxSpeedKmh: currentAnalysis.maxSpeedKmh,
-      gpxContent: gpxText,
-    });
-    setRides(getGarageRides());
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      saveRideToGarage({
+        name: currentAnalysis.name,
+        distanceKm: currentAnalysis.totalDistanceKm,
+        maxSpeedKmh: currentAnalysis.maxSpeedKmh,
+        gpxContent: gpxText,
+      });
+      setRides(getGarageRides());
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (e: any) {
+      alert(e.message || 'Failed to save ride.');
+    }
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
@@ -91,8 +95,8 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   const footerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className={`border rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+      <div className={`border rounded-2xl w-full max-w-2xl max-h-[90dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
         {/* Header */}
         <div className={`px-4 sm:px-5 py-3.5 border-b flex items-center justify-between ${headerBg}`}>
           <div className="flex items-center gap-2.5">

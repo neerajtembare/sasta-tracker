@@ -42,17 +42,22 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
       }
     });
 
-    // Fallbacks if GPX didn't have high-res lean
-    const finalLeft = Math.round(maxLeft || (analysis.maxEstimatedLean ? analysis.maxEstimatedLean * 0.92 : 36));
-    const finalRight = Math.round(maxRight || (analysis.maxEstimatedLean || 40));
+    // Real calculated values directly from GPX track points (zero hardcoded fake counts)
+    const finalLeft = Math.round(maxLeft);
+    const finalRight = Math.round(maxRight);
+
+    const leftG = finalLeft > 0 ? (Math.tan((finalLeft * Math.PI) / 180)).toFixed(2) : '0.00';
+    const rightG = finalRight > 0 ? (Math.tan((finalRight * Math.PI) / 180)).toFixed(2) : '0.00';
 
     return {
       maxLeft: finalLeft,
       maxRight: finalRight,
-      deepLeft: Math.max(deepLeft, 8),
-      deepRight: Math.max(deepRight, 12),
-      moderateSweeps: Math.max(moderateSweeps, 34),
-      maxApexSpeedKmh: Math.round(maxApexSpeedKmh || Math.min(analysis.maxSpeedKmh * 0.78, 68)),
+      leftG,
+      rightG,
+      deepLeft,
+      deepRight,
+      moderateSweeps,
+      maxApexSpeedKmh: Math.round(maxApexSpeedKmh),
     };
   }, [analysis]);
 
@@ -73,7 +78,7 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
               Cornering & Tire Lean Profile
             </h3>
             <p className={`text-[11px] font-mono ${subText}`}>
-              Apex roll angles and twisty road handling analysis
+              Apex roll angles, lateral acceleration Gs, and twisty road dynamics
             </p>
           </div>
         </div>
@@ -95,11 +100,16 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
             <span className="text-[10px] font-mono text-sky-400 font-bold">{corneringStats.deepLeft} hairpins</span>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <div className="text-3xl sm:text-4xl font-mono font-black text-sky-400">
-              {corneringStats.maxLeft}°
+          <div className="flex items-baseline justify-between flex-wrap gap-1">
+            <div className="flex items-baseline gap-2">
+              <div className="text-3xl sm:text-4xl font-mono font-black text-sky-400">
+                {corneringStats.maxLeft}°
+              </div>
+              <span className="text-xs font-mono text-sky-500 font-bold">LEFT</span>
             </div>
-            <span className="text-xs font-mono text-sky-500 font-bold">LEFT</span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+              {corneringStats.leftG}G
+            </span>
           </div>
 
           {/* Bar indicator */}
@@ -121,11 +131,16 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
             <span className="text-[10px] font-mono text-rose-400 font-bold">{corneringStats.deepRight} hairpins</span>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <div className="text-3xl sm:text-4xl font-mono font-black text-rose-400">
-              {corneringStats.maxRight}°
+          <div className="flex items-baseline justify-between flex-wrap gap-1">
+            <div className="flex items-baseline gap-2">
+              <div className="text-3xl sm:text-4xl font-mono font-black text-rose-400">
+                {corneringStats.maxRight}°
+              </div>
+              <span className="text-xs font-mono text-rose-500 font-bold">RIGHT</span>
             </div>
-            <span className="text-xs font-mono text-rose-500 font-bold">RIGHT</span>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+              {corneringStats.rightG}G
+            </span>
           </div>
 
           {/* Bar indicator */}
@@ -138,30 +153,42 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
         </div>
       </div>
 
-      {/* Highlights: Apex Speed & Turn Counts */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className={`p-3.5 rounded-xl border font-mono ${innerCardBg}`}>
-          <div className={`text-[10px] uppercase font-bold ${subText}`}>MAX APEX SPEED</div>
-          <div className="text-xl font-black text-emerald-400 mt-1">
-            {corneringStats.maxApexSpeedKmh} <span className="text-xs font-normal">KM/H</span>
+      {/* Highlights: Apex Speed & Turn Counts (Comments placed on right to eliminate vertical scrolling) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+        <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
+          <div>
+            <div className={`text-[10px] uppercase font-bold ${subText}`}>MAX APEX SPEED</div>
+            <div className="text-xl font-black text-emerald-400 mt-0.5">
+              {corneringStats.maxApexSpeedKmh} <span className="text-xs font-normal">KM/H</span>
+            </div>
           </div>
-          <div className={`text-[10px] mt-0.5 ${subText}`}>Carried through &gt;20° lean</div>
+          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+            Carried through &gt;15° lean
+          </div>
         </div>
 
-        <div className={`p-3.5 rounded-xl border font-mono ${innerCardBg}`}>
-          <div className={`text-[10px] uppercase font-bold ${subText}`}>DEEP CORNERS (&gt;28°)</div>
-          <div className="text-xl font-black text-amber-400 mt-1">
-            {corneringStats.deepLeft + corneringStats.deepRight} <span className="text-xs font-normal">TURNS</span>
+        <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
+          <div>
+            <div className={`text-[10px] uppercase font-bold ${subText}`}>DEEP CORNERS (&gt;20°)</div>
+            <div className="text-xl font-black text-amber-400 mt-0.5">
+              {corneringStats.deepLeft + corneringStats.deepRight} <span className="text-xs font-normal">TURNS</span>
+            </div>
           </div>
-          <div className={`text-[10px] mt-0.5 ${subText}`}>Ghat / mountain switchbacks</div>
+          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+            Ghat / mountain switchbacks
+          </div>
         </div>
 
-        <div className={`p-3.5 rounded-xl border font-mono ${innerCardBg}`}>
-          <div className={`text-[10px] uppercase font-bold ${subText}`}>MODERATE SWEEPS</div>
-          <div className="text-xl font-black text-sky-400 mt-1">
-            {corneringStats.moderateSweeps} <span className="text-xs font-normal">CURVES</span>
+        <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
+          <div>
+            <div className={`text-[10px] uppercase font-bold ${subText}`}>MODERATE SWEEPS</div>
+            <div className="text-xl font-black text-sky-400 mt-0.5">
+              {corneringStats.moderateSweeps} <span className="text-xs font-normal">CURVES</span>
+            </div>
           </div>
-          <div className={`text-[10px] mt-0.5 ${subText}`}>Highway high-speed bends</div>
+          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+            Highway high-speed bends
+          </div>
         </div>
       </div>
 

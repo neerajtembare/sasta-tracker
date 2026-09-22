@@ -31,6 +31,10 @@ interface LandingViewProps {
   onSelectRide: (gpxText: string, name: string) => void;
   onStartRecording: () => void;
   theme: AppTheme;
+  activeRideName?: string | null;
+  activeRideDistanceKm?: number | null;
+  onResumeRide?: () => void;
+  onClearRide?: () => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({
@@ -38,6 +42,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
   onSelectRide,
   onStartRecording,
   theme,
+  activeRideName,
+  activeRideDistanceKm,
+  onResumeRide,
+  onClearRide,
 }) => {
   const isLight = theme === 'light';
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +104,58 @@ export const LandingView: React.FC<LandingViewProps> = ({
         }}
       />
 
+      {/* Active Ride in Session Notification Banner */}
+      {activeRideName && onResumeRide && (
+        <div className={`p-3.5 sm:p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg animate-in fade-in duration-300 ${
+          isLight
+            ? 'bg-sky-50/90 border-sky-200 text-sky-950'
+            : 'bg-gradient-to-r from-sky-950/40 via-[#0d131a] to-emerald-950/30 border-sky-500/30 text-white'
+        }`}>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center text-lg shrink-0">
+              🏍️
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-sky-400">
+                  Ride in Memory
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <p className="font-heading font-black text-sm truncate">
+                {activeRideName}
+                {activeRideDistanceKm ? ` • ${activeRideDistanceKm.toFixed(1)} km` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+            {onClearRide && (
+              <button
+                type="button"
+                onClick={onClearRide}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
+                  isLight
+                    ? 'border-slate-300 bg-white hover:bg-rose-50 text-rose-600 hover:border-rose-300'
+                    : 'border-[#1e2a38] bg-[#131b24] hover:bg-rose-950/30 text-rose-400 hover:border-rose-500/40'
+                }`}
+                title="Clear current ride from session memory"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onResumeRide}
+              className="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs font-sans flex items-center gap-1.5 shadow-md hover:shadow-sky-500/20 transition-all cursor-pointer"
+            >
+              <span>Resume Analysis</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Hero Welcome Banner */}
       <div className="text-center pt-2 sm:pt-4 space-y-2.5">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-sky-500/10 text-sky-500 border border-sky-500/30">
@@ -119,6 +179,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* Card 1: Upload GPX */}
         <div
+          id="btn-landing-upload"
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
           onDragOver={e => {
             e.preventDefault();
             setIsDragging(true);
@@ -126,7 +195,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`p-5 sm:p-6 border-2 border-dashed rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl ${
+          className={`p-5 sm:p-6 border-2 border-dashed rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl focus:outline-hidden focus:ring-2 focus:ring-sky-500 ${
             isDragging
               ? 'border-sky-500 bg-sky-500/10 scale-[1.01]'
               : isLight
@@ -144,16 +213,23 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 Upload GPX Ride Log
               </h2>
               <p className={`text-xs mt-1 leading-relaxed ${subText}`}>
-                Select a <code className="font-mono text-sky-500 font-bold">.gpx</code> file from your phone files or drag and drop from your computer.
+                Select a <code className="font-mono text-sky-500 font-bold">.gpx</code> file from your device or drag and drop onto this card.
               </p>
             </div>
           </div>
 
-          <div className="pt-4 flex items-center justify-between">
-            <span className="text-[11px] font-mono text-sky-500 font-bold flex items-center gap-1">
-              <span>Choose File</span>
+          <div className="pt-4 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500 text-sky-400 hover:text-slate-950 font-bold text-xs font-mono border border-sky-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Browse File</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-            </span>
+            </button>
             <span className={`text-[10px] font-mono ${subText}`}>
               Garmin • Strava • GPSLogger
             </span>
@@ -162,8 +238,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
         {/* Card 2: Live GPS Cockpit */}
         <div
+          id="btn-landing-cockpit"
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onStartRecording();
+            }
+          }}
           onClick={onStartRecording}
-          className={`p-5 sm:p-6 border rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl ${
+          className={`p-5 sm:p-6 border rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 ${
             isLight
               ? 'border-slate-200 bg-white hover:border-emerald-500 hover:shadow-emerald-100'
               : 'border-[#1e2a38] bg-[#0d131a] hover:border-emerald-500 hover:shadow-emerald-950/40'
@@ -190,11 +275,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          <div className="pt-4 flex items-center justify-between">
-            <span className="text-[11px] font-mono text-emerald-500 font-bold flex items-center gap-1">
+          <div className="pt-4 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onStartRecording();
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 font-bold text-xs font-mono border border-emerald-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
               <span>Open Cockpit HUD</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-            </span>
+            </button>
             <span className={`text-[10px] font-mono ${subText}`}>
               No external app needed
             </span>
@@ -228,94 +320,170 @@ export const LandingView: React.FC<LandingViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* Sample 1: Saturday Morning Run */}
           <div
+            id="btn-demo-saturday"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME);
+              }
+            }}
             onClick={() => onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 ${sampleCardBg}`}
+            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-sky-500 ${sampleCardBg}`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-500 flex items-center justify-center shrink-0">
                 <Navigation className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-mono font-bold text-xs truncate">
-                  Saturday Morning (Pune - Satara)
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-xs truncate">
+                    Saturday Morning (Pune - Satara)
+                  </span>
+                  <span className="text-[9px] font-mono px-1 rounded bg-sky-500/15 text-sky-400 shrink-0">Highway</span>
                 </div>
                 <div className={`text-[10px] font-mono truncate ${subText}`}>
                   227.7 km • 5 Pit Stops • Highway & Ghats
                 </div>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-sky-500 group-hover:translate-x-1 transition-transform shrink-0">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME);
+              }}
+              className="px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500 text-sky-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
+            >
               Load →
-            </span>
+            </button>
           </div>
 
           {/* Sample 2: Mulshi Return */}
           <div
+            id="btn-demo-mulshi"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME);
+              }
+            }}
             onClick={() => onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 ${sampleCardBg}`}
+            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${sampleCardBg}`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 flex items-center justify-center shrink-0">
                 <MapPin className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-mono font-bold text-xs truncate">
-                  Mulshi Lake Return Run
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-xs truncate">
+                    Mulshi Lake Return Run
+                  </span>
+                  <span className="text-[9px] font-mono px-1 rounded bg-amber-500/15 text-amber-400 shrink-0">Twisties</span>
                 </div>
                 <div className={`text-[10px] font-mono truncate ${subText}`}>
                   26.3 km • Scenic Twisties & Pirangut Ghat
                 </div>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-amber-500 group-hover:translate-x-1 transition-transform shrink-0">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME);
+              }}
+              className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
+            >
               Load →
-            </span>
+            </button>
           </div>
 
           {/* Sample 3: Western Ghats Tour */}
           <div
+            id="btn-demo-ghats"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME);
+              }
+            }}
             onClick={() => onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 ${sampleCardBg}`}
+            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 ${sampleCardBg}`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 flex items-center justify-center shrink-0">
                 <Coffee className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-mono font-bold text-xs truncate">
-                  Western Ghats Tour (Pune - Wai)
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-xs truncate">
+                    Western Ghats Tour (Pune - Wai)
+                  </span>
+                  <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/15 text-emerald-400 shrink-0">Touring</span>
                 </div>
                 <div className={`text-[10px] font-mono truncate ${subText}`}>
                   128.6 km • +1,440m Climb • Pre-tagged Stops
                 </div>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-emerald-500 group-hover:translate-x-1 transition-transform shrink-0">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME);
+              }}
+              className="px-2.5 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
+            >
               Load →
-            </span>
+            </button>
           </div>
 
           {/* Sample 4: 1Hz High-Res Twisties */}
           <div
+            id="btn-demo-twisties"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME);
+              }
+            }}
             onClick={() => onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 ${sampleCardBg}`}
+            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 ${sampleCardBg}`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 flex items-center justify-center shrink-0">
                 <Zap className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-mono font-bold text-xs truncate">
-                  Pasarni Mountain Hairpins (1Hz)
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-xs truncate">
+                    Pasarni Mountain Hairpins (1Hz)
+                  </span>
+                  <span className="text-[9px] font-mono px-1 rounded bg-cyan-500/15 text-cyan-400 shrink-0">1Hz Apex</span>
                 </div>
                 <div className={`text-[10px] font-mono truncate ${subText}`}>
                   120 Continuous 1-Sec Fixes • 42° Lean Replay
                 </div>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-cyan-500 group-hover:translate-x-1 transition-transform shrink-0">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME);
+              }}
+              className="px-2.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
+            >
               Load →
-            </span>
+            </button>
           </div>
         </div>
       </div>

@@ -21,9 +21,30 @@ import { RideCalibrationModal } from './components/RideCalibrationModal';
 import { LandingView } from './components/LandingView';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
+<<<<<<< Updated upstream
 import { SAMPLE_GPX_DATA, SAMPLE_GPX_NAME } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme } from './types';
 import { Radio, Gauge, HelpCircle, FolderArchive, Home } from 'lucide-react';
+=======
+import { saveRideToGarage, updateGarageRide } from './utils/storage';
+import { 
+  SAMPLE_GPX_DATA, 
+  SAMPLE_GPX_NAME,
+  SATURDAY_MORNING_GPX,
+  SATURDAY_MORNING_NAME,
+  MULSHI_RETURN_GPX,
+  MULSHI_RETURN_NAME,
+  HIGH_RES_TWISTIES_GPX,
+  HIGH_RES_TWISTIES_NAME
+} from './data/sampleRide';
+import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
+import { getStoredUnitSystem, setStoredUnitSystem } from './utils/units';
+import { 
+  Radio, Gauge, HelpCircle, FolderArchive, Home,
+  Map as MapIcon, Activity, History, Bike as BikeIcon 
+} from 'lucide-react';
+import { RideDiagnosticsModal } from './components/RideDiagnosticsModal';
+>>>>>>> Stashed changes
 
 export type AppTab = 'home' | 'analysis' | 'cockpit' | 'faq';
 
@@ -49,12 +70,29 @@ export default function App() {
     });
   };
 
+  // Global Unit System (Metric km/h <-> Imperial mph)
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
+
+  const toggleUnitSystem = () => {
+    setUnitSystem(prev => {
+      const next: UnitSystem = prev === 'metric' ? 'imperial' : 'metric';
+      setStoredUnitSystem(next);
+      return next;
+    });
+  };
+
   // Stop & Ride details editing state
   const [isStopEditorOpen, setIsStopEditorOpen] = useState<boolean>(false);
   const [stopToEdit, setStopToEdit] = useState<PitStop | null>(null);
   const [defaultStopPoint, setDefaultStopPoint] = useState<TrackPoint | null>(null);
   const [isRideNameEditorOpen, setIsRideNameEditorOpen] = useState<boolean>(false);
   const [isCalibrationOpen, setIsCalibrationOpen] = useState<boolean>(false);
+<<<<<<< Updated upstream
+=======
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [currentRideId, setCurrentRideId] = useState<string | null>(null);
+  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
+>>>>>>> Stashed changes
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
 
   const uploadZoneRef = useRef<HTMLDivElement>(null);
@@ -65,6 +103,7 @@ export default function App() {
       const parsed = parseGPX(dataToParse);
       parsed.name = name || SAMPLE_GPX_NAME;
       setAnalysis(parsed);
+      setCurrentRideId(null);
       setScrubIndex(null);
       setCurrentTab('analysis');
       setErrorMessage(null);
@@ -73,14 +112,24 @@ export default function App() {
     }
   };
 
-  const handleFileLoaded = (xmlText: string, fileName: string) => {
+  const handleFileLoaded = (xmlText: string, fileName: string, rideId?: string) => {
     try {
       const parsed = parseGPX(xmlText);
       parsed.name = fileName || 'Uploaded Ride Track';
       setAnalysis(parsed);
+      setCurrentRideId(rideId || null);
       setScrubIndex(null);
       setCurrentTab('analysis');
       setErrorMessage(null);
+<<<<<<< Updated upstream
+=======
+      if (rideId) {
+        setSessionNotice(`📁 Loaded "${parsed.name}" from your Garage.`);
+      } else {
+        setSessionNotice('Ride loaded in session only. Refresh to clear, or use My Rides → Save to keep it.');
+      }
+      setTimeout(() => setSessionNotice(null), 5000);
+>>>>>>> Stashed changes
     } catch (err: any) {
       setErrorMessage('Failed to parse GPX: ' + err.message);
     }
@@ -89,9 +138,27 @@ export default function App() {
   const handleLiveRideRecorded = (gpxText: string) => {
     try {
       const parsed = parseGPX(gpxText);
-      parsed.name = `Live Ride (${new Date().toLocaleTimeString()})`;
+      const rideName = `Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+      parsed.name = rideName;
       setAnalysis(parsed);
       setCurrentTab('analysis');
+
+      // Auto-save live ride to Garage so it's never lost
+      try {
+        const saved = saveRideToGarage({
+          name: rideName,
+          distanceKm: parsed.totalDistanceKm,
+          maxSpeedKmh: parsed.maxSpeedKmh,
+          gpxContent: gpxText,
+        });
+        setCurrentRideId(saved.id);
+        setSessionNotice('🏍️ Ride auto-saved to your Garage! Open My Rides to see it.');
+        setTimeout(() => setSessionNotice(null), 5000);
+      } catch (saveErr: any) {
+        console.warn('Auto-save failed:', saveErr);
+        setSessionNotice('⚠️ Could not auto-save ride. Use My Rides → Save to keep it manually.');
+        setTimeout(() => setSessionNotice(null), 6000);
+      }
     } catch (err: any) {
       setErrorMessage('Error analyzing recorded ride: ' + err.message);
     }
@@ -112,6 +179,7 @@ export default function App() {
 
   const handleCloseTrack = () => {
     setAnalysis(null);
+    setCurrentRideId(null);
     setScrubIndex(null);
     setCurrentTab('home');
   };
@@ -148,30 +216,63 @@ export default function App() {
       updatedStops = [...analysis.pitStops, savedStop].sort((a, b) => a.distanceKm - b.distanceKm);
     }
     const totalStoppedSec = updatedStops.reduce((acc, s) => acc + s.durationSeconds, 0);
-    setAnalysis({
+    const updated = {
       ...analysis,
       pitStops: updatedStops,
       stoppedTimeSeconds: Math.max(analysis.stoppedTimeSeconds, totalStoppedSec),
-    });
+    };
+    setAnalysis(updated);
+
+    if (currentRideId) {
+      try {
+        const gpxText = exportAnalysisToGPX(updated);
+        updateGarageRide(currentRideId, { gpxContent: gpxText });
+      } catch (e) {
+        console.warn('Failed to sync stop with garage:', e);
+      }
+    }
   };
 
   const handleDeleteStop = (stopId: string) => {
     if (!analysis) return;
     const updatedStops = analysis.pitStops.filter(s => s.id !== stopId);
-    setAnalysis({
+    const updated = {
       ...analysis,
       pitStops: updatedStops,
-      // Don't recalculate stoppedTimeSeconds — it's derived from GPS data (total - moving),
-      // not from pit stop annotations. Deleting a user tag doesn't change actual stopped time.
-    });
+    };
+    setAnalysis(updated);
+
+    if (currentRideId) {
+      try {
+        const gpxText = exportAnalysisToGPX(updated);
+        updateGarageRide(currentRideId, { gpxContent: gpxText });
+      } catch (e) {
+        console.warn('Failed to sync deleted stop with garage:', e);
+      }
+    }
   };
 
   const handleSaveRideName = (newName: string) => {
     if (!analysis) return;
-    setAnalysis({
+    const updated = {
       ...analysis,
       name: newName,
-    });
+    };
+    setAnalysis(updated);
+
+    if (currentRideId) {
+      try {
+        const gpxText = exportAnalysisToGPX(updated);
+        updateGarageRide(currentRideId, {
+          name: newName,
+          gpxContent: gpxText,
+        });
+        setSessionNotice('💾 Title updated in your Garage!');
+        setTimeout(() => setSessionNotice(null), 3000);
+      } catch (e) {
+        console.warn('Failed to update garage ride title:', e);
+      }
+    }
   };
 
   const handleSaveCalibration = (calib: {
@@ -183,10 +284,25 @@ export default function App() {
     userNotes?: string;
   }) => {
     if (!analysis) return;
-    setAnalysis({
+    const updated = {
       ...analysis,
       ...calib,
-    });
+    };
+    setAnalysis(updated);
+
+    if (currentRideId) {
+      try {
+        const gpxText = exportAnalysisToGPX(updated);
+        updateGarageRide(currentRideId, {
+          gpxContent: gpxText,
+          distanceKm: calib.userDistanceOverrideKm ?? updated.totalDistanceKm,
+        });
+        setSessionNotice('💾 Bike specs updated in your Garage!');
+        setTimeout(() => setSessionNotice(null), 3000);
+      } catch (e) {
+        console.warn('Failed to sync calibration with garage:', e);
+      }
+    }
   };
 
   const activeScrubPoint = 
@@ -215,6 +331,8 @@ export default function App() {
         rideName={analysis ? analysis.name : 'No track loaded'}
         theme={theme}
         onToggleTheme={toggleTheme}
+        unitSystem={unitSystem}
+        onToggleUnitSystem={toggleUnitSystem}
       />
 
       {/* Main Container */}
@@ -253,6 +371,7 @@ export default function App() {
               onOpenCalibration={() => setIsCalibrationOpen(true)}
               onCloseTrack={handleCloseTrack}
               theme={theme}
+              unitSystem={unitSystem}
             />
 
             {/* Key Ride Insights (Lean Angle, Max Velocity Burst, Fuel Efficiency) */}
@@ -308,6 +427,153 @@ export default function App() {
                 theme={theme}
               />
             </div>
+<<<<<<< Updated upstream
+=======
+
+            {/* Sticky Segmented Sub-Tab Switcher */}
+            <div className={`sticky top-[58px] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${
+              theme === 'light' ? 'bg-slate-100/90' : 'bg-[#080c10]/90'
+            }`}>
+              <div className={`flex items-center p-1 rounded-xl border text-xs font-mono font-bold shadow-md overflow-x-auto no-scrollbar gap-1 ${
+                theme === 'light' ? 'bg-white border-slate-200 text-slate-600' : 'bg-[#0d131a] border-[#1e2a38] text-[#8f9ca8]'
+              }`}>
+                <button
+                  onClick={() => setAnalysisSubTab('map')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'map'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <MapIcon className="w-3.5 h-3.5" />
+                  <span>Map & Scrub</span>
+                </button>
+
+                <button
+                  onClick={() => setAnalysisSubTab('telemetry')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'telemetry'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>Telemetry & Lean</span>
+                </button>
+
+                <button
+                  onClick={() => setAnalysisSubTab('timeline')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap relative ${
+                    analysisSubTab === 'timeline'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>Timeline</span>
+                  {analysis.pitStops.length > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                      analysisSubTab === 'timeline' ? 'bg-slate-950 text-sky-400' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {analysis.pitStops.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setAnalysisSubTab('bike')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                    analysisSubTab === 'bike'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                  }`}
+                >
+                  <BikeIcon className="w-3.5 h-3.5" />
+                  <span>Bike & Fuel</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 1: Map Route & Scrubber View */}
+            {analysisSubTab === 'map' && (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <MapViewer
+                  analysis={analysis}
+                  scrubIndex={scrubIndex}
+                  onScrubChange={setScrubIndex}
+                  onOpenAddStopAtPoint={(pt) => handleOpenAddStop(pt)}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  focusedCoordinate={focusedCoordinate}
+                  theme={theme}
+                  onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                />
+              </div>
+            )}
+
+            {/* TAB 2: Telemetry, Lean Profile & Histograms */}
+            {analysisSubTab === 'telemetry' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <CorneringProfileCard 
+                  analysis={analysis}
+                  theme={theme}
+                />
+
+                <SpeedZoneHistogram 
+                  analysis={analysis}
+                  theme={theme} 
+                />
+
+                <TelemetryCharts
+                  analysis={analysis}
+                  scrubIndex={scrubIndex}
+                  onScrubChange={setScrubIndex}
+                  theme={theme}
+                  unitSystem={unitSystem}
+                />
+              </div>
+            )}
+
+            {/* TAB 3: Chronological Journey Timeline & Strava Splits */}
+            {analysisSubTab === 'timeline' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <JourneyTimeline
+                  analysis={analysis}
+                  onSelectCoordinate={(lat, lon, label) => {
+                    setFocusedCoordinate({ lat, lon, label });
+                    setAnalysisSubTab('map');
+                  }}
+                  onOpenAddStop={() => handleOpenAddStop()}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  theme={theme}
+                />
+
+                <SpeedTrapsAndSectors
+                  analysis={analysis}
+                  onSelectCoordinate={(lat, lon, label) => {
+                    setFocusedCoordinate({ lat, lon, label });
+                    setAnalysisSubTab('map');
+                  }}
+                  onOpenAddStop={() => handleOpenAddStop()}
+                  onEditStop={(stop) => handleOpenEditStop(stop)}
+                  onDeleteStop={(stopId) => handleDeleteStop(stopId)}
+                  theme={theme}
+                  unitSystem={unitSystem}
+                />
+              </div>
+            )}
+
+            {/* TAB 4: Motorcycle Machine & Fuel Economics */}
+            {analysisSubTab === 'bike' && (
+              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                <RideInsightsCard
+                  analysis={analysis}
+                  onOpenCalibration={() => setIsCalibrationOpen(true)}
+                  theme={theme}
+                  unitSystem={unitSystem}
+                />
+              </div>
+            )}
+>>>>>>> Stashed changes
           </div>
         )}
 
@@ -319,6 +585,7 @@ export default function App() {
               isRecording={isRecordingLive}
               setIsRecording={setIsRecordingLive}
               theme={theme}
+              unitSystem={unitSystem}
             />
           </div>
         )}
@@ -403,8 +670,8 @@ export default function App() {
         isOpen={isGarageOpen}
         onClose={() => setIsGarageOpen(false)}
         currentAnalysis={analysis}
-        onSelectRide={(gpxText, name) => {
-          handleFileLoaded(gpxText, name);
+        onSelectRide={(gpxText, name, id) => {
+          handleFileLoaded(gpxText, name, id);
         }}
         onLoadSample={handleLoadSample}
         onCloseTrack={handleCloseTrack}

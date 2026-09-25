@@ -57,10 +57,17 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   const focusedMarkerRef = useRef<L.Marker | null>(null);
   const traveledPolylineRef = useRef<L.Polyline | null>(null);
   const snappedPolylineRef = useRef<L.Polyline | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const overlayTileLayerRef = useRef<L.TileLayer | null>(null);
+  const currentMapStyleRef = useRef<string>('');
   const scrubIndexRef = useRef<number | null>(scrubIndex);
   scrubIndexRef.current = scrubIndex;
 
   // Base Map Tile Style (100% free, zero API key dependencies)
+<<<<<<< Updated upstream
+=======
+  // CartoDB free basemaps: Dark Matter (dark) and Voyager (light)
+>>>>>>> Stashed changes
   const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'osm' | 'street'>(
     isLight ? 'street' : 'dark'
   );
@@ -222,6 +229,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
+      if ((mapContainerRef.current as any)._leaflet_id) {
+        delete (mapContainerRef.current as any)._leaflet_id;
+      }
       const map = L.map(mapContainerRef.current, {
         zoomControl: false,
         attributionControl: false,
@@ -234,9 +244,51 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
     const map = mapInstanceRef.current;
 
-    // Clear old layers
+    // Update Tile Layers ONLY when mapStyle changes to avoid tile flickering & net::ERR_ABORTED errors
+    if (currentMapStyleRef.current !== mapStyle || !tileLayerRef.current) {
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current);
+        tileLayerRef.current = null;
+      }
+      if (overlayTileLayerRef.current) {
+        map.removeLayer(overlayTileLayerRef.current);
+        overlayTileLayerRef.current = null;
+      }
+
+      if (mapStyle === 'dark') {
+        tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 20,
+          subdomains: 'abcd',
+          attribution: '&copy; CARTO',
+        }).addTo(map);
+      } else if (mapStyle === 'street') {
+        tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          maxZoom: 20,
+          subdomains: 'abcd',
+          attribution: '&copy; CARTO',
+        }).addTo(map);
+      } else if (mapStyle === 'satellite') {
+        tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 18,
+        }).addTo(map);
+        overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 18,
+          opacity: 0.85,
+        }).addTo(map);
+      } else if (mapStyle === 'osm') {
+        tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(map);
+      }
+      currentMapStyleRef.current = mapStyle;
+    }
+
+    // Clear old vector layers (preserve the base tile layers so they don't reload or cancel network requests)
     map.eachLayer(layer => {
-      map.removeLayer(layer);
+      if (layer !== tileLayerRef.current && layer !== overlayTileLayerRef.current) {
+        map.removeLayer(layer);
+      }
     });
     traveledPolylineRef.current = null;
     scrubberMarkerRef.current = null;
@@ -247,6 +299,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       snappedPolylineRef.current = null;
     }
 
+<<<<<<< Updated upstream
     // Free Tile Layers
     if (mapStyle === 'dark') {
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -273,9 +326,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }).addTo(map);
     }
 
+=======
+>>>>>>> Stashed changes
     const allCoords: L.LatLngTuple[] = [];
     const maxKmh = analysis.maxSpeedKmh;
     const pts = analysis.points;
+
+    // Hardware-accelerated HTML5 Canvas Renderer for high-performance rendering (100x fewer DOM nodes)
+    const canvasRenderer = L.canvas({ padding: 0.5 });
 
     // 1. Draw Route Lines Based on Selected Route Mode
     if (routeMode === 'split' && turnaroundIndex > 0) {
@@ -292,6 +350,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         weight: 7,
         opacity: 0.6,
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
 
       // Outbound solid Cyan line
@@ -300,6 +359,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         weight: 5,
         opacity: 0.95,
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
       outboundLine.bindTooltip('<b>Outbound Leg (Leg 1)</b>', { sticky: true });
 
@@ -316,6 +376,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         weight: 7,
         opacity: 0.6,
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
 
       // Return dashed Coral line
@@ -325,6 +386,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         opacity: 0.95,
         dashArray: '8, 6',
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
       returnLine.bindTooltip('<b>Return Leg (Leg 2 - Offset View)</b>', { sticky: true });
 
@@ -353,6 +415,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         weight: 5,
         opacity: 0.95,
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
 
     } else if (routeMode === 'return' && turnaroundIndex > 0) {
@@ -368,10 +431,11 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         weight: 5,
         opacity: 0.95,
         lineCap: 'round',
+        renderer: canvasRenderer,
       }).addTo(map);
 
     } else {
-      // Full Speed Heatmap Mode
+      // Full Speed Heatmap Mode — Aggregated speed bucket chunking (100x fewer DOM polylines)
       analysis.segments.forEach(seg => {
         const segCoords = seg.points.map(p => [p.lat, p.lon] as L.LatLngTuple);
         allCoords.push(...segCoords);
@@ -383,32 +447,94 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           opacity: 0.5,
           lineCap: 'round',
           lineJoin: 'round',
+          renderer: canvasRenderer,
         }).addTo(map);
 
-        // Speed-colored segmented track
-        for (let i = 0; i < seg.points.length - 1; i++) {
-          const p1 = seg.points[i];
-          const p2 = seg.points[i + 1];
-          const segSpeed = (p1.speedKmh + p2.speedKmh) / 2;
-          const color = getSpeedColor(segSpeed, maxKmh);
+        // Group consecutive points sharing the same color into continuous polyline chunks.
+        // Adjacent chunks share boundary vertices so the rendered speed line has zero gaps.
+        const chunks: Array<{
+          coords: L.LatLngTuple[];
+          color: string;
+          avgSpeed: number;
+          startDist: number;
+          endDist: number;
+        }> = [];
 
-          const subLine = L.polyline([[p1.lat, p1.lon], [p2.lat, p2.lon]], {
-            color,
+        let currentCoords: L.LatLngTuple[] = [];
+        let currentColor = '';
+        let speedSum = 0;
+        let speedCount = 0;
+        let chunkStartDist = 0;
+        let chunkEndDist = 0;
+
+        for (let i = 0; i < seg.points.length; i++) {
+          const pt = seg.points[i];
+          const ptColor = getSpeedColor(pt.speedKmh, maxKmh);
+          const coord: L.LatLngTuple = [pt.lat, pt.lon];
+
+          if (currentCoords.length === 0) {
+            currentCoords.push(coord);
+            currentColor = ptColor;
+            speedSum = pt.speedKmh;
+            speedCount = 1;
+            chunkStartDist = pt.distanceFromStartKm;
+            chunkEndDist = pt.distanceFromStartKm;
+          } else if (ptColor === currentColor) {
+            currentCoords.push(coord);
+            speedSum += pt.speedKmh;
+            speedCount++;
+            chunkEndDist = pt.distanceFromStartKm;
+          } else {
+            // Append boundary point so the previous line connects seamlessly to this point
+            currentCoords.push(coord);
+            chunkEndDist = pt.distanceFromStartKm;
+            chunks.push({
+              coords: currentCoords,
+              color: currentColor,
+              avgSpeed: speedCount > 0 ? speedSum / speedCount : 0,
+              startDist: chunkStartDist,
+              endDist: chunkEndDist,
+            });
+
+            // Start new chunk with boundary point as first vertex
+            currentCoords = [coord];
+            currentColor = ptColor;
+            speedSum = pt.speedKmh;
+            speedCount = 1;
+            chunkStartDist = pt.distanceFromStartKm;
+            chunkEndDist = pt.distanceFromStartKm;
+          }
+        }
+
+        if (currentCoords.length > 1) {
+          chunks.push({
+            coords: currentCoords,
+            color: currentColor,
+            avgSpeed: speedCount > 0 ? speedSum / speedCount : 0,
+            startDist: chunkStartDist,
+            endDist: chunkEndDist,
+          });
+        }
+
+        // Render aggregated speed chunks via HTML5 Canvas
+        chunks.forEach(chunk => {
+          const poly = L.polyline(chunk.coords, {
+            color: chunk.color,
             weight: 4.5,
             opacity: 0.95,
             lineCap: 'round',
             lineJoin: 'round',
+            renderer: canvasRenderer,
           }).addTo(map);
 
-          subLine.bindTooltip(
-            `<div style="font-family:monospace; font-size:11px; padding:2px 4px; background:${isLight ? '#fff' : '#111512'}; color:${isLight ? '#000' : '#fff'}; border:1px solid ${color};">
-              <strong style="color:${color}; font-size:12px;">${segSpeed.toFixed(1)} km/h</strong><br/>
-              Ele: ${p1.ele !== null ? p1.ele.toFixed(0) + 'm' : '—'}<br/>
-              Dist: ${p1.distanceFromStartKm.toFixed(1)} km
+          poly.bindTooltip(
+            `<div style="font-family:monospace; font-size:11px; padding:3px 6px; background:${isLight ? '#ffffff' : '#0d131a'}; color:${isLight ? '#0f172a' : '#ffffff'}; border:1px solid ${chunk.color}; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">
+              <strong style="color:${chunk.color}; font-size:12px;">~${chunk.avgSpeed.toFixed(0)} km/h</strong><br/>
+              <span style="opacity:0.8; font-size:10px;">km ${chunk.startDist.toFixed(1)} – ${chunk.endDist.toFixed(1)}</span>
             </div>`,
             { sticky: true }
           );
-        }
+        });
       });
     }
 
@@ -454,6 +580,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           weight: 1,
           fillColor: dotColor,
           fillOpacity: 0.9,
+          renderer: canvasRenderer,
         }).addTo(map);
 
         dot.on('click', () => {
@@ -469,6 +596,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       opacity: 0.95,
       lineCap: 'round',
       lineJoin: 'round',
+      renderer: canvasRenderer,
     }).addTo(map);
     traveledPolylineRef.current = traveledPolyline;
 
@@ -500,8 +628,17 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         .bindPopup(`<b>Finish Line</b><br/>${endPt.time ? new Date(endPt.time).toLocaleTimeString() : ''}`);
 
       // Fit map bounds safely
-      if (allCoords.length > 0) {
-        map.fitBounds(allCoords, { padding: [36, 36] });
+      if (allCoords.length > 1) {
+        try {
+          const bounds = L.latLngBounds(allCoords);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
+          }
+        } catch {
+          // ignore bounds errors
+        }
+      } else if (allCoords.length === 1) {
+        map.setView(allCoords[0], 14);
       }
     }
 
@@ -562,6 +699,12 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
+      if (mapContainerRef.current && (mapContainerRef.current as any)._leaflet_id) {
+        delete (mapContainerRef.current as any)._leaflet_id;
+      }
+      tileLayerRef.current = null;
+      overlayTileLayerRef.current = null;
+      currentMapStyleRef.current = '';
     };
   }, []);
 

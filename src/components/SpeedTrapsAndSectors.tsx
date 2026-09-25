@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { RideAnalysis, PitStop, SpeedTrap, AppTheme } from '../types';
+import { RideAnalysis, PitStop, SpeedTrap, AppTheme, UnitSystem } from '../types';
+import { convertSpeed, convertDistance } from '../utils/units';
 import { 
   Zap, 
   Coffee, 
@@ -14,13 +15,13 @@ import {
   Edit3, 
   Trash2, 
   MapPin, 
-  Filter,
-  Clock,
-  Compass,
-  Milestone,
-  ArrowRight,
-  TrendingUp,
-  Layers
+  Filter, 
+  Clock, 
+  Compass, 
+  Milestone, 
+  ArrowRight, 
+  TrendingUp, 
+  Layers 
 } from 'lucide-react';
 import { downloadFile, exportAnalysisToGPX } from '../utils/gpxExporter';
 
@@ -31,6 +32,7 @@ interface SpeedTrapsAndSectorsProps {
   onEditStop?: (stop: PitStop) => void;
   onDeleteStop?: (stopId: string) => void;
   theme?: AppTheme;
+  unitSystem?: UnitSystem;
 }
 
 export const SpeedTrapsAndSectors: React.FC<SpeedTrapsAndSectorsProps> = ({
@@ -40,6 +42,7 @@ export const SpeedTrapsAndSectors: React.FC<SpeedTrapsAndSectorsProps> = ({
   onEditStop,
   onDeleteStop,
   theme = 'dark',
+  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   // Stop duration filter: 300 = 5 mins, 600 = 10 mins, 180 = 3 mins, 0 = all
@@ -144,7 +147,10 @@ export const SpeedTrapsAndSectors: React.FC<SpeedTrapsAndSectorsProps> = ({
                 return (
                   <div
                     key={idx}
-                    onClick={() => onSelectCoordinate?.(trap.lat, trap.lon, `Speed Trap ${trap.position}: ${trap.speedKmh} km/h`)}
+                    onClick={() => {
+                      const spd = convertSpeed(trap.speedKmh, unitSystem);
+                      onSelectCoordinate?.(trap.lat, trap.lon, `Speed Trap ${trap.position}: ${spd.value} ${spd.unit}`);
+                    }}
                     className={`p-2.5 rounded-lg border flex items-center justify-between transition-all cursor-pointer group ${
                       isTop
                         ? isLight ? 'border-rose-300 bg-rose-50/70 hover:bg-rose-100/70' : 'border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20'
@@ -164,13 +170,15 @@ export const SpeedTrapsAndSectors: React.FC<SpeedTrapsAndSectorsProps> = ({
                       </span>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs">{trap.speedKmh.toFixed(1)} km/h</span>
+                          <span className="font-bold text-xs">
+                            {convertSpeed(trap.speedKmh, unitSystem).value.toFixed(1)} {convertSpeed(trap.speedKmh, unitSystem).unit}
+                          </span>
                           <span className={`text-[10px] ${isTop ? 'text-rose-400 font-bold' : subText}`}>
                             {trap.deltaLabel}
                           </span>
                         </div>
                         <div className={`text-[10px] ${subText}`}>
-                          km {trap.distanceKm.toFixed(1)} • {trap.time ? new Date(trap.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Track'}
+                          {convertDistance(trap.distanceKm, unitSystem).unit} {convertDistance(trap.distanceKm, unitSystem).value.toFixed(1)} • {trap.time ? new Date(trap.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Track'}
                         </div>
                       </div>
                     </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LiveGpsPoint, AppTheme } from '../types';
+import { LiveGpsPoint, AppTheme, UnitSystem } from '../types';
+import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
 import { 
   Play, 
   Pause, 
@@ -20,7 +21,10 @@ import {
   RotateCcw,
   Zap,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Volume2,
+  VolumeX,
+  Clock
 } from 'lucide-react';
 import { exportPointsToGPX } from '../utils/gpxExporter';
 
@@ -29,6 +33,7 @@ interface LiveCockpitLoggerProps {
   isRecording: boolean;
   setIsRecording: (rec: boolean) => void;
   theme?: AppTheme;
+  unitSystem?: UnitSystem;
 }
 
 export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
@@ -36,6 +41,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   isRecording,
   setIsRecording,
   theme = 'dark',
+  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   const [isPaused, setIsPaused] = useState(false);
@@ -50,28 +56,95 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const [mountMode, setMountMode] = useState<'handlebar' | 'pocket'>('handlebar');
   const [showHowItWorks, setShowHowItWorks] = useState<boolean>(false);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const [movingSeconds, setMovingSeconds] = useState<number>(0);
+  const [stoppedSeconds, setStoppedSeconds] = useState<number>(0);
   const [totalDistanceMeters, setTotalDistanceMeters] = useState<number>(0);
   const [recordedPoints, setRecordedPoints] = useState<LiveGpsPoint[]>([]);
   const [markedWaypoints, setMarkedWaypoints] = useState<Array<{ name: string; lat: number; lon: number; ele: number | null }>>([]);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
 
+  // Crash / battery recovery states
+  const [hasRecoverableRide, setHasRecoverableRide] = useState<boolean>(false);
+  const [recoverableData, setRecoverableData] = useState<any>(null);
+
+  // Bluetooth intercom / voice feedback state
+  const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sasta_voice_feedback') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const lastSpokenKmRef = useRef<number>(0);
+  const currentSpeedRef = useRef<number>(0);
+  currentSpeedRef.current = currentSpeedKmh;
+
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const wakeLockRef = useRef<any>(null);
 
-  // Timer loop for elapsed time
+  // Timer loop for elapsed time and moving vs stopped split
   useEffect(() => {
     let timer: any = null;
     if (isRecording && !isPaused) {
       timer = setInterval(() => {
         setElapsedSeconds(prev => prev + 1);
+        if (currentSpeedRef.current >= 2.5) {
+          setMovingSeconds(prev => prev + 1);
+        } else {
+          setStoppedSeconds(prev => prev + 1);
+        }
       }, 1000);
     }
     return () => {
       if (timer) clearInterval(timer);
     };
   }, [isRecording, isPaused]);
+
+  // Check for interrupted recoverable ride session on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('sasta_live_recovery');
+      if (raw && !isRecording) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed.points &&
+          parsed.points.length > 5 &&
+          Date.now() - parsed.timestamp < 1000 * 60 * 60 * 12
+        ) {
+          setHasRecoverableRide(true);
+          setRecoverableData(parsed);
+        }
+      }
+    } catch {}
+  }, [isRecording]);
+
+  const handleResumeSession = () => {
+    if (!recoverableData) return;
+    recordedPointsRef.current = recoverableData.points || [];
+    setPointsCount(recordedPointsRef.current.length);
+    setElapsedSeconds(recoverableData.elapsedSeconds || 0);
+    setMovingSeconds(recoverableData.movingSeconds || 0);
+    setStoppedSeconds(recoverableData.stoppedSeconds || 0);
+    setTotalDistanceMeters(recoverableData.totalDistanceMeters || 0);
+    setMarkedWaypoints(recoverableData.waypoints || []);
+    if (recordedPointsRef.current.length > 0) {
+      const last = recordedPointsRef.current[recordedPointsRef.current.length - 1];
+      lastPositionRef.current = { lat: last.lat, lon: last.lon };
+    }
+    setHasRecoverableRide(false);
+    setRecoverableData(null);
+    startGpsWatch();
+  };
+
+  const handleDiscardSession = () => {
+    try {
+      sessionStorage.removeItem('sasta_live_recovery');
+    } catch {}
+    setHasRecoverableRide(false);
+    setRecoverableData(null);
+  };
 
   // Screen WakeLock to keep screen on while riding
   useEffect(() => {
@@ -181,7 +254,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             latitude,
             longitude
           );
-          if (dMeters > 1.5 && dMeters < 150) {
+          // Allow up to 800m between fixes so highway bursts (100-120 km/h) or brief mountain GPS gaps are tracked
+          if (dMeters > 1.5 && dMeters < 800) {
             setTotalDistanceMeters(prev => prev + dMeters);
           }
         }
@@ -200,7 +274,46 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           leanAngle,
         };
 
+<<<<<<< Updated upstream
         setRecordedPoints(prev => [...prev, pt]);
+=======
+        recordedPointsRef.current.push(pt);
+        const count = recordedPointsRef.current.length;
+        setPointsCount(count);
+
+        // Snapshot to sessionStorage every 15 points for crash/power loss recovery
+        if (count % 15 === 0) {
+          try {
+            sessionStorage.setItem('sasta_live_recovery', JSON.stringify({
+              points: recordedPointsRef.current,
+              elapsedSeconds,
+              movingSeconds,
+              stoppedSeconds,
+              totalDistanceMeters,
+              waypoints: markedWaypoints,
+              timestamp: Date.now(),
+            }));
+          } catch {}
+        }
+
+        // Voice milestone announcements (Bluetooth helmet intercom)
+        if (voiceFeedbackEnabled && 'speechSynthesis' in window) {
+          const totalKm = totalDistanceMeters / 1000;
+          const milestone = unitSystem === 'imperial'
+            ? Math.floor((totalKm * 0.621371) / 5) * 5
+            : Math.floor(totalKm / 5) * 5;
+          if (milestone > 0 && milestone > lastSpokenKmRef.current) {
+            lastSpokenKmRef.current = milestone;
+            const distUnit = unitSystem === 'imperial' ? 'miles' : 'kilometers';
+            const spdUnit = unitSystem === 'imperial' ? 'miles per hour' : 'kilometers per hour';
+            const spd = unitSystem === 'imperial' ? Math.round(kmh * 0.621371) : Math.round(kmh);
+            const text = `${milestone} ${distUnit} completed. Current speed ${spd} ${spdUnit}.`;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.05;
+            window.speechSynthesis.speak(utterance);
+          }
+        }
+>>>>>>> Stashed changes
       },
       error => {
         console.warn('Geolocation watch error:', error);
@@ -266,6 +379,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
     if (recordedPoints.length < 2) {
       setGpsError('Track contains fewer than 2 points. Drive or move around before saving.');
+      recordedPointsRef.current = [];
+      setPointsCount(0);
       return;
     }
 
@@ -292,8 +407,46 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const speedTextColor = isLight ? 'text-slate-900' : 'text-white';
   const barTrackBg = isLight ? 'bg-slate-200 border-slate-300' : 'bg-[#0d131a] border-[#223140]';
 
+  const currentSpeedConverted = convertSpeed(currentSpeedKmh, unitSystem);
+  const maxSpeedConverted = convertSpeed(maxRecordedSpeed, unitSystem);
+  const distanceConverted = convertDistance(totalDistanceMeters / 1000, unitSystem);
+  const altitudeConverted = convertElevation(currentAltitude, unitSystem);
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4">
+      {/* Interrupted Session Recovery Banner */}
+      {hasRecoverableRide && recoverableData && (
+        <div className={`p-4 rounded-xl border flex items-center justify-between flex-wrap gap-3 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
+          isLight ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <div className="font-bold text-sm">⚠️ Interrupted Ride Session Detected!</div>
+              <div className="text-[11px] opacity-80 mt-0.5">
+                Found {recoverableData.points?.length || 0} unsaved GPS points ({convertDistance((recoverableData.totalDistanceMeters || 0) / 1000, unitSystem).value.toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}) from your previous ride.
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleResumeSession}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer shadow-sm"
+            >
+              Resume Ride
+            </button>
+            <button
+              onClick={handleDiscardSession}
+              className={`px-3 py-1.5 border rounded-lg transition-colors cursor-pointer ${
+                isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+              }`}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cockpit HUD Main Cluster — Positioned directly at top */}
       <div className={`border rounded-2xl p-3.5 sm:p-6 relative overflow-hidden shadow-2xl space-y-4 sm:space-y-5 ${cardBg}`}>
         {/* Status Bar */}
@@ -324,6 +477,36 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             }`}>
               ±{gpsAccuracy ? gpsAccuracy.toFixed(1) : '—'}m
             </span>
+
+            {/* Voice Announcements Button */}
+            {'speechSynthesis' in window && (
+              <button
+                onClick={() => {
+                  const next = !voiceFeedbackEnabled;
+                  setVoiceFeedbackEnabled(next);
+                  try {
+                    localStorage.setItem('sasta_voice_feedback', String(next));
+                  } catch {}
+                  if (next && 'speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance('Voice intercom announcements enabled');
+                    u.rate = 1.05;
+                    window.speechSynthesis.speak(u);
+                  }
+                }}
+                title={voiceFeedbackEnabled ? 'Audio milestone announcements active' : 'Turn on audio milestone announcements for Bluetooth helmet intercom'}
+                className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
+                  voiceFeedbackEnabled
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold'
+                    : isLight
+                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600'
+                    : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-slate-400'
+                }`}
+              >
+                {voiceFeedbackEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5" />}
+                <span className="hidden xs:inline">Voice:</span>
+                <span>{voiceFeedbackEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
 
             {/* Collapsible Info Button */}
             <button
@@ -388,10 +571,10 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             GROUND SPEED
           </div>
           <div className={`font-mono font-black text-6xl sm:text-8xl lg:text-9xl tracking-tighter select-none ${speedTextColor}`}>
-            {currentSpeedKmh.toFixed(0)}
+            {currentSpeedConverted.value.toFixed(0)}
           </div>
           <div className="font-mono font-bold text-sm sm:text-lg text-sky-500 uppercase tracking-widest">
-            KM / H
+            {currentSpeedConverted.unit.toUpperCase()}
           </div>
         </div>
 
@@ -498,9 +681,9 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           <div className={`p-3 border rounded-xl ${innerCardBg}`}>
             <div className={`text-[10px] uppercase ${subTextColor}`}>DISTANCE</div>
             <div className={`font-black text-xl sm:text-2xl mt-0.5 ${speedTextColor}`}>
-              {(totalDistanceMeters / 1000).toFixed(2)}
+              {distanceConverted.value.toFixed(2)}
             </div>
-            <div className="text-[9px] text-sky-500 font-bold">KILOMETERS</div>
+            <div className="text-[9px] text-sky-500 font-bold uppercase">{distanceConverted.unit === 'mi' ? 'MILES' : 'KILOMETERS'}</div>
           </div>
 
           <div className={`p-3 border rounded-xl ${innerCardBg}`}>
@@ -508,15 +691,18 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             <div className="font-black text-xl sm:text-2xl text-emerald-500 mt-0.5">
               {formatSec(elapsedSeconds)}
             </div>
-            <div className={`text-[9px] ${subTextColor}`}>HH:MM:SS</div>
+            <div className={`text-[9px] ${subTextColor} flex items-center justify-center gap-1.5`}>
+              <span title="Moving Time">🟢 {formatSec(movingSeconds)}</span>
+              {stoppedSeconds > 0 && <span title="Stopped Time" className="text-amber-400">⏸️ {formatSec(stoppedSeconds)}</span>}
+            </div>
           </div>
 
           <div className={`p-3 border rounded-xl ${innerCardBg}`}>
             <div className={`text-[10px] uppercase ${subTextColor}`}>MAX SPEED</div>
             <div className="font-black text-xl sm:text-2xl text-rose-500 mt-0.5">
-              {maxRecordedSpeed.toFixed(1)}
+              {maxSpeedConverted.value.toFixed(1)}
             </div>
-            <div className="text-[9px] text-rose-500 font-bold">KM/H PEAK</div>
+            <div className="text-[9px] text-rose-500 font-bold uppercase">{maxSpeedConverted.unit.toUpperCase()} PEAK</div>
           </div>
         </div>
 
@@ -526,7 +712,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             <span className={`flex items-center gap-1.5 ${subTextColor}`}>
               <Mountain className="w-3.5 h-3.5 text-sky-500" /> Altitude
             </span>
-            <strong className={speedTextColor}>{currentAltitude !== null ? `${currentAltitude.toFixed(0)} m` : 'Acquiring...'}</strong>
+            <strong className={speedTextColor}>{currentAltitude !== null ? `${altitudeConverted.value.toFixed(0)} ${altitudeConverted.unit}` : 'Acquiring...'}</strong>
           </div>
           <div className={`p-2.5 border rounded-xl flex items-center justify-between text-xs px-3 ${innerCardBg}`}>
             <span className={`flex items-center gap-1.5 ${subTextColor}`}>

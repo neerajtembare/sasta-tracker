@@ -1,5 +1,6 @@
 import React from 'react';
-import { RideAnalysis, AppTheme } from '../types';
+import { RideAnalysis, AppTheme, UnitSystem } from '../types';
+import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
 import { 
   Send,
   Watch,
@@ -28,6 +29,7 @@ interface HeroTelemetryProps {
   onOpenCalibration?: () => void;
   onCloseTrack?: () => void;
   theme?: AppTheme;
+  unitSystem?: UnitSystem;
 }
 
 export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({ 
@@ -38,6 +40,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
   onOpenCalibration,
   onCloseTrack,
   theme = 'dark',
+  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   const formatTime = (totalSec: number) => {
@@ -66,18 +69,30 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
 
   // Effective distance: if user calibrated odometer, use that; otherwise raw GPS distance
   const isCalibrated = Boolean(analysis.userDistanceOverrideKm);
-  const totalDisplayDist = isCalibrated
-    ? analysis.userDistanceOverrideKm!.toFixed(1)
-    : analysis.totalDistanceKm.toFixed(1);
+  const rawDistKm = isCalibrated
+    ? analysis.userDistanceOverrideKm!
+    : analysis.totalDistanceKm;
+  const distConverted = convertDistance(rawDistKm, unitSystem);
 
   const currentDist = activeScrubPoint
     ? activeScrubPoint.distKm.toFixed(1)
     : totalDisplayDist;
 
   // Recalculate moving avg pace if calibrated distance is present
-  const effectiveMovingAvgSpeed = isCalibrated && analysis.movingTimeSeconds > 0
-    ? (analysis.userDistanceOverrideKm! / (analysis.movingTimeSeconds / 3600)).toFixed(1)
-    : analysis.movingAvgSpeedKmh.toFixed(1);
+  const rawMovingAvg = isCalibrated && analysis.movingTimeSeconds > 0
+    ? (analysis.userDistanceOverrideKm! / (analysis.movingTimeSeconds / 3600))
+    : analysis.movingAvgSpeedKmh;
+  const movingAvgConverted = convertSpeed(rawMovingAvg, unitSystem);
+
+  const rawOverallAvg = isCalibrated && analysis.totalDurationSeconds > 0
+    ? (analysis.userDistanceOverrideKm! / (analysis.totalDurationSeconds / 3600))
+    : analysis.overallAvgSpeedKmh;
+  const overallAvgConverted = convertSpeed(rawOverallAvg, unitSystem);
+
+  const maxSpeedConverted = convertSpeed(analysis.maxSpeedKmh, unitSystem);
+  const elevGainConverted = convertElevation(analysis.elevGainM, unitSystem);
+  const elevMinConverted = convertElevation(analysis.elevMinM, unitSystem);
+  const elevMaxConverted = convertElevation(analysis.elevMaxM, unitSystem);
 
   const cardBg = isLight 
     ? 'bg-white border-slate-200 text-slate-900 shadow-slate-100' 
@@ -110,7 +125,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             {isCalibrated && (
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded uppercase">
-                Odo: {analysis.userDistanceOverrideKm} km
+                Odo: {distConverted.value.toFixed(1)} {distConverted.unit}
               </span>
             )}
 
@@ -129,6 +144,24 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               </button>
             )}
 
+<<<<<<< Updated upstream
+=======
+            {onOpenShare && (
+              <button
+                onClick={onOpenShare}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25'
+                }`}
+                title="Create 4:5 Instagram/WhatsApp Story ride card"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Story</span>
+              </button>
+            )}
+
+>>>>>>> Stashed changes
             {onCloseTrack && (
               <button
                 onClick={onCloseTrack}
@@ -146,10 +179,13 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           </div>
         </div>
 
+<<<<<<< Updated upstream
         <p className={`text-[11px] sm:text-sm font-mono leading-relaxed ${subText}`}>
           Motorcycle ride telemetry: Speed distribution, altitude profile, saddle efficiency, Strava splits, and pit-stop logging.
         </p>
 
+=======
+>>>>>>> Stashed changes
         {/* Subtitle Badges with Timing & Strava Metrics */}
         <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1 text-[11px] sm:text-xs font-mono ${subText}`}>
           <span className="flex items-center gap-1 text-sky-500 font-bold">
@@ -163,7 +199,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           </span>
           <span className="hidden sm:inline">•</span>
           <span className="flex items-center gap-1 text-emerald-500 font-bold">
-            <span>Avg: {effectiveMovingAvgSpeed} km/h</span>
+            <span>Avg: {movingAvgConverted.value.toFixed(1)} {movingAvgConverted.unit}</span>
           </span>
           <span className="hidden sm:inline">•</span>
           <button
@@ -189,14 +225,18 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+<<<<<<< Updated upstream
                 {currentDist}
+=======
+                {distConverted.value.toFixed(1)}
+>>>>>>> Stashed changes
               </span>
-              <span className="font-mono font-bold text-xs text-sky-500">KM</span>
+              <span className="font-mono font-bold text-xs text-sky-500 uppercase">{distConverted.unit}</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
             <div className={`text-[10px] font-mono ${subText}`}>
-              {isCalibrated ? `Raw GPS: ${analysis.totalDistanceKm.toFixed(1)} km` : `${analysis.segments.length} GPX segments`}
+              {isCalibrated ? `Raw GPS: ${convertDistance(analysis.totalDistanceKm, unitSystem).value.toFixed(1)} ${distConverted.unit}` : `${analysis.segments.length} GPX segments`}
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div className="h-full bg-sky-500 w-full rounded-full" />
@@ -270,9 +310,13 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+<<<<<<< Updated upstream
                 {displaySpeed}
+=======
+                {maxSpeedConverted.value.toFixed(1)}
+>>>>>>> Stashed changes
               </span>
-              <span className="font-mono font-bold text-xs text-rose-500">KM/H</span>
+              <span className="font-mono font-bold text-xs text-rose-500 uppercase">{maxSpeedConverted.unit}</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
@@ -298,14 +342,14 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                +{analysis.elevGainM.toFixed(0)}
+                +{elevGainConverted.value?.toFixed(0) ?? '0'}
               </span>
-              <span className="font-mono font-bold text-xs text-indigo-500">M</span>
+              <span className="font-mono font-bold text-xs text-indigo-500 uppercase">{elevGainConverted.unit}</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
             <div className={`text-[10px] font-mono ${subText}`}>
-              {analysis.elevMinM !== null ? `${analysis.elevMinM.toFixed(0)}m` : '0m'} → {analysis.elevMaxM !== null ? `${analysis.elevMaxM.toFixed(0)}m` : 'Peak'}
+              {elevMinConverted.value !== null ? `${elevMinConverted.value}${elevMinConverted.unit}` : '0m'} → {elevMaxConverted.value !== null ? `${elevMaxConverted.value}${elevMaxConverted.unit}` : 'Peak'}
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div className="h-full bg-indigo-500 w-2/3 rounded-full" />
@@ -328,14 +372,14 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {effectiveMovingAvgSpeed}
+                {movingAvgConverted.value.toFixed(1)}
               </span>
-              <span className="font-mono font-bold text-xs text-amber-500">KM/H</span>
+              <span className="font-mono font-bold text-xs text-amber-500 uppercase">{movingAvgConverted.unit}</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
             <div className={`text-[10px] font-mono ${subText}`}>
-              Elapsed: {(isCalibrated && analysis.totalDurationSeconds > 0 ? (analysis.userDistanceOverrideKm! / (analysis.totalDurationSeconds / 3600)).toFixed(1) : analysis.overallAvgSpeedKmh.toFixed(1))} km/h
+              Elapsed: {overallAvgConverted.value.toFixed(1)} {overallAvgConverted.unit}
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div className="h-full bg-amber-500 w-4/5 rounded-full" />

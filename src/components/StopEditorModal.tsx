@@ -58,6 +58,10 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   const [name, setName] = useState<string>(
     stopToEdit ? stopToEdit.name : (defaultPoint ? `Stop at ${defaultPoint.distanceFromStartKm.toFixed(1)} km` : 'Chai & Snack Break')
   );
+<<<<<<< Updated upstream
+=======
+  const [notes, setNotes] = useState<string>(stopToEdit?.notes || '');
+>>>>>>> Stashed changes
   const [durationMinutes, setDurationMinutes] = useState<number>(
     stopToEdit ? Math.max(1, Math.round(stopToEdit.durationSeconds / 60)) : 15
   );
@@ -66,6 +70,19 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
     stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0)
   );
 
+<<<<<<< Updated upstream
+=======
+  React.useEffect(() => {
+    if (isOpen) {
+      setCategory(stopToEdit ? stopToEdit.category : 'chai');
+      setName(stopToEdit ? stopToEdit.name : (defaultPoint ? `Stop at ${defaultPoint.distanceFromStartKm.toFixed(1)} km` : 'Chai & Snack Break'));
+      setNotes(stopToEdit?.notes || '');
+      setDurationMinutes(stopToEdit ? Math.max(1, Math.round(stopToEdit.durationSeconds / 60)) : 15);
+      setDistanceKm(stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0));
+    }
+  }, [isOpen, stopToEdit, defaultPoint]);
+
+>>>>>>> Stashed changes
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 

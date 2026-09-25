@@ -9,7 +9,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { AppTheme } from '../types';
+import { AppTheme, UnitSystem } from '../types';
 
 interface NavbarProps {
   currentTab: 'home' | 'analysis' | 'cockpit' | 'faq';
@@ -23,6 +23,8 @@ interface NavbarProps {
   rideName: string;
   theme: AppTheme;
   onToggleTheme: () => void;
+  unitSystem?: UnitSystem;
+  onToggleUnitSystem?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,6 +39,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   rideName,
   theme,
   onToggleTheme,
+  unitSystem = 'metric',
+  onToggleUnitSystem,
 }) => {
   const isLight = theme === 'light';
 
@@ -147,6 +151,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Quick action buttons & Theme Toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Unit System Toggle (KM/H <-> MPH) */}
+          {onToggleUnitSystem && (
+            <button
+              id="btn-toggle-units"
+              onClick={onToggleUnitSystem}
+              title={`Active Units: ${unitSystem === 'imperial' ? 'Imperial (mph, mi, ft)' : 'Metric (km/h, km, m)'}. Click to switch.`}
+              className={`px-2 py-1.5 rounded-lg border font-mono font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+                isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-200'
+              }`}
+            >
+              <span className="text-[10px] text-slate-400 font-normal">UNITS:</span>
+              <span className={`font-black ${unitSystem === 'imperial' ? 'text-amber-400' : 'text-sky-400'}`}>
+                {unitSystem === 'imperial' ? 'MPH' : 'KM/H'}
+              </span>
+            </button>
+          )}
+
           {/* Global Light/Dark Theme Switcher */}
           <button
             id="btn-toggle-theme"

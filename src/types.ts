@@ -48,6 +48,7 @@ export interface PitStop {
 }
 
 export type AppTheme = 'dark' | 'light';
+export type UnitSystem = 'metric' | 'imperial';
 
 export interface SpeedTrap {
   position: string; // #1, #2, #3...

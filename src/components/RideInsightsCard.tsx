@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { RideAnalysis, AppTheme } from '../types';
+import { RideAnalysis, AppTheme, UnitSystem } from '../types';
+import { convertSpeed, convertDistance, convertElevation, convertFuelVolume, convertFuelEconomy } from '../utils/units';
 import { 
   Flame, 
   Fuel, 
@@ -20,14 +21,17 @@ interface RideInsightsCardProps {
   analysis: RideAnalysis;
   onOpenCalibration?: () => void;
   theme?: AppTheme;
+  unitSystem?: UnitSystem;
 }
 
 export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
   analysis,
   onOpenCalibration,
   theme = 'dark',
+  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
+  const isImperial = unitSystem === 'imperial';
   const [showLeanHelp, setShowLeanHelp] = useState<boolean>(false);
 
   // Effective distance: calibrated odometer distance or raw GPS distance
@@ -41,6 +45,12 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
     ? analysis.customFuelLiters 
     : kmPerLiter > 0 ? effectiveDistance / kmPerLiter : 0;
   const estimatedFuelCost = estimatedFuelLiters * fuelPrice;
+
+  const fuelVolumeConverted = convertFuelVolume(estimatedFuelLiters, unitSystem);
+  const fuelEconomyConverted = convertFuelEconomy(kmPerLiter, unitSystem);
+  const distConverted = convertDistance(effectiveDistance, unitSystem);
+  const maxSpeedConverted = convertSpeed(analysis.maxSpeedKmh, unitSystem);
+  const movingAvgConverted = convertSpeed(analysis.movingAvgSpeedKmh, unitSystem);
 
   // Moving ratio
   const totalSec = analysis.totalDurationSeconds || 1;
@@ -56,8 +66,11 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
   };
   const leanRating = getLeanRating(lean);
 
-  // Elevation climb rate (meters per kilometer)
-  const climbRateMPerKm = effectiveDistance > 0 ? (analysis.elevGainM / effectiveDistance) : 0;
+  // Elevation climb rate (meters per kilometer or feet per mile)
+  const climbRate = isImperial
+    ? (distConverted.value > 0 ? ((analysis.elevGainM * 3.28084) / distConverted.value) : 0)
+    : (effectiveDistance > 0 ? (analysis.elevGainM / effectiveDistance) : 0);
+  const climbUnit = isImperial ? 'ft / mi' : 'm / km';
 
   return (
     <div
@@ -187,9 +200,9 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
 
             <div className="flex items-baseline gap-1.5">
               <span className="font-heading font-black text-3xl tracking-tight text-rose-500">
-                {analysis.maxSpeedKmh.toFixed(1)}
+                {maxSpeedConverted.value.toFixed(1)}
               </span>
-              <span className="text-xs font-mono font-bold text-rose-400">KM/H</span>
+              <span className="text-xs font-mono font-bold text-rose-400 uppercase">{maxSpeedConverted.unit}</span>
             </div>
 
             <div className="mt-2.5">
@@ -198,8 +211,8 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
                   isLight ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                 }`}
               >
-                {analysis.movingAvgSpeedKmh > 0
-                  ? `+${(analysis.maxSpeedKmh - analysis.movingAvgSpeedKmh).toFixed(1)} km/h burst over moving avg`
+                {movingAvgConverted.value > 0
+                  ? `+${(maxSpeedConverted.value - movingAvgConverted.value).toFixed(1)} ${maxSpeedConverted.unit} burst over moving avg`
                   : 'Recorded Peak'}
               </span>
             </div>
@@ -226,9 +239,9 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
 
             <div className="flex items-baseline gap-1.5">
               <span className="font-heading font-black text-3xl tracking-tight text-sky-400">
-                {estimatedFuelLiters.toFixed(2)}
+                {fuelVolumeConverted.value.toFixed(2)}
               </span>
-              <span className="text-xs font-mono font-bold text-sky-400">LITERS</span>
+              <span className="text-xs font-mono font-bold text-sky-400 uppercase">{fuelVolumeConverted.unit}</span>
             </div>
 
             <div className="mt-2.5 flex items-center gap-2">
@@ -243,7 +256,7 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
           </div>
 
           <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-500 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
-            Configured at {kmPerLiter} km/L for {effectiveDistance.toFixed(1)} km
+            Configured at {fuelEconomyConverted.value} {fuelEconomyConverted.unit} for {distConverted.value.toFixed(1)} {distConverted.unit}
           </p>
         </div>
 
@@ -274,7 +287,7 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
                   isLight ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-amber-400/15 text-amber-300'
                 }`}
               >
-                Climbing Rate: {climbRateMPerKm.toFixed(1)} m / km
+                Climbing Rate: {climbRate.toFixed(1)} {climbUnit}
               </span>
             </div>
           </div>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { SavedRide, getGarageRides, deleteGarageRide, saveRideToGarage } from '../utils/storage';
+import React, { useState, useEffect, useRef } from 'react';
+import { SavedRide, getGarageRides, deleteGarageRide, saveRideToGarage, importGarageBackup } from '../utils/storage';
 import { RideAnalysis, AppTheme } from '../types';
 import { exportAnalysisToGPX, downloadFile } from '../utils/gpxExporter';
 import { 
@@ -23,14 +23,18 @@ import {
   Sparkles,
   Navigation,
   Zap,
-  MapPin
+  MapPin,
+  FileUp,
+  FileDown,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 interface GarageModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentAnalysis?: RideAnalysis | null;
-  onSelectRide: (gpxContent: string, name: string) => void;
+  onSelectRide: (gpxContent: string, name: string, id?: string) => void;
   onLoadSample: () => void;
   onCloseTrack?: () => void;
   theme?: AppTheme;
@@ -48,13 +52,64 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   const isLight = theme === 'light';
   const [rides, setRides] = useState<SavedRide[]>([]);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [backupFeedback, setBackupFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setRides(getGarageRides());
       setSavedSuccess(false);
+      setBackupFeedback(null);
     }
   }, [isOpen]);
+
+  const handleExportBackup = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (rides.length === 0) {
+      setBackupFeedback({ type: 'error', message: 'No custom rides in garage to export.' });
+      setTimeout(() => setBackupFeedback(null), 3000);
+      return;
+    }
+    const backupPayload = {
+      app: 'sasta-tracker',
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      count: rides.length,
+      rides: rides,
+    };
+    downloadFile(JSON.stringify(backupPayload, null, 2), `sasta_tracker_garage_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    setBackupFeedback({ type: 'success', message: `Exported ${rides.length} rides to JSON backup!` });
+    setTimeout(() => setBackupFeedback(null), 3500);
+  };
+
+  const handleRestoreFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        const ridesArray = Array.isArray(parsed) ? parsed : parsed.rides;
+        if (!Array.isArray(ridesArray)) {
+          throw new Error('Unrecognized JSON format: expected array of rides');
+        }
+        const updated = importGarageBackup(ridesArray);
+        setRides(updated);
+        setBackupFeedback({ type: 'success', message: `Successfully restored ${ridesArray.length} rides!` });
+        setTimeout(() => setBackupFeedback(null), 4000);
+      } catch (err: any) {
+        setBackupFeedback({ type: 'error', message: err.message || 'Failed to restore rides from JSON.' });
+        setTimeout(() => setBackupFeedback(null), 5000);
+      } finally {
+        if (restoreFileInputRef.current) {
+          restoreFileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
 
   if (!isOpen) return null;
 
@@ -318,32 +373,72 @@ export const GarageModal: React.FC<GarageModalProps> = ({
             </span>
           </div>
 
-          {/* User Saved Rides */}
-          <div className="flex items-center justify-between pt-3 mb-1">
+          {/* User Saved Rides Header + Backup / Restore Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mb-1 border-t border-slate-700/20">
             <div className={`text-[10px] font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
               SAVED RIDES IN YOUR BROWSER ({rides.length}):
             </div>
-            {rides.length > 0 && (
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <input
+                type="file"
+                ref={restoreFileInputRef}
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleRestoreFileSelected}
+              />
+
               <button
-                onClick={() => {
-                  if (window.confirm('Delete all saved rides from your browser garage?')) {
-                    localStorage.removeItem('sasta_garage_rides');
-                    setRides([]);
-                  }
-                }}
-                className="text-[10px] font-mono text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                onClick={() => restoreFileInputRef.current?.click()}
+                title="Restore saved rides from a previously exported JSON backup"
+                className="px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded flex items-center gap-1 transition-colors cursor-pointer"
               >
-                Clear All
+                <FileUp className="w-3 h-3" />
+                <span>Restore Backup</span>
               </button>
-            )}
+
+              <button
+                onClick={handleExportBackup}
+                title="Export all garage rides to a JSON backup file"
+                className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <FileDown className="w-3 h-3" />
+                <span>Backup JSON</span>
+              </button>
+
+              {rides.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('Delete all saved rides from your browser garage?')) {
+                      localStorage.removeItem('sasta_tracker_garage');
+                      setRides([]);
+                    }
+                  }}
+                  className="text-[10px] font-mono text-rose-400 hover:text-rose-300 underline cursor-pointer ml-1"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
           </div>
+
+          {backupFeedback && (
+            <div className={`p-2.5 rounded-lg border text-xs font-mono flex items-center gap-2 animate-in fade-in duration-200 ${
+              backupFeedback.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+            }`}>
+              {backupFeedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{backupFeedback.message}</span>
+            </div>
+          )}
 
           {rides.length > 0 ? (
             rides.map(r => (
               <div
                 key={r.id}
                 onClick={() => {
-                  onSelectRide(r.gpxContent, r.name);
+                  onSelectRide(r.gpxContent, r.name, r.id);
                   onClose();
                 }}
                 className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}

@@ -102,6 +102,17 @@ export interface RideAnalysis {
   pitStops: PitStop[];
   speedTraps: SpeedTrap[];
   splits?: RideSplit[];
+  boundingBox?: {
+    minLat: number;
+    maxLat: number;
+    minLon: number;
+    maxLon: number;
+  };
+  activityType?: {
+    label: string;
+    emoji: string;
+    category: 'walking' | 'cycling' | 'motorbike' | 'racing';
+  };
 }
 
 export interface LiveGpsPoint {

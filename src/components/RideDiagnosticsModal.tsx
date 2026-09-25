@@ -110,7 +110,6 @@ export const RideDiagnosticsModal: React.FC<RideDiagnosticsModalProps> = ({
       console.warn('Fallback copy error:', e);
     }
   };
-
   const startPt = analysis.points[0];
   const endPt = analysis.points[analysis.points.length - 1];
 

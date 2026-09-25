@@ -3,7 +3,7 @@ import { LiveGpsPoint, RideAnalysis } from '../types';
 export function exportAnalysisToGPX(analysis: RideAnalysis): string {
   const timestamp = new Date().toISOString();
   let gpx = `<?xml version="1.0" encoding="UTF-8" ?>\n`;
-  gpx += `<gpx version="1.1" creator="Kinetic MotoGPX Analyzer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n`;
+  gpx += `<gpx version="1.1" creator="Sasta Tracker" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n`;
   gpx += `  <metadata>\n`;
   gpx += `    <name>${escapeXml(analysis.name)}</name>\n`;
   gpx += `    <time>${timestamp}</time>\n`;
@@ -62,7 +62,7 @@ export function exportPointsToGPX(
 ): string {
   const timestamp = new Date().toISOString();
   let gpx = `<?xml version="1.0" encoding="UTF-8" ?>\n`;
-  gpx += `<gpx version="1.1" creator="Kinetic MotoGPX Logger" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v2 https://www8.garmin.com/xmlschemas/TrackPointExtensionv2.xsd">\n`;
+  gpx += `<gpx version="1.1" creator="Sasta Tracker" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v2 https://www8.garmin.com/xmlschemas/TrackPointExtensionv2.xsd">\n`;
   gpx += `  <metadata>\n`;
   gpx += `    <name>${escapeXml(trackName)}</name>\n`;
   gpx += `    <time>${timestamp}</time>\n`;

@@ -12,7 +12,9 @@ import {
   Clock,
   Compass,
   Milestone,
-  X
+  X,
+  Share2,
+  Activity
 } from 'lucide-react';
 
 interface HeroTelemetryProps {
@@ -27,7 +29,9 @@ interface HeroTelemetryProps {
   onEditRideName?: () => void;
   onOpenStops?: () => void;
   onOpenCalibration?: () => void;
+  onOpenShare?: () => void;
   onCloseTrack?: () => void;
+  onOpenDiagnostics?: () => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
 }
@@ -38,7 +42,9 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
   onEditRideName,
   onOpenStops,
   onOpenCalibration,
+  onOpenShare,
   onCloseTrack,
+  onOpenDiagnostics,
   theme = 'dark',
   unitSystem = 'metric',
 }) => {
@@ -62,10 +68,35 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
     : '—';
 
   const movingPct = Math.round((analysis.movingTimeSeconds / Math.max(1, analysis.totalDurationSeconds)) * 100);
+  const stoppedSec = Math.max(0, analysis.totalDurationSeconds - analysis.movingTimeSeconds);
+  const stoppedMins = Math.round(stoppedSec / 60);
 
-  const displaySpeed = activeScrubPoint
-    ? activeScrubPoint.speedKmh.toFixed(1)
-    : analysis.maxSpeedKmh.toFixed(1);
+  // Time of day condition badge
+  const getTimeOfDayBadge = (isoDateStr: string | null) => {
+    if (!isoDateStr) return null;
+    const d = new Date(isoDateStr);
+    const hours = d.getHours();
+    const mins = d.getMinutes();
+    const timeNum = hours + mins / 60;
+    if (timeNum >= 4.5 && timeNum < 7.5) {
+      return { emoji: '🌅', label: 'Dawn Patrol', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+    } else if (timeNum >= 7.5 && timeNum < 12) {
+      return { emoji: '☀️', label: 'Morning Twisties', color: 'bg-sky-500/15 text-sky-400 border-sky-500/30' };
+    } else if (timeNum >= 12 && timeNum < 16.5) {
+      return { emoji: '🌤️', label: 'Midday Cruise', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+    } else if (timeNum >= 16.5 && timeNum < 19.5) {
+      return { emoji: '🌆', label: 'Golden Hour', color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' };
+    } else {
+      return { emoji: '🌙', label: 'Night Ride', color: 'bg-purple-500/15 text-purple-400 border-purple-500/30' };
+    }
+  };
+
+  const timeOfDay = getTimeOfDayBadge(analysis.startTime);
+
+  // Lateral G-Force calculation: G = tan(leanAngle)
+  const currentLean = activeScrubPoint ? (activeScrubPoint.lean || 0) : (analysis.maxEstimatedLean || 0);
+  const currentGForce = (Math.tan((currentLean * Math.PI) / 180)).toFixed(2);
+  const maxGForce = (Math.tan(((analysis.maxEstimatedLean || 0) * Math.PI) / 180)).toFixed(2);
 
   // Effective distance: if user calibrated odometer, use that; otherwise raw GPS distance
   const isCalibrated = Boolean(analysis.userDistanceOverrideKm);
@@ -73,10 +104,6 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
     ? analysis.userDistanceOverrideKm!
     : analysis.totalDistanceKm;
   const distConverted = convertDistance(rawDistKm, unitSystem);
-
-  const currentDist = activeScrubPoint
-    ? activeScrubPoint.distKm.toFixed(1)
-    : totalDisplayDist;
 
   // Recalculate moving avg pace if calibrated distance is present
   const rawMovingAvg = isCalibrated && analysis.movingTimeSeconds > 0
@@ -105,10 +132,22 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
       {/* Top Banner Description Bar */}
       <div className={`rounded-xl border p-3.5 sm:p-5 shadow-lg space-y-2.5 transition-colors ${cardBg}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <h2 className="font-heading font-black text-base sm:text-xl tracking-wide uppercase truncate">
               {analysis.name}
             </h2>
+            {timeOfDay && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold border rounded-full shrink-0 ${timeOfDay.color}`}>
+                <span>{timeOfDay.emoji}</span>
+                <span>{timeOfDay.label}</span>
+              </span>
+            )}
+            {analysis.activityType && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30 rounded-full shrink-0">
+                <span>{analysis.activityType.emoji}</span>
+                <span>{analysis.activityType.label}</span>
+              </span>
+            )}
             {onEditRideName && (
               <button
                 onClick={onEditRideName}
@@ -129,23 +168,21 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               </span>
             )}
 
-            {onOpenCalibration && (
+            {onOpenDiagnostics && (
               <button
-                onClick={onOpenCalibration}
+                onClick={onOpenDiagnostics}
                 className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
-                    ? 'bg-sky-50 text-sky-600 border-sky-200 hover:bg-sky-100'
-                    : 'bg-[#1a2533] text-sky-400 border-sky-500/30 hover:bg-sky-500/20'
+                    ? 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100 shadow-xs'
+                    : 'bg-sky-500/15 text-sky-300 border-sky-500/40 hover:bg-sky-500/25 shadow-xs'
                 }`}
-                title="Calibrate distance to motorcycle odometer & set mileage"
+                title="Open Complete Telemetry & Raw GPS Specs (Shortcut: D)"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Calibrate</span>
+                <Activity className="w-3.5 h-3.5" />
+                <span>Specs</span>
               </button>
             )}
 
-<<<<<<< Updated upstream
-=======
             {onOpenShare && (
               <button
                 onClick={onOpenShare}
@@ -161,7 +198,6 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               </button>
             )}
 
->>>>>>> Stashed changes
             {onCloseTrack && (
               <button
                 onClick={onCloseTrack}
@@ -179,15 +215,8 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           </div>
         </div>
 
-<<<<<<< Updated upstream
-        <p className={`text-[11px] sm:text-sm font-mono leading-relaxed ${subText}`}>
-          Motorcycle ride telemetry: Speed distribution, altitude profile, saddle efficiency, Strava splits, and pit-stop logging.
-        </p>
-
-=======
->>>>>>> Stashed changes
         {/* Subtitle Badges with Timing & Strava Metrics */}
-        <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1 text-[11px] sm:text-xs font-mono ${subText}`}>
+        <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 pt-1 text-[11px] sm:text-xs font-mono ${subText}`}>
           <span className="flex items-center gap-1 text-sky-500 font-bold">
             <Clock className="w-3.5 h-3.5" />
             <span>{startTimeStr} → {endTimeStr}</span>
@@ -195,12 +224,28 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           <span className="hidden sm:inline">•</span>
           <span className={`flex items-center gap-1 ${isLight ? 'text-slate-700' : 'text-white'}`}>
             <span>Moving: {formatTime(analysis.movingTimeSeconds)}</span>
-            <span className={subText}>({formatTime(analysis.totalDurationSeconds)} total)</span>
+            <span className="text-emerald-400 font-bold">({movingPct}% in saddle)</span>
           </span>
+          {stoppedMins > 0 && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="text-amber-400">
+                Breaks: {stoppedMins}m
+              </span>
+            </>
+          )}
           <span className="hidden sm:inline">•</span>
           <span className="flex items-center gap-1 text-emerald-500 font-bold">
             <span>Avg: {movingAvgConverted.value.toFixed(1)} {movingAvgConverted.unit}</span>
           </span>
+          {analysis.maxEstimatedLean > 0 && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="flex items-center gap-1 text-amber-400 font-bold">
+                <span>Max Lean: {Math.round(analysis.maxEstimatedLean)}° ({maxGForce}G)</span>
+              </span>
+            </>
+          )}
           <span className="hidden sm:inline">•</span>
           <button
             onClick={onOpenStops}
@@ -225,11 +270,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-<<<<<<< Updated upstream
-                {currentDist}
-=======
                 {distConverted.value.toFixed(1)}
->>>>>>> Stashed changes
               </span>
               <span className="font-mono font-bold text-xs text-sky-500 uppercase">{distConverted.unit}</span>
             </div>
@@ -270,23 +311,26 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
           </div>
         </div>
 
-        {/* 3. SADDLE TIME [ ] */}
+        {/* 3. SADDLE TIME & EFFICIENCY [ ] */}
         <div className={`rounded-xl border p-3.5 flex flex-col justify-between hover:border-emerald-400/50 transition-all ${cardBg}`}>
           <div>
             <div className={`flex items-center justify-between text-[11px] font-mono mb-1.5 ${subText}`}>
               <span className="flex items-center gap-1 text-emerald-500 font-bold">
                 <span>[</span>
-                SADDLE TIME
+                SADDLE EFFICIENCY
               </span>
               <Bike className="w-3.5 h-3.5 text-emerald-500" />
             </div>
-            <div className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-              {formatTime(analysis.movingTimeSeconds)}
+            <div className="flex items-baseline gap-1">
+              <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                {movingPct}
+              </span>
+              <span className="font-mono font-bold text-xs text-emerald-500">%</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
-            <div className="text-[10px] font-mono text-emerald-500 font-bold">
-              {movingPct}% Moving Throttle
+            <div className="text-[10px] font-mono text-emerald-500 font-bold truncate">
+              {formatTime(analysis.movingTimeSeconds)} Moving • {stoppedMins}m Breaks
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div 
@@ -310,18 +354,14 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             </div>
             <div className="flex items-baseline gap-1">
               <span className={`font-mono font-black text-xl sm:text-2xl lg:text-3xl tracking-tight truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-<<<<<<< Updated upstream
-                {displaySpeed}
-=======
                 {maxSpeedConverted.value.toFixed(1)}
->>>>>>> Stashed changes
               </span>
               <span className="font-mono font-bold text-xs text-rose-500 uppercase">{maxSpeedConverted.unit}</span>
             </div>
           </div>
           <div className="mt-3 space-y-1.5">
             <div className={`text-[10px] font-mono ${subText}`}>
-              {activeScrubPoint ? 'Scrubbed velocity' : 'Peak burst velocity'}
+              Peak burst velocity (GPS recorded)
             </div>
             <div className={`w-full h-1 ${barBg} rounded-full overflow-hidden flex justify-between items-center`}>
               <div className="h-full bg-rose-500 w-full rounded-full" />

@@ -137,19 +137,24 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillText(displayTitle.length > 30 ? displayTitle.slice(0, 30) + '...' : displayTitle, 80, 200);
 
     // Date & Time subtitle
-    const dateStr = analysis.startTime
-      ? new Date(analysis.startTime).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-      : 'Weekend Tour';
-    const stopsStr = `${analysis.pitStops?.length || 0} Pit-Stops`;
+    const startPoint = analysis.points[0];
+    const dateFormatted = startPoint?.time
+      ? new Date(startPoint.time).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : new Date().toLocaleDateString();
+
     ctx.fillStyle = '#94a3b8';
     ctx.font = '500 24px monospace';
-    ctx.fillText(`${dateStr}  •  ${stopsStr}`, 80, 240);
+    ctx.fillText(`RECORDED ON ${dateFormatted.toUpperCase()}`, 80, 240);
 
-    // 2. Draw GPS Route Silhouette in the middle
+    // 2. Draw Minimap Route Silhouette
     const pts = analysis.points;
-    if (pts && pts.length > 10) {
-      let minLat = Infinity, maxLat = -Infinity;
-      let minLon = Infinity, maxLon = -Infinity;
+    if (pts.length > 1) {
+      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
       pts.forEach(p => {
         if (p.lat < minLat) minLat = p.lat;
         if (p.lat > maxLat) maxLat = p.lat;

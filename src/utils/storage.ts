@@ -7,7 +7,8 @@ export interface SavedRide {
   maxSpeedKmh: number;
 }
 
-const STORAGE_KEY = 'kinetic_motogpx_garage';
+const STORAGE_KEY = 'sasta_tracker_garage';
+const OLD_STORAGE_KEY = 'kinetic_motogpx_garage';
 
 export function generateSafeId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -22,7 +23,13 @@ export function generateSafeId(): string {
 
 export function getGarageRides(): SavedRide[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(OLD_STORAGE_KEY);
+      if (raw) {
+        localStorage.setItem(STORAGE_KEY, raw);
+      }
+    }
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -55,22 +62,6 @@ function persistRidesWithQuotaEviction(ridesToPersist: SavedRide[]) {
 
 export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: string }): SavedRide {
   const rides = getGarageRides();
-<<<<<<< Updated upstream
-  const newRide: SavedRide = {
-    ...ride,
-    id: 'ride_' + Date.now(),
-    date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-  };
-
-  // Prepend to top and limit to 10 stored rides
-  const updated = [newRide, ...rides.filter(r => r.name !== ride.name)].slice(0, 10);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch (e) {
-    console.warn('LocalStorage limit reached, saving fewer items', e);
-  }
-  return newRide;
-=======
   const id = ride.id || generateSafeId();
   
   // If ride already exists with this ID, update it in-place
@@ -120,7 +111,6 @@ export function updateGarageRide(id: string, updates: Partial<Omit<SavedRide, 'i
 
   persistRidesWithQuotaEviction(rides);
   return rides;
->>>>>>> Stashed changes
 }
 
 export function deleteGarageRide(id: string): SavedRide[] {

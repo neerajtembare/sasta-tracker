@@ -59,7 +59,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const [movingSeconds, setMovingSeconds] = useState<number>(0);
   const [stoppedSeconds, setStoppedSeconds] = useState<number>(0);
   const [totalDistanceMeters, setTotalDistanceMeters] = useState<number>(0);
-  const [recordedPoints, setRecordedPoints] = useState<LiveGpsPoint[]>([]);
+  const recordedPointsRef = useRef<LiveGpsPoint[]>([]);
+  const [pointsCount, setPointsCount] = useState<number>(0);
   const [markedWaypoints, setMarkedWaypoints] = useState<Array<{ name: string; lat: number; lon: number; ele: number | null }>>([]);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
@@ -83,6 +84,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const wakeLockRef = useRef<any>(null);
+  const leanAngleRef = useRef<number>(0);
 
   // Timer loop for elapsed time and moving vs stopped split
   useEffect(() => {
@@ -148,11 +150,19 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
   // Screen WakeLock to keep screen on while riding
   useEffect(() => {
+    let releasedListener: any = null;
+
     const requestWakeLock = async () => {
       if ('wakeLock' in navigator && isRecording && !isPaused) {
         try {
-          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-          setWakeLockActive(true);
+          if (!wakeLockRef.current || wakeLockRef.current.released) {
+            wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+            setWakeLockActive(true);
+            releasedListener = () => {
+              setWakeLockActive(false);
+            };
+            wakeLockRef.current.addEventListener('release', releasedListener);
+          }
         } catch {
           setWakeLockActive(false);
         }
@@ -166,15 +176,46 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         }
       }
     };
+
     requestWakeLock();
+
+    // Re-acquire screen wake lock when rider switches back to Sasta Tracker tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isRecording && !isPaused) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLockRef.current) {
         try {
+          if (releasedListener) {
+            wakeLockRef.current.removeEventListener('release', releasedListener);
+          }
           wakeLockRef.current.release();
         } catch {}
       }
     };
   }, [isRecording, isPaused]);
+
+  // Request iOS 13+ DeviceOrientation permission from user gesture
+  const requestDeviceOrientationPermission = async () => {
+    if (
+      typeof window !== 'undefined' &&
+      typeof (DeviceOrientationEvent as any)?.requestPermission === 'function'
+    ) {
+      try {
+        const state = await (DeviceOrientationEvent as any).requestPermission();
+        return state === 'granted';
+      } catch (err) {
+        console.warn('iOS DeviceOrientation permission error:', err);
+        return false;
+      }
+    }
+    return true;
+  };
 
   // Orientation listener for phone handlebar mount roll/lean angle with tare offset
   useEffect(() => {
@@ -183,8 +224,12 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         const roll = Math.round(e.gamma);
         setRawRoll(roll);
         if (mountMode === 'handlebar') {
-          const calibrated = roll - tareOffset;
-          setLeanAngle(Math.min(60, Math.max(-60, calibrated)));
+          const calibrated = Math.min(60, Math.max(-60, roll - tareOffset));
+          leanAngleRef.current = calibrated;
+          setLeanAngle(calibrated);
+        } else {
+          leanAngleRef.current = 0;
+          setLeanAngle(0);
         }
       }
     };
@@ -197,14 +242,24 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     };
   }, [mountMode, tareOffset]);
 
-  const handleTareAngle = () => {
+  const handleTareAngle = async () => {
+    await requestDeviceOrientationPermission();
     setTareOffset(rawRoll);
+    leanAngleRef.current = 0;
     setLeanAngle(0);
   };
 
   const handleResetTare = () => {
     setTareOffset(0);
+    leanAngleRef.current = rawRoll;
     setLeanAngle(rawRoll);
+  };
+
+  const handleSetMountMode = async (mode: 'handlebar' | 'pocket') => {
+    setMountMode(mode);
+    if (mode === 'handlebar') {
+      await requestDeviceOrientationPermission();
+    }
   };
 
   // Cleanup GPS watcher on unmount to prevent geolocation leak
@@ -217,8 +272,18 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     };
   }, []);
 
+  const startNewRecording = () => {
+    recordedPointsRef.current = [];
+    setPointsCount(0);
+    setTotalDistanceMeters(0);
+    setElapsedSeconds(0);
+    lastPositionRef.current = null;
+    startGpsWatch();
+  };
+
   // Geolocation watchPosition
-  const startGpsWatch = () => {
+  const startGpsWatch = async () => {
+    await requestDeviceOrientationPermission();
     if (!navigator.geolocation) {
       setGpsError('Geolocation is not supported by your browser.');
       return;
@@ -261,7 +326,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         }
         lastPositionRef.current = { lat: latitude, lon: longitude };
 
-        // Append to recorded points
+        // Append to recorded points in O(1) time without array re-allocation
         const pt: LiveGpsPoint = {
           lat: latitude,
           lon: longitude,
@@ -271,12 +336,9 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           heading: heading !== null && !isNaN(heading) ? heading : null,
           altitude: altitude || null,
           timestamp: Date.now(),
-          leanAngle,
+          leanAngle: leanAngleRef.current,
         };
 
-<<<<<<< Updated upstream
-        setRecordedPoints(prev => [...prev, pt]);
-=======
         recordedPointsRef.current.push(pt);
         const count = recordedPointsRef.current.length;
         setPointsCount(count);
@@ -313,7 +375,6 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             window.speechSynthesis.speak(utterance);
           }
         }
->>>>>>> Stashed changes
       },
       error => {
         console.warn('Geolocation watch error:', error);
@@ -377,7 +438,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     setIsRecording(false);
     setIsPaused(false);
 
-    if (recordedPoints.length < 2) {
+    if (recordedPointsRef.current.length < 2) {
       setGpsError('Track contains fewer than 2 points. Drive or move around before saving.');
       recordedPointsRef.current = [];
       setPointsCount(0);
@@ -386,10 +447,12 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
     const gpxString = exportPointsToGPX(
       `Motorcycle Ride — ${new Date().toLocaleDateString()}`,
-      recordedPoints,
+      recordedPointsRef.current,
       markedWaypoints
     );
 
+    recordedPointsRef.current = [];
+    setPointsCount(0);
     onRideRecorded(gpxString);
   };
 
@@ -477,6 +540,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             }`}>
               ±{gpsAccuracy ? gpsAccuracy.toFixed(1) : '—'}m
             </span>
+            {isRecording && (
+              <span className="text-[10px] text-sky-400 font-mono hidden sm:inline">
+                📍 {pointsCount} pts
+              </span>
+            )}
 
             {/* Voice Announcements Button */}
             {'speechSynthesis' in window && (
@@ -588,7 +656,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               {/* Placement Mode Switcher */}
               <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-200 border-slate-300' : 'bg-[#0d131a] border-[#223140]'}`}>
                 <button
-                  onClick={() => setMountMode('handlebar')}
+                  onClick={() => handleSetMountMode('handlebar')}
                   className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
                     mountMode === 'handlebar' ? 'bg-sky-500 text-slate-950 font-bold' : subTextColor
                   }`}
@@ -596,7 +664,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   🏍️ Handlebar
                 </button>
                 <button
-                  onClick={() => setMountMode('pocket')}
+                  onClick={() => handleSetMountMode('pocket')}
                   className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
                     mountMode === 'pocket' ? 'bg-sky-500 text-slate-950 font-bold' : subTextColor
                   }`}
@@ -766,7 +834,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
           {!isRecording ? (
             <button
-              onClick={startGpsWatch}
+              onClick={startNewRecording}
               className="px-6 py-3.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono font-black text-sm uppercase tracking-wider flex items-center gap-2 rounded-xl shadow-lg transition-all cursor-pointer hover:shadow-sky-500/20"
             >
               <Play className="w-4 h-4 fill-current" />

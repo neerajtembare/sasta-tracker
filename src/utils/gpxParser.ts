@@ -11,8 +11,6 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-<<<<<<< Updated upstream
-=======
 export function calculateForwardBearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLon = toRad(lon2 - lon1);
@@ -92,8 +90,6 @@ export function calculateHysteresisElevation(
 
   return { gain: Math.round(gain), loss: Math.round(loss) };
 }
-
->>>>>>> Stashed changes
 export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAnalysis {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
@@ -187,26 +183,6 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           speedMs = dt > 0 ? stepDistM / dt : 0;
         }
 
-<<<<<<< Updated upstream
-        if (ele !== null && prev.ele !== null) {
-          const deltaEle = ele - prev.ele;
-          if (deltaEle > 0) segElevGain += deltaEle;
-          else segElevLoss += Math.abs(deltaEle);
-        }
-
-        if (speedMs > 1.2) {
-          segMovingTime += dt;
-        }
-
-        // Estimate lean angle from heading delta & speed
-        let estLean = 0;
-        if (bearingDeg !== null && prev.bearing !== null && dt > 0 && speedMs > 3) {
-          let dHeading = Math.abs(bearingDeg - prev.bearing);
-          if (dHeading > 180) dHeading = 360 - dHeading;
-          const radPerSec = (dHeading * Math.PI) / (180 * dt);
-          const lateralAcc = speedMs * radPerSec;
-          estLean = Math.min(50, Math.round((Math.atan(lateralAcc / 9.81) * 180) / Math.PI));
-=======
         // Outlier protection: if instantaneous speed exceeds 80 m/s (~288 km/h) due to GPS multipath jitter
         if (speedMs > 80 && prev.speed > 0) {
           speedMs = Math.min(speedMs, prev.speed * 1.4);
@@ -244,8 +220,7 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           const radPerSec = (diff * Math.PI) / (180 * dt);
           const lateralAcc = speedMs * radPerSec;
           const leanDeg = (Math.atan(lateralAcc / 9.81) * 180) / Math.PI;
-          estLean = Math.max(-52, Math.min(52, Math.round(leanDeg)));
->>>>>>> Stashed changes
+          estLean = Math.max(-55, Math.min(55, Math.round(leanDeg)));
         }
 
         const point: TrackPoint = {
@@ -321,13 +296,8 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         distanceKm: segDistM / 1000,
         durationSeconds: segDuration,
         movingTimeSeconds: segMovingTime,
-<<<<<<< Updated upstream
-        avgSpeedKmh: segDuration > 0 ? (segDistM / segDuration) * 3.6 : 0,
-        maxSpeedKmh: speeds.length ? Math.max(...speeds) : 0,
-=======
         avgSpeedKmh: isNaN(rawAvgSpeed) ? 0 : rawAvgSpeed,
         maxSpeedKmh: speeds.length ? speeds.reduce((max, v) => (v > max ? v : max), 0) : 0,
->>>>>>> Stashed changes
         elevGain: segElevGain,
         elevLoss: segElevLoss,
       });
@@ -370,34 +340,27 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const movingTimeSeconds = segments.reduce((sum, s) => sum + s.movingTimeSeconds, 0);
   const stoppedTimeSeconds = Math.max(0, totalDurationSeconds - movingTimeSeconds);
 
-<<<<<<< Updated upstream
-  const allSpeeds = allPoints.map(p => p.speedKmh);
-  const maxSpeedKmh = allSpeeds.length ? Math.max(...allSpeeds) : 0;
-  const overallAvgSpeedKmh = totalDurationSeconds > 0 ? (totalDistanceKm / (totalDurationSeconds / 3600)) : 0;
-  const movingAvgSpeedKmh = movingTimeSeconds > 0 ? (totalDistanceKm / (movingTimeSeconds / 3600)) : overallAvgSpeedKmh;
-=======
   const maxSpeedKmh = allPoints.length ? allPoints.reduce((max, p) => (p.speedKmh > max ? p.speedKmh : max), 0) : 0;
   const rawOverallAvg = totalDurationSeconds > 0 ? (totalDistanceKm / (totalDurationSeconds / 3600)) : 0;
   const overallAvgSpeedKmh = isNaN(rawOverallAvg) ? 0 : rawOverallAvg;
   const rawMovingAvg = movingTimeSeconds > 0 ? (totalDistanceKm / (movingTimeSeconds / 3600)) : overallAvgSpeedKmh;
   const movingAvgSpeedKmh = isNaN(rawMovingAvg) ? 0 : rawMovingAvg;
->>>>>>> Stashed changes
 
   const elevations = allPoints.map(p => p.ele).filter((e): e is number => e !== null);
-  const elevMinM = elevations.length ? Math.min(...elevations) : null;
-  const elevMaxM = elevations.length ? Math.max(...elevations) : null;
+  const elevMinM = elevations.length ? elevations.reduce((min, e) => (e < min ? e : min), elevations[0]) : null;
+  const elevMaxM = elevations.length ? elevations.reduce((max, e) => (e > max ? e : max), elevations[0]) : null;
   const elevGainM = segments.reduce((sum, s) => sum + s.elevGain, 0);
   const elevLossM = segments.reduce((sum, s) => sum + s.elevLoss, 0);
 
   const satellites = allPoints.map(p => p.sat).filter((s): s is number => s !== null && s > 0);
   const avgSatellites = satellites.length ? Math.round(satellites.reduce((a, b) => a + b, 0) / satellites.length) : null;
-  const maxSatellites = satellites.length ? Math.max(...satellites) : null;
+  const maxSatellites = satellites.length ? satellites.reduce((max, s) => (s > max ? s : max), satellites[0]) : null;
 
   const hdops = allPoints.map(p => p.hdop).filter((h): h is number => h !== null && h > 0);
-  const bestHdop = hdops.length ? Math.min(...hdops) : null;
+  const bestHdop = hdops.length ? hdops.reduce((min, h) => (h < min ? h : min), hdops[0]) : null;
 
-  const leanAngles = allPoints.map(p => p.estimatedLeanAngle || 0);
-  const maxEstimatedLean = leanAngles.length ? Math.max(...leanAngles) : 0;
+  const leanAngles = allPoints.map(p => Math.abs(p.estimatedLeanAngle || 0));
+  const maxEstimatedLean = leanAngles.length ? leanAngles.reduce((max, l) => (l > max ? l : max), 0) : 0;
 
   // Robust Automated Stop Detection Algorithm (> 5 minutes / 300 seconds)
   // Flags gaps in activity longer than 5 minutes for user review/categorization
@@ -496,11 +459,13 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     }
   }
 
-  // Merge stops within 150m of each other to avoid duplicate tags
+  // Merge stops within 150m of each other ONLY if they are also close in route progress (< 2.5 km)
+  // This preserves separate outbound and return stops at the same petrol station or food stall
   const mergedStops: typeof rawStops = [];
   rawStops.forEach(candidate => {
     const existing = mergedStops.find(
-      s => haversineDistance(s.lat, s.lon, candidate.lat, candidate.lon) < 150
+      s => haversineDistance(s.lat, s.lon, candidate.lat, candidate.lon) < 150 &&
+           Math.abs(s.distanceKm - candidate.distanceKm) < 2.5
     );
     if (existing) {
       existing.durationSeconds = Math.max(existing.durationSeconds, candidate.durationSeconds);
@@ -708,6 +673,18 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     splitStartKm = splitEndKm;
   }
 
+  // Calculate bounding box
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+  for (const p of allPoints) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+  }
+  const boundingBox = { minLat, maxLat, minLon, maxLon };
+
+  const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh);
+
   return {
     name: trackName,
     points: allPoints,
@@ -734,5 +711,24 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     pitStops: combinedPitStops,
     speedTraps,
     splits,
+    boundingBox,
+    activityType,
   };
+}
+
+export function guessActivity(avgKmh: number, maxKmh: number): {
+  label: string;
+  emoji: string;
+  category: 'walking' | 'cycling' | 'motorbike' | 'racing';
+} {
+  if (maxKmh > 130 || avgKmh > 75) {
+    return { label: 'High-Speed Track', emoji: '🏎️', category: 'racing' };
+  }
+  if (avgKmh >= 24 || maxKmh > 55) {
+    return { label: 'Motorbike / Vehicle', emoji: '🏍️', category: 'motorbike' };
+  }
+  if (avgKmh >= 8 || maxKmh > 20) {
+    return { label: 'Cycling Ride', emoji: '🚴', category: 'cycling' };
+  }
+  return { label: 'Walking / Hike', emoji: '🚶', category: 'walking' };
 }

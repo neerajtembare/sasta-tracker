@@ -49,13 +49,22 @@ export function interpolateTrackPoints(points: TrackPoint[], targetSpacingMeters
 
       const ele = p1.ele !== null && p2.ele !== null ? p1.ele + (p2.ele - p1.ele) * t : p1.ele;
       const speedKmh = p1.speedKmh + (p2.speedKmh - p1.speedKmh) * t;
-      const bearing = p1.bearing !== null && p2.bearing !== null ? p1.bearing + (p2.bearing - p1.bearing) * t : p1.bearing;
+      let bearing = p1.bearing;
+      if (p1.bearing !== null && p2.bearing !== null) {
+        let diff = p2.bearing - p1.bearing;
+        while (diff > 180) diff -= 360;
+        while (diff < -180) diff += 360;
+        bearing = p1.bearing + diff * t;
+        while (bearing < 0) bearing += 360;
+        while (bearing >= 360) bearing -= 360;
+      }
+
       const dist = p1.distanceFromStartKm + (p2.distanceFromStartKm - p1.distanceFromStartKm) * t;
       const lean = (p1.estimatedLeanAngle || 0) + ((p2.estimatedLeanAngle || 0) - (p1.estimatedLeanAngle || 0)) * t;
 
       let interpolatedTime = p1.time;
       if (t1 && t2) {
-        interpolatedTime = new Date(t1 + dt * 1000 * t).toISOString();
+        interpolatedTime = new Date(t1 + (t2 - t1) * t).toISOString();
       }
 
       result.push({

@@ -31,13 +31,7 @@ import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
 import { 
   SAMPLE_GPX_DATA, 
-  SAMPLE_GPX_NAME,
-  SATURDAY_MORNING_GPX,
-  SATURDAY_MORNING_NAME,
-  MULSHI_RETURN_GPX,
-  MULSHI_RETURN_NAME,
-  HIGH_RES_TWISTIES_GPX,
-  HIGH_RES_TWISTIES_NAME
+  SAMPLE_GPX_NAME
 } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
 import { getStoredUnitSystem, setStoredUnitSystem } from './utils/units';
@@ -133,7 +127,7 @@ export default function App() {
       }
     } else {
       alert(
-        'To install Sasta Tracker on your phone for full-screen offline logging:\n\n' +
+        'To install ThrottleLog on your phone for full-screen offline logging:\n\n' +
         '• iPhone / iPad (Safari): Tap the Share button (square with arrow) and tap "Add to Home Screen".\n' +
         '• Android (Chrome / Brave / Edge): Tap the 3 dots menu and tap "Install app" (or "Add to Home screen").'
       );
@@ -257,6 +251,7 @@ export default function App() {
     try {
       const gpxText = exportAnalysisToGPX(analysis);
       const saved = saveRideToGarage({
+        id: currentRideId || undefined,
         name: analysis.name,
         distanceKm: analysis.totalDistanceKm,
         maxSpeedKmh: analysis.maxSpeedKmh,
@@ -511,6 +506,7 @@ export default function App() {
               activeRideDistanceKm={analysis ? analysis.totalDistanceKm : null}
               onResumeRide={() => setCurrentTab('analysis')}
               onClearRide={handleCloseTrack}
+              onOpenGarage={() => setIsGarageOpen(true)}
             />
           </div>
         )}
@@ -526,6 +522,7 @@ export default function App() {
               theme={theme}
               activeRideName={null}
               activeRideDistanceKm={null}
+              onOpenGarage={() => setIsGarageOpen(true)}
             />
           </div>
         )}
@@ -549,45 +546,44 @@ export default function App() {
               unitSystem={unitSystem}
             />
 
-            {/* Quick Route Switcher & Live Mode Trigger */}
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between flex-wrap gap-2 text-xs font-mono shadow-sm ${
+            {/* Contextual Action Strip */}
+            <div className={`p-2 sm:p-2.5 rounded-xl border flex items-center justify-between flex-wrap gap-2 text-xs font-mono shadow-sm ${
               theme === 'light' ? 'bg-white border-slate-200' : 'bg-[#0d131a] border-[#1e2a38]'
             }`}>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`text-[11px] font-bold uppercase tracking-wider mr-1 ${theme === 'light' ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
-                  Routes:
-                </span>
-                {[
-                  { name: 'Mulshi Ghat', data: SAMPLE_GPX_DATA, title: SAMPLE_GPX_NAME },
-                  { name: 'Saturday Morning', data: SATURDAY_MORNING_GPX, title: SATURDAY_MORNING_NAME },
-                  { name: 'Mulshi Return', data: MULSHI_RETURN_GPX, title: MULSHI_RETURN_NAME },
-                  { name: 'Twisties Apex', data: HIGH_RES_TWISTIES_GPX, title: HIGH_RES_TWISTIES_NAME },
-                ].map(r => (
-                  <button
-                    key={r.name}
-                    onClick={() => handleLoadSample(r.data, r.title)}
-                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer text-[11px] font-bold ${
-                      analysis.name === r.title
-                        ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-xs'
-                        : theme === 'light'
-                        ? 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-sky-600'
-                        : 'bg-[#131b24] border-[#1e2a38] text-slate-300 hover:bg-[#1a2533] hover:text-sky-400'
-                    }`}
-                  >
-                    {r.name}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setIsGarageOpen(true)}
+                  className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    theme === 'light'
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
+                      : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-sky-400'
+                  }`}
+                  title="Open saved rides garage"
+                >
+                  <FolderArchive className="w-3.5 h-3.5" />
+                  <span>My Rides Garage</span>
+                </button>
+
+                <button
+                  onClick={triggerUploadClick}
+                  className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    theme === 'light'
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                      : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
+                  }`}
+                  title="Upload another GPX file"
+                >
+                  <span>Import GPX</span>
+                </button>
               </div>
 
-              {/* Live Record action — subtle pulse instead of aggressive ping */}
               <button
                 onClick={() => setCurrentTab('cockpit')}
-                className="px-3 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ml-auto"
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ml-auto"
                 title="Open live handlebar GPS dashboard"
               >
-                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-                <Radio className="w-3 h-3 text-red-400" />
-                <span>Record Live Ride</span>
+                <Radio className="w-3.5 h-3.5" />
+                <span>Record New Ride</span>
               </button>
             </div>
 

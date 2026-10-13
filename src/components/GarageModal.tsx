@@ -15,16 +15,6 @@ import { getOfflineTileCount, clearOfflineTileCache } from '../utils/mapCache';
 import { RideAnalysis, AppTheme } from '../types';
 import { exportAnalysisToGPX, downloadFile } from '../utils/gpxExporter';
 import { 
-  SAMPLE_GPX_DATA,
-  SAMPLE_GPX_NAME,
-  HIGH_RES_TWISTIES_GPX, 
-  HIGH_RES_TWISTIES_NAME,
-  SATURDAY_MORNING_GPX,
-  SATURDAY_MORNING_NAME,
-  MULSHI_RETURN_GPX,
-  MULSHI_RETURN_NAME
-} from '../data/sampleRide';
-import { 
   FolderArchive, 
   X, 
   Play, 
@@ -409,154 +399,32 @@ export const GarageModal: React.FC<GarageModalProps> = ({
           </div>
         )}
 
-        {/* Saved Rides & Built-in Samples List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-          <div className={`text-[10px] font-mono uppercase tracking-wider font-bold mb-1 ${subTextColor}`}>
-            BUILT-IN TEST & BENCHMARK SAMPLES:
-          </div>
-
-          {/* User's Saturday Morning GPX File */}
-          <div
-            onClick={() => {
-              onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME);
-              onClose();
-            }}
-            className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-500">
-                <Navigation className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-mono font-bold flex items-center gap-2">
-                  <span>Saturday Morning Ride (Pune - Wai - Satara)</span>
-                  <span className="px-1.5 py-0.5 text-[9px] bg-sky-500/10 text-sky-500 border border-sky-500/30 rounded font-mono font-bold">
-                    YOUR GPX LOG
-                  </span>
-                </div>
-                <div className={`text-[11px] font-mono mt-0.5 ${subTextColor}`}>
-                  High-speed highway & ghat climb sections • 89 KB original GPX log
-                </div>
-              </div>
-            </div>
-
-            <span className="text-xs font-mono text-sky-500 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-bold">
-              <span>Load</span>
-              <Play className="w-3 h-3 fill-current" />
-            </span>
-          </div>
-
-          {/* User's Mulshi Return GPX File */}
-          <div
-            onClick={() => {
-              onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME);
-              onClose();
-            }}
-            className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500">
-                <MapPin className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-mono font-bold flex items-center gap-2">
-                  <span>Mulshi Lake Return Run (Ghats & Twisties)</span>
-                  <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded font-mono font-bold">
-                    YOUR GPX LOG
-                  </span>
-                </div>
-                <div className={`text-[11px] font-mono mt-0.5 ${subTextColor}`}>
-                  Scenic twisties around Mulshi & Pirangut • 26 KB original GPX log
-                </div>
-              </div>
-            </div>
-
-            <span className="text-xs font-mono text-amber-500 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-bold">
-              <span>Load</span>
-              <Play className="w-3 h-3 fill-current" />
-            </span>
-          </div>
-
-          {/* Western Ghats Tour Sample */}
-          <div
-            onClick={() => {
-              onLoadSample();
-              onClose();
-            }}
-            className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-mono font-bold flex items-center gap-2">
-                  <span>Western Ghats Tour (Pune - Wai - Mahabaleshwar)</span>
-                  <span className="px-1.5 py-0.5 text-[9px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 rounded font-mono font-bold">
-                    PRE-TAGGED STOPS
-                  </span>
-                </div>
-                <div className={`text-[11px] font-mono mt-0.5 ${subTextColor}`}>
-                  128.6 km • Max 104 km/h • 1,440m Climb • 72 Satellites • Pre-configured chai & fuel stops
-                </div>
-              </div>
-            </div>
-
-            <span className="text-xs font-mono text-emerald-500 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-bold">
-              <span>Load</span>
-              <Play className="w-3 h-3 fill-current" />
-            </span>
-          </div>
-
-          {/* High-Res 1-Second GPS Sample */}
-          <div
-            onClick={() => {
-              onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME);
-              onClose();
-            }}
-            className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-500">
-                <Zap className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-mono font-bold flex items-center gap-2">
-                  <span>Pasarni Ghat Mountain Hairpins (1Hz High-Res)</span>
-                  <span className="px-1.5 py-0.5 text-[9px] bg-cyan-500/10 text-cyan-500 border border-cyan-500/30 rounded font-mono font-bold">
-                    1-SEC LOGGING
-                  </span>
-                </div>
-                <div className={`text-[11px] font-mono mt-0.5 ${subTextColor}`}>
-                  120 continuous 1-second fixes • Apex braking • 42° Lean angles • Fluid S-curve road trace
-                </div>
-              </div>
-            </div>
-
-            <span className="text-xs font-mono text-cyan-500 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-bold">
-              <span>Load</span>
-              <Play className="w-3 h-3 fill-current" />
-            </span>
-          </div>
-
-          {/* User Saved Rides Header + Backup / Restore Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mb-1 border-t border-slate-700/20">
-            <div className={`text-[10px] font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
-              SAVED RIDES IN YOUR BROWSER ({rides.length}):
+        {/* Saved Rides Header & Management Controls */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-700/20">
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-mono uppercase tracking-wider font-bold ${subTextColor}`}>
+                Saved Rides ({rides.length}):
+              </span>
+              {rides.length > 0 && (
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
+                  Newest First
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              {onOpenCompare && (
+              {onOpenCompare && rides.length >= 2 && (
                 <button
                   onClick={() => {
                     onClose();
                     onOpenCompare();
                   }}
                   title="Side-by-side Ghost Track Comparison of 2 rides"
-                  className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/35 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                  className="px-2 py-1 text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/35 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Zap className="w-3 h-3" />
-                  <span>Compare Runs ⚡</span>
+                  <span>Compare Runs</span>
                 </button>
               )}
 
@@ -566,11 +434,11 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                     e.stopPropagation();
                     onOpenCloudSync();
                   }}
-                  title="Personal Cloud Backup & Sync to GitHub Gist or Encrypted Vault"
-                  className="px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/35 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Personal Cloud Backup & Sync to GitHub Gist"
+                  className="px-2 py-1 text-[10px] font-mono font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/35 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Cloud className="w-3 h-3" />
-                  <span>Cloud Sync ☁️</span>
+                  <span>Cloud Sync</span>
                 </button>
               )}
 
@@ -585,18 +453,18 @@ export const GarageModal: React.FC<GarageModalProps> = ({
               <button
                 onClick={() => restoreFileInputRef.current?.click()}
                 title="Restore saved rides from a previously exported JSON backup"
-                className="px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                className="px-2 py-1 text-[10px] font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
               >
-                <FileUp className="w-3 h-3" />
-                <span>Restore Backup</span>
+                <FileUp className="w-3 h-3 text-sky-400" />
+                <span>Restore</span>
               </button>
 
               <button
                 onClick={handleExportBackup}
                 title="Export all garage rides to a JSON backup file"
-                className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                className="px-2 py-1 text-[10px] font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
               >
-                <FileDown className="w-3 h-3" />
+                <FileDown className="w-3 h-3 text-emerald-400" />
                 <span>Backup JSON</span>
               </button>
 
@@ -618,7 +486,7 @@ export const GarageModal: React.FC<GarageModalProps> = ({
 
           {/* Search bar for quick filtering */}
           {rides.length > 0 && (
-            <div className="relative my-1">
+            <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -643,62 +511,98 @@ export const GarageModal: React.FC<GarageModalProps> = ({
             </div>
           )}
 
+          {/* Rides List */}
           {displayedRides.length > 0 ? (
-            displayedRides.map(r => (
-              <div
-                key={r.id}
-                onClick={() => {
-                  onSelectRide(r.gpxContent, r.name, r.id);
-                  onClose();
-                }}
-                className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-500">
-                    <Navigation className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-mono font-bold">
-                      {r.name}
+            <div className="space-y-2">
+              {displayedRides.map((r, idx) => (
+                <div
+                  key={r.id}
+                  onClick={() => {
+                    onSelectRide(r.gpxContent, r.name, r.id);
+                    onClose();
+                  }}
+                  className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 cursor-pointer group transition-all shadow-sm ${itemBg}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
+                      <Navigation className="w-4 h-4" />
                     </div>
-                    <div className={`text-[11px] font-mono mt-0.5 flex items-center gap-2 ${subTextColor}`}>
-                      <span>{r.distanceKm ? r.distanceKm.toFixed(1) : 0} km</span>
-                      <span>•</span>
-                      <span className="text-rose-500 font-bold">Max {r.maxSpeedKmh ? r.maxSpeedKmh.toFixed(0) : 0} km/h</span>
-                      <span>•</span>
-                      <span>Saved: {r.date}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-mono font-bold flex items-center gap-2 truncate">
+                        <span className="truncate">{r.name}</span>
+                        {idx === 0 && !searchQuery && (
+                          <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 border border-sky-500/40 text-[9px] font-bold shrink-0">
+                            LATEST
+                          </span>
+                        )}
+                      </div>
+                      <div className={`text-[11px] font-mono mt-0.5 flex items-center gap-2 ${subTextColor}`}>
+                        <span>{r.distanceKm ? r.distanceKm.toFixed(1) : 0} km</span>
+                        <span>•</span>
+                        <span className="text-rose-400 font-bold">Max {r.maxSpeedKmh ? r.maxSpeedKmh.toFixed(0) : 0} km/h</span>
+                        <span>•</span>
+                        <span>{r.date}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={e => handleDownload(r, e)}
-                    title="Export GPX"
-                    className={`p-2 border rounded-lg transition-colors cursor-pointer ${
-                      isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#0d131a] hover:bg-[#1c2633] border-[#223140] text-slate-300 hover:text-white'
-                    }`}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={e => handleDelete(r.id, e)}
-                    title="Delete ride"
-                    className="p-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-xs font-mono text-sky-500 group-hover:translate-x-1 transition-transform flex items-center gap-1 pl-1 font-bold">
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={e => handleDownload(r, e)}
+                      title="Export GPX file"
+                      className={`p-2 border rounded-lg transition-colors cursor-pointer ${
+                        isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#0d131a] hover:bg-[#1c2633] border-[#223140] text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={e => handleDelete(r.id, e)}
+                      title="Delete ride"
+                      className="p-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-xs font-mono text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 pl-1 font-bold">
+                      <span>View</span>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           ) : (
-            <div className={`p-6 text-center font-mono text-xs border border-dashed rounded-xl ${
-              isLight ? 'border-slate-300 text-slate-500 bg-slate-50' : 'border-[#1e2a38] text-[#8f9ca8] bg-[#0d131a]'
+            /* Clean Empty State */
+            <div className={`p-8 text-center font-mono rounded-2xl border border-dashed flex flex-col items-center justify-center space-y-3 ${
+              isLight ? 'border-slate-300 bg-slate-50 text-slate-600' : 'border-[#1e2a38] bg-[#0d131a] text-[#8f9ca8]'
             }`}>
-              {searchQuery ? `No saved rides match "${searchQuery}".` : 'No custom rides saved yet. Click "Save to Garage" above or record a ride in the GPS Cockpit!'}
+              <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-400 flex items-center justify-center">
+                <FolderArchive className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-heading font-black text-sm uppercase text-white tracking-wider">
+                  {searchQuery ? `No Rides Match "${searchQuery}"` : 'Your Garage is Empty'}
+                </h4>
+                <p className="text-xs max-w-sm mt-1 text-slate-400 leading-relaxed">
+                  {searchQuery
+                    ? 'Try searching with a different term or clear the search bar.'
+                    : 'Record a ride from the Handlebar Cockpit or import a GPX track to save your runs here.'}
+                </p>
+              </div>
+
+              {!searchQuery && (
+                <div className="pt-2 flex items-center gap-2 flex-wrap justify-center">
+                  <button
+                    onClick={() => {
+                      onLoadSample();
+                      onClose();
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500 text-sky-400 hover:text-slate-950 border border-sky-500/30 text-xs font-bold font-mono transition-all cursor-pointer"
+                  >
+                    <span>Load Demo Route to Test</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

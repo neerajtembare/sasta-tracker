@@ -5,6 +5,7 @@ export interface SavedRide {
   gpxContent: string;
   distanceKm: number;
   maxSpeedKmh: number;
+  createdAt?: number;
 }
 
 const STORAGE_KEY = 'sasta_tracker_garage';
@@ -113,6 +114,22 @@ if (typeof window !== 'undefined') {
   initIndexedDB().catch(err => console.warn('IndexedDB init notice:', err));
 }
 
+// Helper to extract timestamp from ride
+function getRideTimestamp(ride: SavedRide): number {
+  if (ride.createdAt && !isNaN(ride.createdAt)) return ride.createdAt;
+  if (ride.date) {
+    const parsed = Date.parse(ride.date);
+    if (!isNaN(parsed)) return parsed;
+  }
+  // Try extracting timestamp from ID like 'ride_1760000000000_...'
+  if (ride.id && ride.id.startsWith('ride_')) {
+    const parts = ride.id.split('_');
+    const ts = parseInt(parts[1], 10);
+    if (!isNaN(ts)) return ts;
+  }
+  return 0;
+}
+
 // ─── Synchronous Garage Storage API ───────────────────────────────
 export function getGarageRides(): SavedRide[] {
   if (memoryCache !== null) {
@@ -132,7 +149,10 @@ export function getGarageRides(): SavedRide[] {
       return [];
     }
     const parsed = JSON.parse(raw);
-    memoryCache = Array.isArray(parsed) ? parsed : [];
+    const list: SavedRide[] = Array.isArray(parsed) ? parsed : [];
+    // Always sort newest first
+    list.sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
+    memoryCache = list;
     return memoryCache;
   } catch (e) {
     console.error('Error reading garage rides from localStorage', e);
@@ -142,7 +162,9 @@ export function getGarageRides(): SavedRide[] {
 }
 
 function persistRides(ridesToPersist: SavedRide[]): SavedRide[] {
-  memoryCache = [...ridesToPersist];
+  // Ensure strict newest-first sorting before persisting
+  const sorted = [...ridesToPersist].sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
+  memoryCache = sorted;
 
   // 1. Asynchronously persist to high-capacity IndexedDB (gigabytes available)
   saveToIndexedDB(memoryCache).catch(e => {
@@ -150,7 +172,7 @@ function persistRides(ridesToPersist: SavedRide[]): SavedRide[] {
   });
 
   // 2. Also keep recent rides in localStorage as instant sync fallback
-  let list = [...ridesToPersist];
+  let list = [...memoryCache];
   let attempts = 0;
   while (attempts < 5) {
     try {
@@ -169,19 +191,18 @@ function persistRides(ridesToPersist: SavedRide[]): SavedRide[] {
   return memoryCache;
 }
 
-export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: string }): SavedRide {
+export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: string; createdAt?: number }): SavedRide {
   const rides = getGarageRides();
   const id = ride.id || generateSafeId();
-  
-  const existingIndex = rides.findIndex(r => r.id === id);
-  const nowFormatted = new Date().toLocaleDateString(undefined, { 
+  const now = Date.now();
+  const nowFormatted = new Date(now).toLocaleDateString(undefined, { 
     month: 'short', 
     day: 'numeric', 
     hour: '2-digit', 
     minute: '2-digit' 
   });
 
-  let updatedList: SavedRide[];
+  const existingIndex = rides.findIndex(r => r.id === id);
   let savedRecord: SavedRide;
 
   if (existingIndex >= 0) {
@@ -189,19 +210,21 @@ export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: s
       ...rides[existingIndex],
       ...ride,
       id,
-      date: rides[existingIndex].date, // preserve original recorded date
+      date: nowFormatted,
+      createdAt: now,
     };
-    updatedList = [...rides];
-    updatedList[existingIndex] = savedRecord;
   } else {
     savedRecord = {
       ...ride,
       id,
       date: nowFormatted,
+      createdAt: now,
     };
-    // Prepend to top — supports up to 100 rides in IndexedDB!
-    updatedList = [savedRecord, ...rides].slice(0, 100);
   }
+
+  // Prepend to top — newest ride is ALWAYS at index 0!
+  const otherRides = rides.filter(r => r.id !== id);
+  const updatedList = [savedRecord, ...otherRides].slice(0, 100);
 
   persistRides(updatedList);
   if (typeof window !== 'undefined') {
@@ -215,12 +238,14 @@ export function updateGarageRide(id: string, updates: Partial<Omit<SavedRide, 'i
   const idx = rides.findIndex(r => r.id === id);
   if (idx < 0) return rides;
 
-  rides[idx] = {
+  const updatedRecord: SavedRide = {
     ...rides[idx],
     ...updates,
+    createdAt: Date.now(),
   };
 
-  return persistRides(rides);
+  const otherRides = rides.filter(r => r.id !== id);
+  return persistRides([updatedRecord, ...otherRides]);
 }
 
 export function deleteGarageRide(id: string): SavedRide[] {

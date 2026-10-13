@@ -4,10 +4,6 @@ import { RideAnalysis, AppTheme, TrackPoint } from '../types';
 import { parseGPX } from '../utils/gpxParser';
 import { getGarageRides, SavedRide } from '../utils/storage';
 import { 
-  SATURDAY_MORNING_GPX, 
-  SATURDAY_MORNING_NAME,
-  MULSHI_RETURN_GPX, 
-  MULSHI_RETURN_NAME,
   SAMPLE_GPX_DATA,
   SAMPLE_GPX_NAME
 } from '../data/sampleRide';
@@ -96,25 +92,15 @@ export const TrackComparisonModal: React.FC<TrackComparisonModalProps> = ({
       });
     });
 
-    // Built-in sample rides
-    list.push({
-      id: 'sample-saturday',
-      name: `Sample: ${SATURDAY_MORNING_NAME}`,
-      gpxContent: SATURDAY_MORNING_GPX,
-      source: 'sample',
-    });
-    list.push({
-      id: 'sample-mulshi',
-      name: `Sample: ${MULSHI_RETURN_NAME}`,
-      gpxContent: MULSHI_RETURN_GPX,
-      source: 'sample',
-    });
-    list.push({
-      id: 'sample-western',
-      name: `Sample: ${SAMPLE_GPX_NAME}`,
-      gpxContent: SAMPLE_GPX_DATA,
-      source: 'sample',
-    });
+    // Built-in sample fallback only if fewer than 2 rides available
+    if (list.length < 2) {
+      list.push({
+        id: 'sample-benchmark',
+        name: `Sample: ${SAMPLE_GPX_NAME}`,
+        gpxContent: SAMPLE_GPX_DATA,
+        source: 'sample',
+      });
+    }
 
     setAvailableRides(list);
 

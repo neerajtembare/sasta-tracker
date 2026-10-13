@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { AppTheme } from '../types';
 import { 
   Upload, 
@@ -13,21 +13,18 @@ import {
   Navigation,
   Zap,
   Coffee,
-  Clock
+  Clock,
+  FolderArchive,
+  Play
 } from 'lucide-react';
 import { 
   SAMPLE_GPX_DATA, 
-  SAMPLE_GPX_NAME, 
-  HIGH_RES_TWISTIES_GPX, 
-  HIGH_RES_TWISTIES_NAME,
-  SATURDAY_MORNING_GPX,
-  SATURDAY_MORNING_NAME,
-  MULSHI_RETURN_GPX,
-  MULSHI_RETURN_NAME
+  SAMPLE_GPX_NAME 
 } from '../data/sampleRide';
+import { getGarageRides, SavedRide } from '../utils/storage';
 
 interface LandingViewProps {
-  onFileLoaded: (xmlText: string, fileName: string) => void;
+  onFileLoaded: (xmlText: string, fileName: string, rideId?: string) => void;
   onSelectRide: (gpxText: string, name: string) => void;
   onStartRecording: () => void;
   theme: AppTheme;
@@ -35,6 +32,7 @@ interface LandingViewProps {
   activeRideDistanceKm?: number | null;
   onResumeRide?: () => void;
   onClearRide?: () => void;
+  onOpenGarage?: () => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({
@@ -46,11 +44,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
   activeRideDistanceKm,
   onResumeRide,
   onClearRide,
+  onOpenGarage,
 }) => {
   const isLight = theme === 'light';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [recentRides, setRecentRides] = useState<SavedRide[]>([]);
+
+  useEffect(() => {
+    setRecentRides(getGarageRides());
+  }, []);
 
   const handleFile = (file: File) => {
     setErrorMsg(null);
@@ -265,190 +269,93 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       )}
 
-      {/* Demo Benchmark Rides Section */}
-      <div className={`p-4 sm:p-5 border rounded-2xl space-y-3 shadow-lg ${cardBg}`}>
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sky-500" />
-            <h3 className="font-heading font-bold text-xs uppercase tracking-wider">
-              Or Try A Demo Ride to See It In Action
-            </h3>
+      {/* User's Recent Rides or Subtle Demo Option */}
+      {recentRides.length > 0 ? (
+        <div className={`p-4 sm:p-5 border rounded-2xl space-y-3 shadow-lg ${cardBg}`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <FolderArchive className="w-4 h-4 text-sky-400" />
+              <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-white">
+                Your Recent Rides ({recentRides.length})
+              </h3>
+            </div>
+            {onOpenGarage && (
+              <button
+                onClick={onOpenGarage}
+                className="text-[11px] font-mono text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <span>View All Garage Rides</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
-          <span className={`text-[10px] font-mono ${subText}`}>
-            Click any route to load immediately
-          </span>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {recentRides.slice(0, 4).map((ride, idx) => (
+              <div
+                key={ride.id}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onFileLoaded(ride.gpxContent, ride.name, ride.id);
+                  }
+                }}
+                onClick={() => onFileLoaded(ride.gpxContent, ride.name, ride.id)}
+                className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-sky-500 ${sampleCardBg}`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 flex items-center justify-center shrink-0">
+                    <Navigation className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-xs truncate text-white">
+                        {ride.name}
+                      </span>
+                      {idx === 0 && (
+                        <span className="text-[9px] font-mono px-1 rounded bg-sky-500/20 text-sky-400 shrink-0 font-bold border border-sky-500/30">
+                          LATEST
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-[10px] font-mono truncate ${subText}`}>
+                      {ride.distanceKm ? ride.distanceKm.toFixed(1) : 0} km • Max {ride.maxSpeedKmh ? ride.maxSpeedKmh.toFixed(0) : 0} km/h • {ride.date}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onFileLoaded(ride.gpxContent, ride.name, ride.id);
+                  }}
+                  className="px-2.5 py-1 rounded-md bg-sky-500/15 hover:bg-sky-500 text-sky-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1"
+                >
+                  <span>Open</span>
+                  <Play className="w-3 h-3 fill-current" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* Sample 1: Saturday Morning Run */}
-          <div
-            id="btn-demo-saturday"
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME);
-              }
-            }}
-            onClick={() => onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-sky-500 ${sampleCardBg}`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-500 flex items-center justify-center shrink-0">
-                <Navigation className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-xs truncate">
-                    Saturday Morning (Pune - Satara)
-                  </span>
-                  <span className="text-[9px] font-mono px-1 rounded bg-sky-500/15 text-sky-400 shrink-0">Highway</span>
-                </div>
-                <div className={`text-[10px] font-mono truncate ${subText}`}>
-                  227.7 km • 5 Pit Stops • Highway & Ghats
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                onSelectRide(SATURDAY_MORNING_GPX, SATURDAY_MORNING_NAME);
-              }}
-              className="px-2.5 py-1 rounded-md bg-sky-500/10 hover:bg-sky-500 text-sky-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
-            >
-              Load →
-            </button>
+      ) : (
+        /* Discreet demo helper for first-time visitors */
+        <div className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 text-xs font-mono ${cardBg}`}>
+          <div className="flex items-center gap-2 text-slate-400">
+            <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
+            <span>First time? Want to test without recording a ride?</span>
           </div>
-
-          {/* Sample 2: Mulshi Return */}
-          <div
-            id="btn-demo-mulshi"
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME);
-              }
-            }}
-            onClick={() => onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-amber-500 ${sampleCardBg}`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 flex items-center justify-center shrink-0">
-                <MapPin className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-xs truncate">
-                    Mulshi Lake Return Run
-                  </span>
-                  <span className="text-[9px] font-mono px-1 rounded bg-amber-500/15 text-amber-400 shrink-0">Twisties</span>
-                </div>
-                <div className={`text-[10px] font-mono truncate ${subText}`}>
-                  26.3 km • Scenic Twisties & Pirangut Ghat
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                onSelectRide(MULSHI_RETURN_GPX, MULSHI_RETURN_NAME);
-              }}
-              className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
-            >
-              Load →
-            </button>
-          </div>
-
-          {/* Sample 3: Western Ghats Tour */}
-          <div
-            id="btn-demo-ghats"
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME);
-              }
-            }}
+          <button
+            type="button"
             onClick={() => onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 ${sampleCardBg}`}
+            className="px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500 text-sky-400 hover:text-slate-950 font-bold text-xs transition-all shrink-0 cursor-pointer"
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 flex items-center justify-center shrink-0">
-                <Coffee className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-xs truncate">
-                    Western Ghats Tour (Pune - Wai)
-                  </span>
-                  <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/15 text-emerald-400 shrink-0">Touring</span>
-                </div>
-                <div className={`text-[10px] font-mono truncate ${subText}`}>
-                  128.6 km • +1,440m Climb • Pre-tagged Stops
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME);
-              }}
-              className="px-2.5 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
-            >
-              Load →
-            </button>
-          </div>
-
-          {/* Sample 4: 1Hz High-Res Twisties */}
-          <div
-            id="btn-demo-twisties"
-            role="button"
-            tabIndex={0}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME);
-              }
-            }}
-            onClick={() => onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME)}
-            className={`p-3 border rounded-xl cursor-pointer transition-all group flex items-center justify-between gap-3 focus:outline-hidden focus:ring-2 focus:ring-cyan-500 ${sampleCardBg}`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 flex items-center justify-center shrink-0">
-                <Zap className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-bold text-xs truncate">
-                    Pasarni Mountain Hairpins (1Hz)
-                  </span>
-                  <span className="text-[9px] font-mono px-1 rounded bg-cyan-500/15 text-cyan-400 shrink-0">1Hz Apex</span>
-                </div>
-                <div className={`text-[10px] font-mono truncate ${subText}`}>
-                  120 Continuous 1-Sec Fixes • 42° Lean Replay
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                onSelectRide(HIGH_RES_TWISTIES_GPX, HIGH_RES_TWISTIES_NAME);
-              }}
-              className="px-2.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500 text-cyan-400 hover:text-slate-950 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer"
-            >
-              Load →
-            </button>
-          </div>
+            <span>Preview Sample Route →</span>
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Feature Highlights Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 text-center">

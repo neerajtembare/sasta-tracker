@@ -101,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   isLight ? 'text-slate-900' : 'text-white'
                 }`}
               >
-                SASTA <span className="text-sky-500">TRACKER</span>
+                THROTTLE<span className="text-sky-500">LOG</span>
               </span>
               <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-mono font-bold bg-sky-500/15 text-sky-500 border border-sky-500/30 rounded uppercase tracking-wider">
                 FREE

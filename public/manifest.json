@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Sasta Tracker — Free GPS Motorcycle Telemetry",
-  "short_name": "Sasta Tracker",
+  "name": "ThrottleLog — Free GPS Motorcycle Telemetry",
+  "short_name": "ThrottleLog",
   "description": "Free, private GPS motorcycle telemetry analyzer, live cockpit logger, speed heatmaps, lean angles, and pit stop tracker.",
   "start_url": "/",
   "scope": "/",

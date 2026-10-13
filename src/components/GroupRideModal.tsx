@@ -98,7 +98,7 @@ export const GroupRideModal: React.FC<GroupRideModalProps> = ({
 
   const handleShareWhatsApp = () => {
     const url = `${window.location.origin}/?room=${roomCode}`;
-    const text = `Hey! Join our motorcycle group ride on Sasta Tracker.\n\nRoom Code: *${roomCode}*\nLive Location Link: ${url}`;
+    const text = `Hey! Join our motorcycle group ride on ThrottleLog.\n\nRoom Code: *${roomCode}*\nLive Location Link: ${url}`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };

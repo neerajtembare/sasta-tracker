@@ -128,7 +128,7 @@ export const RideReportModal: React.FC<RideReportModalProps> = ({
     ]);
 
     const csvContent = [
-      `# Sasta Tracker Motorcycle Ride Telemetry Dossier`,
+      `# ThrottleLog Motorcycle Ride Telemetry Dossier`,
       `# Ride Name: ${analysis.name}`,
       `# Date: ${startDateStr}`,
       `# Bike: ${analysis.bikeModel || 'Motorcycle'}`,

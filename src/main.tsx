@@ -18,7 +18,7 @@ if ('serviceWorker' in navigator && (import.meta.env.PROD || (typeof process !==
     navigator.serviceWorker
       .register('/sw.js')
       .then(reg => {
-        console.log('Sasta Tracker Service Worker registered:', reg.scope);
+        console.log('ThrottleLog Service Worker registered:', reg.scope);
       })
       .catch(err => {
         console.warn('Service Worker registration failed:', err);

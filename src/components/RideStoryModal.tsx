@@ -111,7 +111,7 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('🏍️ SASTA TRACKER • RIDE LOG', 105, 112);
+    ctx.fillText('🏍️ THROTTLELOG • RIDE LOG', 105, 112);
 
     // Bike Model Tag (if any) — auto-sized to text so it never overflows
     const rawBike = (analysis.bikeModel || 'MOTORCYCLE').toUpperCase();
@@ -368,14 +368,14 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillStyle = '#64748b';
     ctx.font = '600 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('⚡ TRACKED WITH SASTA TRACKER', W / 2, footerY);
+    ctx.fillText('⚡ TRACKED WITH THROTTLELOG', W / 2, footerY);
     ctx.fillStyle = '#475569';
     ctx.font = '500 15px monospace';
     ctx.fillText('100% FREE & PRIVATE MOTORCYCLE GPS', W / 2, footerY + 26);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 18px monospace';
-    ctx.fillText('sasta-tracker.vercel.app', W / 2, footerY + 54);
+    ctx.fillText('throttlelog.vercel.app', W / 2, footerY + 54);
 
     setDataUrl(canvas.toDataURL('image/png'));
   }, [isOpen, analysis, unitSystem]);
@@ -399,7 +399,7 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
         await navigator.share({
           files: [file],
           title: analysis.name || 'My Motorcycle Ride',
-          text: `Check out my ride stats on Sasta Tracker: ${(analysis.totalDistanceKm || 0).toFixed(1)} km, Max ${(analysis.maxSpeedKmh || 0).toFixed(0)} km/h!`,
+          text: `Check out my ride stats on ThrottleLog: ${(analysis.totalDistanceKm || 0).toFixed(1)} km, Max ${(analysis.maxSpeedKmh || 0).toFixed(0)} km/h!`,
         });
       } else {
         handleDownload();

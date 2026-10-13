@@ -154,7 +154,7 @@ export const RideDiagnosticsModal: React.FC<RideDiagnosticsModalProps> = ({
       startPt ? `🚩 Start: ${startCoordStr}` : null,
       endPt ? `🏁 Finish: ${endCoordStr}` : null,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `Tracked via Sasta Tracker (Free & Private GPX Analyzer)`
+      `Tracked via ThrottleLog (Free & Private GPX Analyzer)`
     ].filter(Boolean);
     return lines.join('\n');
   };

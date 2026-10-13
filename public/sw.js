@@ -1,4 +1,4 @@
-// Sasta Tracker — Offline Service Worker with Map Tile Caching
+// ThrottleLog — Offline Service Worker with Map Tile Caching
 const CACHE_NAME = 'sasta-tracker-v3';
 const TILE_CACHE_NAME = 'sasta-map-tiles-v2';
 const MAX_TILES = 1500;

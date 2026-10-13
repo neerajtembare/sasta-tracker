@@ -169,6 +169,13 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         bearingDeg = parseFloat(bearingEl.textContent);
       }
 
+      let recordedLean: number | null = null;
+      const leanEl = ptEl.querySelector('lean') || ptEl.querySelector('TrackPointExtension > lean');
+      if (leanEl && leanEl.textContent) {
+        const val = parseFloat(leanEl.textContent);
+        if (!isNaN(val)) recordedLean = val;
+      }
+
       // Delta calculation with previous point
       if (i > 0) {
         const prev = segPoints[segPoints.length - 1];
@@ -211,9 +218,11 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           segMovingTime += movingDt;
         }
 
-        // Raw instantaneous lean angle (speedMs >= 4.0 / ~14.4 km/h for gyroscopic motorcycle dynamics)
+        // Recorded gyroscope lean or physics-calculated cornering lean (speedMs >= 4.0 / ~14.4 km/h)
         let estLean = 0;
-        if (bearingDeg !== null && prev.bearing !== null && dt > 0 && dt <= 5 && speedMs >= 4.0) {
+        if (recordedLean !== null && !isNaN(recordedLean)) {
+          estLean = Math.round(recordedLean);
+        } else if (bearingDeg !== null && prev.bearing !== null && dt > 0 && dt <= 5 && speedMs >= 4.0) {
           let diff = bearingDeg - prev.bearing;
           while (diff > 180) diff -= 360;
           while (diff < -180) diff += 360;

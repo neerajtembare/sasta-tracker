@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SavedRide, getGarageRides, deleteGarageRide, saveRideToGarage, importGarageBackup } from '../utils/storage';
+import { 
+  SavedRide, 
+  getGarageRides, 
+  deleteGarageRide, 
+  saveRideToGarage, 
+  importGarageBackup,
+  clearAllGarageRides,
+  isGarageLocked,
+  verifyGaragePin,
+  setGaragePin,
+  getGaragePin
+} from '../utils/storage';
+import { getOfflineTileCount, clearOfflineTileCache } from '../utils/mapCache';
 import { RideAnalysis, AppTheme } from '../types';
 import { exportAnalysisToGPX, downloadFile } from '../utils/gpxExporter';
 import { 
@@ -27,7 +39,12 @@ import {
   FileUp,
   FileDown,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  Unlock,
+  Search,
+  ShieldCheck,
+  Cloud
 } from 'lucide-react';
 
 interface GarageModalProps {
@@ -37,6 +54,8 @@ interface GarageModalProps {
   onSelectRide: (gpxContent: string, name: string, id?: string) => void;
   onLoadSample: () => void;
   onCloseTrack?: () => void;
+  onOpenCompare?: () => void;
+  onOpenCloudSync?: () => void;
   theme?: AppTheme;
 }
 
@@ -47,6 +66,8 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   onSelectRide,
   onLoadSample,
   onCloseTrack,
+  onOpenCompare,
+  onOpenCloudSync,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -55,11 +76,26 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   const [backupFeedback, setBackupFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Search and PIN Security
+  const [isLocked, setIsLocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isConfiguringPin, setIsConfiguringPin] = useState(false);
+  const [newPinValue, setNewPinValue] = useState('');
+  const [offlineTileCount, setOfflineTileCount] = useState<number>(0);
+
   useEffect(() => {
     if (isOpen) {
       setRides(getGarageRides());
+      setIsLocked(isGarageLocked());
+      setPinInput('');
+      setPinError(false);
+      setSearchQuery('');
+      setIsConfiguringPin(false);
       setSavedSuccess(false);
       setBackupFeedback(null);
+      getOfflineTileCount().then(setOfflineTileCount).catch(() => {});
     }
   }, [isOpen]);
 
@@ -113,6 +149,89 @@ export const GarageModal: React.FC<GarageModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (verifyGaragePin(pinInput)) {
+      setIsLocked(false);
+      setPinError(false);
+    } else {
+      setPinError(true);
+    }
+  };
+
+  const handleSavePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setGaragePin(newPinValue.trim() || null);
+    setIsConfiguringPin(false);
+    setNewPinValue('');
+    setBackupFeedback({ 
+      type: 'success', 
+      message: newPinValue.trim() ? 'Garage PIN lock enabled!' : 'Garage PIN lock removed.' 
+    });
+    setTimeout(() => setBackupFeedback(null), 3000);
+  };
+
+  const modalBg = isLight ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50' : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-black/80';
+  const headerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
+  const activeRideBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#141d26] border-[#1e2a38]';
+  const itemBg = isLight ? 'bg-slate-50 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50 text-slate-900' : 'bg-[#131b24] border-[#1e2a38] hover:border-sky-500/50 hover:bg-[#1a2533] text-white';
+  const subTextColor = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
+  const footerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
+
+  // If garage is locked, show quick numeric PIN screen
+  if (isLocked) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+        <div className={`border rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center space-y-4 ${modalBg}`}>
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-heading font-black text-base uppercase tracking-wider">
+              Garage PIN Protected
+            </h3>
+            <p className={`text-xs font-mono mt-1 ${subTextColor}`}>
+              Enter your PIN to access and manage saved rides
+            </p>
+          </div>
+          <form onSubmit={handleUnlock} className="w-full space-y-3">
+            <input
+              type="password"
+              maxLength={8}
+              autoFocus
+              placeholder="••••"
+              value={pinInput}
+              onChange={e => { setPinInput(e.target.value); setPinError(false); }}
+              className="w-full text-center tracking-widest text-xl font-mono font-black py-2.5 px-3 rounded-xl border bg-slate-900 border-slate-700 text-white focus:outline-none focus:border-amber-400"
+            />
+            {pinError && (
+              <div className="text-xs font-mono text-rose-400 font-bold">
+                Incorrect PIN. Please try again.
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className={`flex-1 py-2 rounded-xl border text-xs font-mono font-bold cursor-pointer ${
+                  isLight ? 'border-slate-300 hover:bg-slate-100 text-slate-700' : 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-mono cursor-pointer"
+              >
+                Unlock
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const handleSaveCurrent = () => {
     if (!currentAnalysis) return;
     const gpxText = exportAnalysisToGPX(currentAnalysis);
@@ -142,12 +261,10 @@ export const GarageModal: React.FC<GarageModalProps> = ({
     downloadFile(ride.gpxContent, `${ride.name.replace(/\s+/g, '_')}.gpx`);
   };
 
-  const modalBg = isLight ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50' : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-black/80';
-  const headerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
-  const activeRideBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#141d26] border-[#1e2a38]';
-  const itemBg = isLight ? 'bg-slate-50 border-slate-200 hover:border-sky-400 hover:bg-sky-50/50 text-slate-900' : 'bg-[#131b24] border-[#1e2a38] hover:border-sky-500/50 hover:bg-[#1a2533] text-white';
-  const subTextColor = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
-  const footerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
+  const displayedRides = rides.filter(r => 
+    r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    r.date.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
@@ -167,13 +284,58 @@ export const GarageModal: React.FC<GarageModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1c2633]'}`}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>        {/* Action bar for active loaded ride */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsConfiguringPin(prev => !prev)}
+              title={getGaragePin() ? 'Garage PIN protection active (click to change or remove)' : 'Set Garage PIN protection'}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                getGaragePin()
+                  ? 'text-amber-400 hover:bg-amber-500/20'
+                  : isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1c2633]'
+              }`}
+            >
+              {getGaragePin() ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={onClose}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1c2633]'}`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* PIN Configuration Bar */}
+        {isConfiguringPin && (
+          <form onSubmit={handleSavePin} className="p-3 border-b flex items-center justify-between gap-2 font-mono text-xs bg-amber-500/10 border-amber-500/30">
+            <div className="flex items-center gap-2 flex-1">
+              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+              <input
+                type="password"
+                maxLength={8}
+                placeholder={getGaragePin() ? "Enter new PIN (or blank to disable PIN)" : "Enter 4-digit numeric PIN"}
+                value={newPinValue}
+                onChange={e => setNewPinValue(e.target.value)}
+                className="w-full py-1 px-2.5 rounded-lg border bg-slate-900 border-slate-700 text-white text-xs font-mono"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsConfiguringPin(false)}
+                className="px-2.5 py-1 rounded-lg border border-slate-700 text-[11px] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+              >
+                Save PIN
+              </button>
+            </div>
+          </form>
+        )}        {/* Action bar for active loaded ride */}
         {currentAnalysis && (
           <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-3 ${activeRideBg}`}>
             <div>
@@ -384,6 +546,34 @@ export const GarageModal: React.FC<GarageModalProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
+              {onOpenCompare && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenCompare();
+                  }}
+                  title="Side-by-side Ghost Track Comparison of 2 rides"
+                  className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/35 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Compare Runs ⚡</span>
+                </button>
+              )}
+
+              {onOpenCloudSync && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenCloudSync();
+                  }}
+                  title="Personal Cloud Backup & Sync to GitHub Gist or Encrypted Vault"
+                  className="px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/35 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Cloud className="w-3 h-3" />
+                  <span>Cloud Sync ☁️</span>
+                </button>
+              )}
+
               <input
                 type="file"
                 ref={restoreFileInputRef}
@@ -413,8 +603,8 @@ export const GarageModal: React.FC<GarageModalProps> = ({
               {rides.length > 0 && (
                 <button
                   onClick={() => {
-                    if (window.confirm('Delete all saved rides from your browser garage?')) {
-                      localStorage.removeItem('sasta_tracker_garage');
+                    if (window.confirm('Delete all saved rides from your browser garage? This cannot be undone.')) {
+                      clearAllGarageRides();
                       setRides([]);
                     }
                   }}
@@ -425,6 +615,22 @@ export const GarageModal: React.FC<GarageModalProps> = ({
               )}
             </div>
           </div>
+
+          {/* Search bar for quick filtering */}
+          {rides.length > 0 && (
+            <div className="relative my-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search saved rides by title or date..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className={`w-full pl-8 pr-3 py-1.5 text-xs font-mono rounded-xl border focus:outline-none focus:border-sky-500 transition-colors ${
+                  isLight ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400' : 'bg-[#0b0f14] border-[#1e2a38] text-white placeholder:text-slate-500'
+                }`}
+              />
+            </div>
+          )}
 
           {backupFeedback && (
             <div className={`p-2.5 rounded-lg border text-xs font-mono flex items-center gap-2 animate-in fade-in duration-200 ${
@@ -437,8 +643,8 @@ export const GarageModal: React.FC<GarageModalProps> = ({
             </div>
           )}
 
-          {rides.length > 0 ? (
-            rides.map(r => (
+          {displayedRides.length > 0 ? (
+            displayedRides.map(r => (
               <div
                 key={r.id}
                 onClick={() => {
@@ -492,14 +698,33 @@ export const GarageModal: React.FC<GarageModalProps> = ({
             <div className={`p-6 text-center font-mono text-xs border border-dashed rounded-xl ${
               isLight ? 'border-slate-300 text-slate-500 bg-slate-50' : 'border-[#1e2a38] text-[#8f9ca8] bg-[#0d131a]'
             }`}>
-              No custom rides saved yet. Click "Save to Garage" above or record a ride in the GPS Cockpit!
+              {searchQuery ? `No saved rides match "${searchQuery}".` : 'No custom rides saved yet. Click "Save to Garage" above or record a ride in the GPS Cockpit!'}
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className={`px-4 sm:px-5 py-3 border-t flex items-center justify-between text-[11px] font-mono ${footerBg}`}>
-          <span className={subTextColor}>Private browser storage (works offline)</span>
+          <div className="flex items-center gap-3">
+            <span className={subTextColor}>Private browser storage (works offline)</span>
+            {offlineTileCount > 0 && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">
+                <span>🗺️ {offlineTileCount} offline map tiles</span>
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await clearOfflineTileCache();
+                    setOfflineTileCount(0);
+                  }}
+                  className="text-rose-400 hover:text-rose-300 underline ml-1 cursor-pointer"
+                  title="Clear offline map tile cache to reclaim storage"
+                >
+                  Clear
+                </button>
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
             className={`px-4 py-1.5 border rounded-xl transition-colors cursor-pointer ${

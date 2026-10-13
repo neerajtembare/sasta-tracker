@@ -99,6 +99,9 @@ export function exportPointsToGPX(
     if (pt.heading !== null) {
       gpx += `            <gpxtpx:bearing>${pt.heading.toFixed(1)}</gpxtpx:bearing>\n`;
     }
+    if (pt.leanAngle !== undefined && pt.leanAngle !== null) {
+      gpx += `            <gpxtpx:lean>${pt.leanAngle.toFixed(1)}</gpxtpx:lean>\n`;
+    }
     gpx += `          </gpxtpx:TrackPointExtension>\n`;
     gpx += `        </extensions>\n`;
     gpx += `      </trkpt>\n`;

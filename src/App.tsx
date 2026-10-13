@@ -21,6 +21,11 @@ import { LandingView } from './components/LandingView';
 import { JourneyTimeline } from './components/JourneyTimeline';
 import { CorneringProfileCard } from './components/CorneringProfileCard';
 import { RideStoryModal } from './components/RideStoryModal';
+import { RideReportModal } from './components/RideReportModal';
+import { TrackComparisonModal } from './components/TrackComparisonModal';
+import { GroupRideModal } from './components/GroupRideModal';
+import { CloudSyncModal } from './components/CloudSyncModal';
+import { useGroupRide } from './hooks/useGroupRide';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
@@ -89,11 +94,51 @@ export default function App() {
   const [isRideNameEditorOpen, setIsRideNameEditorOpen] = useState<boolean>(false);
   const [isCalibrationOpen, setIsCalibrationOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
+  const [isGroupRideModalOpen, setIsGroupRideModalOpen] = useState<boolean>(false);
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
+  const groupRide = useGroupRide();
   const [currentRideId, setCurrentRideId] = useState<string | null>(null);
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+
+  // Check URL query for room invite link (e.g. ?room=MOTO44)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('room')) {
+      setIsGroupRideModalOpen(true);
+    }
+  }, []);
 
   const globalFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Capture PWA install prompt for 1-tap installation
+  useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredInstallPrompt(null);
+      }
+    } else {
+      alert(
+        'To install Sasta Tracker on your phone for full-screen offline logging:\n\n' +
+        '• iPhone / iPad (Safari): Tap the Share button (square with arrow) and tap "Add to Home Screen".\n' +
+        '• Android (Chrome / Brave / Edge): Tap the 3 dots menu and tap "Install app" (or "Add to Home screen").'
+      );
+    }
+  };
 
   // Global keyboard shortcut: Press D to toggle full diagnostics modal
   // Global keyboard shortcuts: D for diagnostics, Escape to close modals, ? for Help
@@ -109,6 +154,7 @@ export default function App() {
         setIsRideNameEditorOpen(false);
         setIsCalibrationOpen(false);
         setIsShareModalOpen(false);
+        setIsReportModalOpen(false);
         return;
       }
 
@@ -204,6 +250,24 @@ export default function App() {
     const gpxText = exportAnalysisToGPX(analysis);
     const safeName = (analysis.name || 'ride').replace(/\s+/g, '_');
     downloadFile(gpxText, `${safeName}.gpx`);
+  };
+
+  const handleSaveActiveToGarage = () => {
+    if (!analysis) return;
+    try {
+      const gpxText = exportAnalysisToGPX(analysis);
+      const saved = saveRideToGarage({
+        name: analysis.name,
+        distanceKm: analysis.totalDistanceKm,
+        maxSpeedKmh: analysis.maxSpeedKmh,
+        gpxContent: gpxText,
+      });
+      setCurrentRideId(saved.id);
+      setSessionNotice(`🏍️ "${saved.name}" saved to your Garage!`);
+      setTimeout(() => setSessionNotice(null), 4000);
+    } catch (e: any) {
+      setErrorMessage('Failed to save ride to Garage: ' + (e.message || String(e)));
+    }
   };
 
   const handleCloseTrack = () => {
@@ -379,7 +443,13 @@ export default function App() {
         onLoadSample={handleLoadSample}
         onUploadClick={triggerUploadClick}
         onOpenGarage={() => setIsGarageOpen(true)}
+        onOpenCompare={() => setIsCompareModalOpen(true)}
+        onOpenGroupRide={() => setIsGroupRideModalOpen(true)}
+        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
+        groupRideConnected={groupRide.isConnected}
+        groupRoomCode={groupRide.roomCode}
         onExportGpx={handleExportGpx}
+        onOpenReport={() => setIsReportModalOpen(true)}
         isRecordingLive={isRecordingLive}
         hasActiveRide={!!analysis}
         rideName={
@@ -395,6 +465,8 @@ export default function App() {
         onToggleTheme={toggleTheme}
         unitSystem={unitSystem}
         onToggleUnitSystem={toggleUnitSystem}
+        onInstallPwa={handleInstallPwa}
+        canInstallPwa={Boolean(deferredInstallPrompt)}
       />
 
       {/* Main Container — pb-28 ensures fixed mobile bottom nav never covers content */}
@@ -467,8 +539,12 @@ export default function App() {
               onOpenStops={() => handleOpenAddStop()}
               onOpenCalibration={() => setIsCalibrationOpen(true)}
               onOpenShare={() => setIsShareModalOpen(true)}
+              onOpenReport={() => setIsReportModalOpen(true)}
+              onOpenCompare={() => setIsCompareModalOpen(true)}
               onCloseTrack={handleCloseTrack}
               onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+              onSaveToGarage={handleSaveActiveToGarage}
+              isSavedInGarage={currentRideId !== null}
               theme={theme}
               unitSystem={unitSystem}
             />
@@ -531,7 +607,7 @@ export default function App() {
                   }`}
                 >
                   <MapIcon className="w-3.5 h-3.5" />
-                  <span>Map & Scrub</span>
+                  <span>Map</span>
                 </button>
 
                 <button
@@ -543,7 +619,7 @@ export default function App() {
                   }`}
                 >
                   <Activity className="w-3.5 h-3.5" />
-                  <span>Telemetry & Lean</span>
+                  <span>Speed & Lean</span>
                 </button>
 
                 <button
@@ -591,6 +667,7 @@ export default function App() {
                   focusedCoordinate={focusedCoordinate}
                   theme={theme}
                   onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                  groupMembers={groupRide.members}
                 />
               </div>
             )}
@@ -661,18 +738,23 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Live GPS Logger */}
-        {currentTab === 'cockpit' && (
-          <div className="animate-in fade-in duration-300">
-            <LiveCockpitLogger
-              onRideRecorded={handleLiveRideRecorded}
-              isRecording={isRecordingLive}
-              setIsRecording={setIsRecordingLive}
-              theme={theme}
-              unitSystem={unitSystem}
-            />
-          </div>
-        )}
+        {/* Tab 2: Live GPS Logger (Kept mounted to maintain uninterrupted background recording & crew location sync when switching tabs) */}
+        <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300' : 'hidden'}>
+          <LiveCockpitLogger
+            onRideRecorded={handleLiveRideRecorded}
+            isRecording={isRecordingLive}
+            setIsRecording={setIsRecordingLive}
+            theme={theme}
+            unitSystem={unitSystem}
+            groupRideConnected={groupRide.isConnected}
+            groupRoomCode={groupRide.roomCode}
+            groupMembers={groupRide.members}
+            sosAlert={groupRide.sosAlert}
+            onOpenGroupRideModal={() => setIsGroupRideModalOpen(true)}
+            onTriggerSos={groupRide.triggerSos}
+            onUpdateMyLocation={groupRide.updateMyLocation}
+          />
+        </div>
 
         {/* Tab 3: Tips & Help Guide */}
         {currentTab === 'faq' && (
@@ -778,6 +860,43 @@ export default function App() {
         }}
         onLoadSample={handleLoadSample}
         onCloseTrack={handleCloseTrack}
+        onOpenCompare={() => setIsCompareModalOpen(true)}
+        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
+        theme={theme}
+      />
+
+      {/* Dual Track Comparison / Ghost Track Modal */}
+      <TrackComparisonModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+        currentAnalysis={analysis}
+        theme={theme}
+      />
+
+      {/* Group Ride Live Tracking Modal */}
+      <GroupRideModal
+        isOpen={isGroupRideModalOpen}
+        onClose={() => setIsGroupRideModalOpen(false)}
+        roomCode={groupRide.roomCode}
+        riderName={groupRide.riderName}
+        isHost={groupRide.isHost}
+        isConnected={groupRide.isConnected}
+        connectionStatus={groupRide.connectionStatus}
+        statusMessage={groupRide.statusMessage}
+        members={groupRide.members}
+        sosAlert={groupRide.sosAlert}
+        onCreateRoom={groupRide.createRoom}
+        onJoinRoom={groupRide.joinRoom}
+        onLeaveRoom={groupRide.leaveRoom}
+        onTriggerSos={groupRide.triggerSos}
+        onDismissSos={groupRide.dismissSos}
+        theme={theme}
+      />
+
+      {/* Personal Cloud Backup & Sync Modal */}
+      <CloudSyncModal
+        isOpen={isCloudSyncOpen}
+        onClose={() => setIsCloudSyncOpen(false)}
         theme={theme}
       />
 
@@ -824,6 +943,18 @@ export default function App() {
           onClose={() => setIsShareModalOpen(false)}
           analysis={analysis}
           theme={theme}
+          unitSystem={unitSystem}
+        />
+      )}
+
+      {/* Official Ride Telemetry Report & PDF Dossier Modal */}
+      {analysis && (
+        <RideReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          analysis={analysis}
+          theme={theme}
+          unitSystem={unitSystem}
         />
       )}
 

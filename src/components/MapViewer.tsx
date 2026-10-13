@@ -32,8 +32,13 @@ import {
   ChevronUp,
   ChevronDown,
   Activity,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Download,
+  Cloud,
+  Check
 } from 'lucide-react';
+import { preCacheRouteTiles, getOfflineTileCount } from '../utils/mapCache';
+import { GroupMemberInfo } from '../hooks/useGroupRide';
 
 interface MapViewerProps {
   analysis: RideAnalysis;
@@ -44,6 +49,7 @@ interface MapViewerProps {
   focusedCoordinate?: { lat: number; lon: number; label?: string } | null;
   theme?: AppTheme;
   onOpenDiagnostics?: () => void;
+  groupMembers?: GroupMemberInfo[];
 }
 
 // Speed to color function for map and YouTube-style scrubber
@@ -66,6 +72,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   focusedCoordinate,
   theme = 'dark',
   onOpenDiagnostics,
+  groupMembers,
 }) => {
   const isLight = theme === 'light';
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -81,19 +88,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   scrubIndexRef.current = scrubIndex;
 
   // Base Map Tile Style (100% free, zero API key dependencies)
-  // CartoDB free basemaps: Dark Matter (dark) and Voyager (light)
-  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite' | 'osm' | 'street'>(
-    isLight ? 'street' : 'dark'
-  );
-
-  // Sync map style when global theme changes unless user explicitly picked satellite/osm
-  useEffect(() => {
-    if (isLight && mapStyle === 'dark') {
-      setMapStyle('street');
-    } else if (!isLight && mapStyle === 'street') {
-      setMapStyle('dark');
-    }
-  }, [isLight]);
+  const [mapStyle, setMapStyle] = useState<'osm' | 'satellite' | 'dark'>('osm');
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Default pit stops to TRUE so riders immediately see and can click/edit stops
@@ -128,6 +123,61 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     x: number;
   } | null>(null);
   const scrubberBarRef = useRef<HTMLDivElement>(null);
+
+  // Offline Mountain Pass Map Pre-caching state
+  const [cachingProgress, setCachingProgress] = useState<{ active: boolean; current: number; total: number; done: boolean } | null>(null);
+  const [offlineTileCount, setOfflineTileCount] = useState<number>(0);
+
+  useEffect(() => {
+    getOfflineTileCount().then(setOfflineTileCount).catch(() => {});
+  }, []);
+
+  const handleCacheOfflineMap = async () => {
+    if (cachingProgress?.active) return;
+    const pts = analysis.points;
+    if (!pts || pts.length === 0) return;
+
+    let minLat = pts[0].lat;
+    let maxLat = pts[0].lat;
+    let minLng = pts[0].lon;
+    let maxLng = pts[0].lon;
+
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].lat < minLat) minLat = pts[i].lat;
+      if (pts[i].lat > maxLat) maxLat = pts[i].lat;
+      if (pts[i].lon < minLng) minLng = pts[i].lon;
+      if (pts[i].lon > maxLng) maxLng = pts[i].lon;
+    }
+
+    const padding = 0.02;
+    const bounds = {
+      minLat: minLat - padding,
+      maxLat: maxLat + padding,
+      minLng: minLng - padding,
+      maxLng: maxLng + padding,
+    };
+
+    setCachingProgress({ active: true, current: 0, total: 1, done: false });
+    const selectedStyle = mapStyle === 'dark' ? 'dark' : 'osm';
+
+    try {
+      await preCacheRouteTiles(bounds, selectedStyle, (p) => {
+        setCachingProgress({
+          active: !p.isComplete,
+          current: p.cached,
+          total: p.total,
+          done: p.isComplete,
+        });
+      });
+      const count = await getOfflineTileCount();
+      setOfflineTileCount(count);
+      setTimeout(() => {
+        setCachingProgress(null);
+      }, 3500);
+    } catch (err) {
+      setCachingProgress(null);
+    }
+  };
 
   // Compute turnaround point (point of maximum straight-line displacement from start)
   const turnaroundIndex = useMemo(() => {
@@ -459,30 +509,28 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         overlayTileLayerRef.current = null;
       }
 
-      if (mapStyle === 'dark') {
-        tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          maxZoom: 20,
-          subdomains: 'abcd',
-          attribution: '&copy; CARTO',
-        }).addTo(map);
-      } else if (mapStyle === 'street') {
-        tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-          maxZoom: 20,
-          subdomains: 'abcd',
-          attribution: '&copy; CARTO',
+      if (mapStyle === 'osm') {
+        tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap',
         }).addTo(map);
       } else if (mapStyle === 'satellite') {
         tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           maxZoom: 18,
+          attribution: '&copy; Esri',
         }).addTo(map);
         overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
           maxZoom: 18,
           opacity: 0.85,
         }).addTo(map);
-      } else if (mapStyle === 'osm') {
-        tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap contributors',
+      } else if (mapStyle === 'dark') {
+        tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 16,
+          attribution: '&copy; Esri',
+        }).addTo(map);
+        overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 16,
+          opacity: 0.85,
         }).addTo(map);
       }
       currentMapStyleRef.current = mapStyle;
@@ -966,6 +1014,62 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     focusedMarkerRef.current = marker;
   }, [focusedCoordinate]);
 
+  // Live Crew Friend Markers on Map
+  const friendMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    if (!groupMembers || groupMembers.length === 0) {
+      friendMarkersRef.current.forEach(m => m.remove());
+      friendMarkersRef.current.clear();
+      return;
+    }
+
+    groupMembers.forEach(m => {
+      if (!m.location) return;
+      const pos: L.LatLngTuple = [m.location.lat, m.location.lon];
+      const initial = m.name.slice(0, 1).toUpperCase();
+      const color = m.color || '#ffe600';
+      const speed = m.location.speedKmh.toFixed(0);
+
+      const html = `
+        <div style="position:relative; width:32px; height:32px; display:flex; align-items:center; justify-content:center;">
+          <div style="width:26px; height:26px; border-radius:50%; background:${color}; border:2px solid #000; box-shadow:0 0 10px ${color}; display:flex; align-items:center; justify-content:center; color:#000; font-family:monospace; font-weight:900; font-size:11px;">
+            ${initial}
+          </div>
+          <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:9px; font-weight:bold; padding:0 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.8);">
+            ${m.name}: ${speed}k
+          </div>
+        </div>
+      `;
+
+      const icon = L.divIcon({
+        className: `friend-marker-${m.riderId}`,
+        html,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      let marker = friendMarkersRef.current.get(m.riderId);
+      if (!marker) {
+        marker = L.marker(pos, { icon, zIndexOffset: 900 }).addTo(map);
+        friendMarkersRef.current.set(m.riderId, marker);
+      } else {
+        marker.setIcon(icon);
+        marker.setLatLng(pos);
+      }
+    });
+
+    friendMarkersRef.current.forEach((marker, id) => {
+      if (!groupMembers.some(m => m.riderId === id)) {
+        marker.remove();
+        friendMarkersRef.current.delete(id);
+      }
+    });
+  }, [groupMembers]);
+
   // Recenter map bounds
   const recenterMap = () => {
     if (!mapInstanceRef.current) return;
@@ -1091,23 +1195,21 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           )}
 
           {/* Map Layer Switcher */}
-          <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
+          <div className={`flex border rounded-lg p-0.5 text-[11px] font-mono font-bold ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
             <button
-              id="map-style-standard"
-              onClick={() => setMapStyle(isLight ? 'street' : 'dark')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
-                mapStyle === 'dark' || mapStyle === 'street'
-                  ? 'bg-sky-500 text-slate-950 font-bold shadow-xs'
-                  : subText
+              id="map-style-osm"
+              onClick={() => setMapStyle('osm')}
+              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
               }`}
-              title={isLight ? 'Stadia Alidade Smooth Light' : 'Stadia Alidade Smooth Dark'}
+              title="OpenStreetMap Standard Global Map (Free, Detailed Roads)"
             >
-              {isLight ? 'Light' : 'Dark'}
+              Street
             </button>
             <button
               id="map-style-satellite"
               onClick={() => setMapStyle('satellite')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
+              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
                 mapStyle === 'satellite' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
               }`}
               title="ESRI World Imagery Satellite"
@@ -1115,14 +1217,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               Satellite
             </button>
             <button
-              id="map-style-osm"
-              onClick={() => setMapStyle('osm')}
-              className={`px-2 py-1 rounded uppercase cursor-pointer transition-colors ${
-                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
+              id="map-style-dark"
+              onClick={() => setMapStyle('dark')}
+              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
+                mapStyle === 'dark' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
               }`}
-              title="OpenStreetMap Standard Global Map (Free, Zero API Key)"
+              title="Dark Contrast Map"
             >
-              OSM
+              Dark
             </button>
           </div>
 
@@ -1180,6 +1282,38 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
           >
             <Navigation className="w-3.5 h-3.5 text-sky-400" />
+          </button>
+
+          {/* Pre-cache Map for Mountain Passes (No Cell Signal) */}
+          <button
+            id="btn-cache-offline-map"
+            onClick={handleCacheOfflineMap}
+            disabled={cachingProgress?.active}
+            title={`Cache route map tiles for offline riding in mountain passes without cell signal (${offlineTileCount} tiles cached)`}
+            className={`px-2 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 text-[11px] font-mono ${
+              cachingProgress?.done
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : cachingProgress?.active
+                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 animate-pulse'
+                : buttonBg
+            }`}
+          >
+            {cachingProgress?.done ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Cached ✓</span>
+              </>
+            ) : cachingProgress?.active ? (
+              <>
+                <Download className="w-3.5 h-3.5 text-sky-400 animate-bounce" />
+                <span>{cachingProgress.current}/{cachingProgress.total}</span>
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden sm:inline">Offline Map</span>
+              </>
+            )}
           </button>
 
           {/* Fullscreen */}

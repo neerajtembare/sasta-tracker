@@ -2,15 +2,18 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { RideProvider } from './context/RideContext';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <RideProvider>
+      <App />
+    </RideProvider>
   </StrictMode>,
 );
 
 // Register offline Service Worker for full PWA and remote offline capability
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+if ('serviceWorker' in navigator && (import.meta.env.PROD || (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production'))) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')

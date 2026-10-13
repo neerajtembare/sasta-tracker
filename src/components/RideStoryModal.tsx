@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { RideAnalysis, AppTheme } from '../types';
+import { RideAnalysis, AppTheme, UnitSystem } from '../types';
+import { convertSpeed, convertDistance } from '../utils/units';
 import { X, Download, Share2, Sparkles } from 'lucide-react';
 
 interface RideStoryModalProps {
@@ -7,6 +8,7 @@ interface RideStoryModalProps {
   onClose: () => void;
   analysis: RideAnalysis;
   theme?: AppTheme;
+  unitSystem?: UnitSystem;
 }
 
 function drawRoundedRect(
@@ -37,6 +39,7 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
   onClose,
   analysis,
   theme = 'dark',
+  unitSystem = 'metric',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, W, H);
 
-    // Subtle ambient neon glows
+    // Ambient neon glows
     const radialCyan = ctx.createRadialGradient(200, 200, 50, 200, 200, 600);
     radialCyan.addColorStop(0, 'rgba(14, 165, 233, 0.18)');
     radialCyan.addColorStop(1, 'rgba(14, 165, 233, 0)');
@@ -129,14 +132,38 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.textAlign = 'center';
     ctx.fillText(`⚡ ${bikeLabel}`, badgeX + badgeW / 2, 112);
 
-    // Ride Title
+    // Ride Title — word-wrap cleanly to fit within the card without overflowing
     ctx.fillStyle = '#ffffff';
-    ctx.font = '900 48px sans-serif';
+    ctx.font = '900 42px sans-serif';
     ctx.textAlign = 'left';
     const displayTitle = (analysis.name || 'Weekend Ride').toUpperCase();
-    ctx.fillText(displayTitle.length > 30 ? displayTitle.slice(0, 30) + '...' : displayTitle, 80, 200);
+    const maxTitleWidth = W - 160; // 80px padding each side
+    const titleWords = displayTitle.split(' ');
+    const titleLines: string[] = [];
+    let currentLine = '';
+    for (const word of titleWords) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (ctx.measureText(testLine).width > maxTitleWidth && currentLine) {
+        titleLines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) titleLines.push(currentLine);
+    if (titleLines.length > 2) {
+      titleLines.length = 2;
+      titleLines[1] = titleLines[1].slice(0, -3) + '...';
+    }
 
-    // Date & Time subtitle
+    const titleStartY = 175;
+    let titleY = titleStartY;
+    for (const line of titleLines) {
+      ctx.fillText(line, 80, titleY);
+      titleY += 48;
+    }
+
+    // Date & Time subtitle placed safely below the title
     const startPoint = analysis.points[0];
     const dateFormatted = startPoint?.time
       ? new Date(startPoint.time).toLocaleDateString('en-US', {
@@ -147,12 +174,77 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
         })
       : new Date().toLocaleDateString();
 
+    const dateY = titleY + 4;
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '500 24px monospace';
-    ctx.fillText(`RECORDED ON ${dateFormatted.toUpperCase()}`, 80, 240);
+    ctx.font = '500 20px monospace';
+    ctx.fillText(`RECORDED ON ${dateFormatted.toUpperCase()}`, 80, dateY);
 
-    // 2. Draw Minimap Route Silhouette
+    // 2. Metrics Setup & Positioning at Bottom
+    const footerY = H - 110;
+    const cardGap = 20;
+    const cardH = 150;
+    const cardW = (W - 200) / 2; // 80px left, 80px right, 40px middle gap
+    // Two rows of metrics cards
+    const metricsY = footerY - 40 - (2 * cardH + cardGap); // ends 40px above footer (e.g. 1240 - 40 - 320 = 880)
+
+    // Unit conversions
+    const convertedDist = convertDistance(analysis.totalDistanceKm || 0, unitSystem);
+    const convertedMaxSpd = convertSpeed(analysis.maxSpeedKmh || 0, unitSystem);
+    const convertedAvgSpd = convertSpeed(analysis.movingAvgSpeedKmh || 0, unitSystem);
+
+    const movingSec = analysis.movingTimeSeconds || 0;
+    const totalSec = analysis.totalDurationSeconds || 0;
+    const movingHrs = Math.floor(movingSec / 3600);
+    const movingMins = Math.floor((movingSec % 3600) / 60);
+    const movingTimeStr = movingHrs > 0 ? `${movingHrs}h ${movingMins}m` : `${movingMins}m`;
+    const saddlePacePct = totalSec > 0 ? Math.min(100, Math.round((movingSec / totalSec) * 100)) : 100;
+
+    const metrics = [
+      {
+        label: 'TOTAL RUN',
+        val: convertedDist.value.toFixed(1),
+        unit: convertedDist.unit.toUpperCase(),
+        color: '#38bdf8',
+        sub: `${analysis.segments?.length || 1} segments`,
+        x: 80,
+        y: metricsY,
+      },
+      {
+        label: 'SADDLE TIME',
+        val: movingTimeStr,
+        unit: 'MOVING',
+        color: '#34d399',
+        sub: `${saddlePacePct}% in saddle`,
+        x: 80 + cardW + 40,
+        y: metricsY,
+      },
+      {
+        label: 'TOP VELOCITY',
+        val: convertedMaxSpd.value.toFixed(0),
+        unit: convertedMaxSpd.unit.toUpperCase(),
+        color: '#f43f5e',
+        sub: `Avg: ${convertedAvgSpd.value.toFixed(1)} ${convertedAvgSpd.unit}`,
+        x: 80,
+        y: metricsY + cardH + cardGap,
+      },
+      {
+        label: 'MAX LEAN ANGLE',
+        val: `${Math.round(analysis.maxEstimatedLean || 0)}°`,
+        unit: 'ROLL',
+        color: '#fbbf24',
+        sub: 'Apex cornering tilt',
+        x: 80 + cardW + 40,
+        y: metricsY + cardH + cardGap,
+      },
+    ];
+
+    // 3. Draw Minimap Route Silhouette in the middle zone (never overlaps title or metrics)
     const pts = analysis.points;
+    const routeBoxX = 80;
+    const routeBoxY = dateY + 24;
+    const routeBoxW = W - 160;
+    const routeBoxH = Math.max(260, metricsY - routeBoxY - 24);
+
     if (pts.length > 1) {
       let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
       pts.forEach(p => {
@@ -161,11 +253,6 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
         if (p.lon < minLon) minLon = p.lon;
         if (p.lon > maxLon) maxLon = p.lon;
       });
-
-      const routeBoxX = 100;
-      const routeBoxY = 280;
-      const routeBoxW = W - 200;
-      const routeBoxH = 460;
 
       // Silhouette Background card
       ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
@@ -232,63 +319,9 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
       ctx.fill();
     }
 
-    // 3. Four Big Telemetry Badges (2 x 2 Grid)
-    const metricsY = 780;
-    const cardW = (W - 240) / 2;
-    const cardH = 170;
-
-    const movingSec = analysis.movingTimeSeconds || 0;
-    const totalSec = analysis.totalDurationSeconds || 0;
-    const movingHrs = Math.floor(movingSec / 3600);
-    const movingMins = Math.floor((movingSec % 3600) / 60);
-    const movingTimeStr = movingHrs > 0 ? `${movingHrs}h ${movingMins}m` : `${movingMins}m`;
-
-    const totalDistStr = (analysis.totalDistanceKm || 0).toFixed(1);
-    const maxSpeedStr = (analysis.maxSpeedKmh || 0).toFixed(0);
-    const avgSpeedStr = (analysis.movingAvgSpeedKmh || 0).toFixed(1);
-    const saddlePacePct = totalSec > 0 ? Math.min(100, Math.round((movingSec / totalSec) * 100)) : 100;
-
-    const metrics = [
-      {
-        label: 'TOTAL RUN',
-        val: totalDistStr,
-        unit: 'KM',
-        color: '#38bdf8',
-        sub: `${analysis.segments?.length || 1} segments`,
-        x: 80,
-        y: metricsY,
-      },
-      {
-        label: 'SADDLE TIME',
-        val: movingTimeStr,
-        unit: 'MOVING',
-        color: '#34d399',
-        sub: `${saddlePacePct}% saddle pace`,
-        x: 80 + cardW + 40,
-        y: metricsY,
-      },
-      {
-        label: 'TOP VELOCITY',
-        val: maxSpeedStr,
-        unit: 'KM/H',
-        color: '#f43f5e',
-        sub: `Avg: ${avgSpeedStr} km/h`,
-        x: 80,
-        y: metricsY + cardH + 30,
-      },
-      {
-        label: 'MAX LEAN ANGLE',
-        val: `${Math.round(analysis.maxEstimatedLean || 38)}°`,
-        unit: 'ROLL',
-        color: '#fbbf24',
-        sub: 'Apex cornering tilt',
-        x: 80 + cardW + 40,
-        y: metricsY + cardH + 30,
-      },
-    ];
-
+    // 4. Draw Metric Cards with collision-free text measurement
     metrics.forEach(m => {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
       ctx.beginPath();
       drawRoundedRect(ctx, m.x, m.y, cardW, cardH, 16);
       ctx.fill();
@@ -298,39 +331,54 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
 
       // Metric Header
       ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 18px monospace';
+      ctx.font = 'bold 15px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(m.label, m.x + 24, m.y + 38);
+      ctx.fillText(m.label, m.x + 24, m.y + 34);
 
-      // Value
+      // Value & Unit with dynamic sizing to prevent overlap
+      let valFontSize = 44;
+      ctx.font = `900 ${valFontSize}px sans-serif`;
+      let valWidth = ctx.measureText(m.val).width;
+
+      const unitFontSize = 18;
+      ctx.font = `bold ${unitFontSize}px monospace`;
+      const unitWidth = ctx.measureText(m.unit).width;
+
+      const availWidth = cardW - 48; // 24px left + 24px right padding
+      if (valWidth + unitWidth + 12 > availWidth) {
+        valFontSize = 36;
+        ctx.font = `900 ${valFontSize}px sans-serif`;
+        valWidth = ctx.measureText(m.val).width;
+      }
+
       ctx.fillStyle = '#ffffff';
-      ctx.font = '900 52px sans-serif';
-      ctx.fillText(m.val, m.x + 24, m.y + 105);
+      ctx.fillText(m.val, m.x + 24, m.y + 86);
 
-      // Unit
       ctx.fillStyle = m.color;
-      ctx.font = 'bold 24px monospace';
-      ctx.fillText(` ${m.unit}`, m.x + 24 + ctx.measureText(m.val).width + 8, m.y + 98);
+      ctx.font = `bold ${unitFontSize}px monospace`;
+      ctx.fillText(m.unit, m.x + 24 + valWidth + 8, m.y + 82);
 
       // Subtext
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '500 18px monospace';
-      ctx.fillText(m.sub, m.x + 24, m.y + 142);
+      ctx.font = '500 15px monospace';
+      ctx.fillText(m.sub, m.x + 24, m.y + 124);
     });
 
-    // 4. Bottom Footer Watermark & Branding
-    const footerY = H - 120;
+    // 5. Bottom Footer Watermark & Branding
     ctx.fillStyle = '#64748b';
-    ctx.font = '600 20px monospace';
+    ctx.font = '600 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('⚡ TRACKED WITH SASTA TRACKER • 100% FREE & PRIVATE MOTORCYCLE GPS', W / 2, footerY);
+    ctx.fillText('⚡ TRACKED WITH SASTA TRACKER', W / 2, footerY);
+    ctx.fillStyle = '#475569';
+    ctx.font = '500 15px monospace';
+    ctx.fillText('100% FREE & PRIVATE MOTORCYCLE GPS', W / 2, footerY + 26);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 18px monospace';
-    ctx.fillText('sasta-tracker.vercel.app', W / 2, footerY + 32);
+    ctx.fillText('sasta-tracker.vercel.app', W / 2, footerY + 54);
 
     setDataUrl(canvas.toDataURL('image/png'));
-  }, [isOpen, analysis]);
+  }, [isOpen, analysis, unitSystem]);
 
   if (!isOpen) return null;
 

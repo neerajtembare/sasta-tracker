@@ -6,9 +6,14 @@ import {
   HelpCircle,
   FolderArchive,
   Download,
+  FileText,
   Sun,
   Moon,
-  Home
+  Home,
+  Smartphone,
+  Zap,
+  Users,
+  Cloud
 } from 'lucide-react';
 import { AppTheme, UnitSystem } from '../types';
 
@@ -18,8 +23,16 @@ interface NavbarProps {
   onLoadSample: () => void;
   onUploadClick: () => void;
   onOpenGarage: () => void;
+  onOpenCompare?: () => void;
+  onOpenGroupRide?: () => void;
+  onOpenCloudSync?: () => void;
+  groupRideConnected?: boolean;
+  groupRoomCode?: string;
   onExportGpx: () => void;
+  onOpenReport?: () => void;
   onHomeClick?: () => void;
+  onInstallPwa?: () => void;
+  canInstallPwa?: boolean;
   isRecordingLive: boolean;
   rideName: string;
   hasActiveRide: boolean;
@@ -35,8 +48,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLoadSample,
   onUploadClick,
   onOpenGarage,
+  onOpenCompare,
+  onOpenGroupRide,
+  onOpenCloudSync,
+  groupRideConnected,
+  groupRoomCode,
   onExportGpx,
+  onOpenReport,
   onHomeClick,
+  onInstallPwa,
+  canInstallPwa,
   isRecordingLive,
   rideName,
   hasActiveRide,
@@ -207,6 +228,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
 
+          {onInstallPwa && (
+            <button
+              id="btn-install-pwa"
+              onClick={onInstallPwa}
+              title="Install Sasta Tracker on your home screen for full-screen offline use"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                canInstallPwa
+                  ? 'bg-sky-500/20 hover:bg-sky-500/30 border-sky-400 text-sky-400 shadow-xs'
+                  : isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden md:inline">Install App</span>
+            </button>
+          )}
+
           <button
             id="btn-open-garage"
             onClick={onOpenGarage}
@@ -221,20 +260,88 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>My Rides</span>
           </button>
 
-          {hasActiveRide && (
+          {onOpenCompare && (
             <button
-              id="btn-export-gpx"
-              onClick={onExportGpx}
-              title="Download Clean GPX File"
+              id="btn-open-compare"
+              onClick={onOpenCompare}
+              title="Compare two runs side-by-side with speed differential graph"
               className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
                 isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-emerald-700'
-                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-emerald-400 text-emerald-400'
+                  ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-700'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-amber-500/40 hover:border-amber-400 text-amber-400'
               }`}
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Export GPX</span>
+              <Zap className="w-3.5 h-3.5" />
+              <span>Compare</span>
             </button>
+          )}
+
+          {onOpenGroupRide && (
+            <button
+              id="btn-nav-crew"
+              onClick={onOpenGroupRide}
+              title="Motorcycle Group Ride: Live location sharing with crew"
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                groupRideConnected
+                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold shadow-xs'
+                  : isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-cyan-400 text-cyan-400'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{groupRideConnected ? `Crew: ${groupRoomCode}` : 'Crew'}</span>
+            </button>
+          )}
+
+          {onOpenCloudSync && (
+            <button
+              id="btn-nav-cloud"
+              onClick={onOpenCloudSync}
+              title="Personal Cloud Backup & Sync: Zero-cost private GitHub Gist / Encrypted Vault"
+              className={`hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-700'
+                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-sky-400 text-sky-400'
+              }`}
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span>Cloud</span>
+            </button>
+          )}
+
+          {hasActiveRide && (
+            <>
+              {onOpenReport && (
+                <button
+                  id="btn-open-dossier"
+                  onClick={onOpenReport}
+                  title="Generate Official PDF Dossier Report & CSV Telemetry"
+                  className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                    isLight
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
+                      : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-sky-400 text-sky-400'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">PDF Dossier</span>
+                </button>
+              )}
+
+              <button
+                id="btn-export-gpx"
+                onClick={onExportGpx}
+                title="Download Clean GPX File"
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-medium transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-emerald-700'
+                    : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-emerald-400 text-emerald-400'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Export GPX</span>
+              </button>
+            </>
           )}
 
           <button

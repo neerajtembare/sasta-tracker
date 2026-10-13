@@ -18,8 +18,8 @@ import {
 import { AppTheme, UnitSystem } from '../types';
 
 interface NavbarProps {
-  currentTab: 'home' | 'analysis' | 'cockpit' | 'faq';
-  setCurrentTab: (tab: 'home' | 'analysis' | 'cockpit' | 'faq') => void;
+  currentTab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
+  setCurrentTab: (tab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq') => void;
   onLoadSample: () => void;
   onUploadClick: () => void;
   onOpenGarage: () => void;
@@ -171,6 +171,25 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>Record Ride</span>
             {isRecordingLive && (
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+            )}
+          </button>
+
+          <button
+            id="tab-btn-crew"
+            onClick={() => setCurrentTab('crew')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+              currentTab === 'crew'
+                ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
+                : isLight
+                ? 'text-slate-600 hover:text-cyan-600 hover:bg-slate-200/70'
+                : 'text-[#8f9ca8] hover:text-cyan-400 hover:bg-[#1a2530]'
+            }`}
+            title="Motorcycle Crew Radar & Premade Groups"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Live Crew</span>
+            {groupRideConnected && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             )}
           </button>
 

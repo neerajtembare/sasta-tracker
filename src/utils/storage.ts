@@ -332,3 +332,94 @@ export function verifyGaragePin(enteredPin: string): boolean {
 export function lockGarageSession(): void {
   isSessionUnlocked = false;
 }
+
+// ─── Premade Groups / Saved Crews ─────────────────────────────────
+export interface SavedCrew {
+  id: string; // e.g. "crew_1728900000"
+  name: string; // e.g. "Sunday Ghats Riders"
+  code: string; // e.g. "SUNDAY" or "PUNE44"
+  members: string[]; // e.g. ["Neeraj", "Rahul", "Sam"]
+  createdAt: number;
+  lastActive?: number;
+}
+
+const SAVED_CREWS_STORAGE_KEY = 'throttlelog_saved_crews';
+
+export function getSavedCrews(): SavedCrew[] {
+  try {
+    const raw = localStorage.getItem(SAVED_CREWS_STORAGE_KEY);
+    if (!raw) {
+      // Seed with a friendly starter group so riders immediately see the feature
+      const initial: SavedCrew[] = [
+        {
+          id: 'crew_default_sunday',
+          name: 'Sunday Morning Crew',
+          code: 'SUNDAY',
+          members: ['Neeraj', 'Rahul', 'Sam'],
+          createdAt: Date.now(),
+        }
+      ];
+      localStorage.setItem(SAVED_CREWS_STORAGE_KEY, JSON.stringify(initial));
+      return initial;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCrew(crew: SavedCrew): SavedCrew[] {
+  try {
+    const current = getSavedCrews();
+    const existingIndex = current.findIndex(c => c.id === crew.id);
+    let updated: SavedCrew[];
+    if (existingIndex >= 0) {
+      updated = [...current];
+      updated[existingIndex] = { ...crew, lastActive: Date.now() };
+    } else {
+      updated = [{ ...crew, lastActive: Date.now() }, ...current];
+    }
+    localStorage.setItem(SAVED_CREWS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (e) {
+    console.error('Failed to save crew', e);
+    return getSavedCrews();
+  }
+}
+
+export function deleteCrew(crewId: string): SavedCrew[] {
+  try {
+    const current = getSavedCrews();
+    const updated = current.filter(c => c.id !== crewId);
+    localStorage.setItem(SAVED_CREWS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch {
+    return getSavedCrews();
+  }
+}
+
+export function addMemberToCrew(crewId: string, memberName: string): SavedCrew[] {
+  const cleanName = memberName.trim();
+  if (!cleanName) return getSavedCrews();
+  const current = getSavedCrews();
+  const crew = current.find(c => c.id === crewId);
+  if (!crew) return current;
+  if (crew.members.includes(cleanName)) return current;
+  const updatedCrew: SavedCrew = {
+    ...crew,
+    members: [...crew.members, cleanName],
+  };
+  return saveCrew(updatedCrew);
+}
+
+export function removeMemberFromCrew(crewId: string, memberName: string): SavedCrew[] {
+  const current = getSavedCrews();
+  const crew = current.find(c => c.id === crewId);
+  if (!crew) return current;
+  const updatedCrew: SavedCrew = {
+    ...crew,
+    members: crew.members.filter(m => m !== memberName),
+  };
+  return saveCrew(updatedCrew);
+}

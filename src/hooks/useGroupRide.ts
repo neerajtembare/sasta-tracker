@@ -33,6 +33,27 @@ export interface SosAlert {
   timestamp: number;
 }
 
+export const MOTORCYCLE_CALLSIGNS = [
+  'ApexRider', 'GhostRider', 'ThunderRider', 'NightHawk', 'TrailBlazer',
+  'TurboRider', 'ShadowRider', 'HyperRider', 'Maverick', 'Viper',
+  'Phantom', 'Raptor', 'IronClaw', 'RoadWarrior', 'TorqueRider',
+  'NinjaRider', 'ApexPredator', 'MotoNomad', 'StormRider', 'FalconRider'
+];
+
+export function generateRandomRiderName(): string {
+  const prefix = MOTORCYCLE_CALLSIGNS[Math.floor(Math.random() * MOTORCYCLE_CALLSIGNS.length)];
+  const num = Math.floor(10 + Math.random() * 89);
+  return `${prefix}-${num}`;
+}
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+];
+
 const RIDER_COLORS = [
   '#00f0ff', // Electric Cyan (Leader/You)
   '#ffe600', // Neon Amber/Yellow
@@ -48,7 +69,17 @@ function sanitizeCode(code: string): string {
 
 export function useGroupRide() {
   const [roomCode, setRoomCode] = useState<string>('');
-  const [riderName, setRiderName] = useState<string>(() => localStorage.getItem('sasta_rider_name') || '');
+  const [riderName, setRiderName] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('sasta_rider_name') || localStorage.getItem('throttlelog_rider_name');
+      if (saved && saved.trim()) return saved.trim();
+      const generated = generateRandomRiderName();
+      localStorage.setItem('sasta_rider_name', generated);
+      return generated;
+    } catch {
+      return generateRandomRiderName();
+    }
+  });
   const [riderId] = useState<string>(() => 'rider_' + Math.random().toString(36).substring(2, 9));
   const [isHost, setIsHost] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -61,6 +92,8 @@ export function useGroupRide() {
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
   const peerToRiderMapRef = useRef<Map<string, string>>(new Map());
   const myLocationRef = useRef<{ lat: number; lon: number } | null>(null);
+  const retryTimeoutRef = useRef<any>(null);
+  const retryCountRef = useRef<number>(0);
 
   // Broadcast location or message to all connected peers
   const broadcastMessage = useCallback((payload: any) => {
@@ -166,6 +199,22 @@ export function useGroupRide() {
           return next;
         });
       }
+    } else if (data.type === 'RENAME') {
+      const rId = data.riderId;
+      const newName = data.newName;
+      if (rId && newName) {
+        setMembers(prev => {
+          const existing = prev.get(rId);
+          if (!existing) return prev;
+          const next = new Map(prev);
+          next.set(rId, {
+            ...existing,
+            name: newName,
+            location: existing.location ? { ...existing.location, name: newName } : undefined,
+          });
+          return next;
+        });
+      }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
       setSosAlert(alert);
@@ -255,9 +304,12 @@ export function useGroupRide() {
 
   // Create a new Group Ride as Host
   const createRoom = useCallback((name: string, customCode?: string) => {
-    const cleanName = name.trim() || 'Rider';
+    const cleanName = name.trim() || generateRandomRiderName();
     setRiderName(cleanName);
-    localStorage.setItem('sasta_rider_name', cleanName);
+    try {
+      localStorage.setItem('sasta_rider_name', cleanName);
+      localStorage.setItem('throttlelog_rider_name', cleanName);
+    } catch {}
 
     const generated = customCode 
       ? sanitizeCode(customCode) 
@@ -268,6 +320,9 @@ export function useGroupRide() {
     setConnectionStatus('connecting');
     setStatusMessage('Starting private group room...');
 
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    retryCountRef.current = 0;
+
     if (peerRef.current) {
       peerRef.current.destroy();
     }
@@ -275,17 +330,14 @@ export function useGroupRide() {
     const hostPeerId = `sasta-${generated}-host`;
     const peer = new Peer(hostPeerId, {
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
+        iceServers: ICE_SERVERS,
       },
     });
 
-    peer.on('open', (id) => {
+    peer.on('open', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-      setStatusMessage(`Room ${generated} created! Share code with your crew.`);
+      setStatusMessage(`Room ${generated} created! Share code or link with your crew.`);
       playWaypointChime();
     });
 
@@ -312,20 +364,27 @@ export function useGroupRide() {
     peerRef.current = peer;
   }, [setupConnection]);
 
-  // Join an existing Group Ride
-  const joinRoom = useCallback((code: string, name: string) => {
+  // Join an existing Group Ride with automatic 3x retry
+  const joinRoom = useCallback((code: string, name?: string) => {
     const cleanCode = sanitizeCode(code);
     if (!cleanCode) {
       setStatusMessage('Please enter a valid 4-8 digit room code');
       return;
     }
-    const cleanName = name.trim() || 'Rider';
+    const cleanName = (name && name.trim()) || riderName || generateRandomRiderName();
     setRiderName(cleanName);
-    localStorage.setItem('sasta_rider_name', cleanName);
+    try {
+      localStorage.setItem('sasta_rider_name', cleanName);
+      localStorage.setItem('throttlelog_rider_name', cleanName);
+    } catch {}
+
     setRoomCode(cleanCode);
     setIsHost(false);
     setConnectionStatus('connecting');
     setStatusMessage(`Connecting to room ${cleanCode}...`);
+
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    retryCountRef.current = 0;
 
     if (peerRef.current) {
       peerRef.current.destroy();
@@ -334,17 +393,22 @@ export function useGroupRide() {
     const myPeerId = `sasta-${cleanCode}-${riderId}`;
     const peer = new Peer(myPeerId, {
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
+        iceServers: ICE_SERVERS,
       },
     });
 
+    const attemptHostConnection = () => {
+      try {
+        const hostPeerId = `sasta-${cleanCode}-host`;
+        const conn = peer.connect(hostPeerId, { reliable: false });
+        setupConnection(conn);
+      } catch (e) {
+        console.warn('Error connecting to host peer:', e);
+      }
+    };
+
     peer.on('open', () => {
-      const hostPeerId = `sasta-${cleanCode}-host`;
-      const conn = peer.connect(hostPeerId, { reliable: false });
-      setupConnection(conn);
+      attemptHostConnection();
     });
 
     peer.on('connection', (conn) => {
@@ -357,16 +421,44 @@ export function useGroupRide() {
       } catch {}
     });
 
-    peer.on('error', (err) => {
-      setConnectionStatus('error');
-      setStatusMessage('Could not find room leader. Check room code.');
+    peer.on('error', (err: any) => {
+      console.warn('Peer error during join:', err);
+      if (retryCountRef.current < 3) {
+        retryCountRef.current += 1;
+        setStatusMessage(`Connecting to room leader (Attempt ${retryCountRef.current}/3)...`);
+        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = setTimeout(() => {
+          attemptHostConnection();
+        }, 1200);
+      } else {
+        setConnectionStatus('error');
+        setStatusMessage('Could not find room leader. Check room code or ensure leader is active.');
+      }
     });
 
     peerRef.current = peer;
-  }, [riderId, setupConnection]);
+  }, [riderId, riderName, setupConnection]);
+
+  // Update rider's callsign / name on the fly and notify all peers
+  const updateRiderName = useCallback((newName: string) => {
+    const clean = newName.trim();
+    if (!clean) return;
+    setRiderName(clean);
+    try {
+      localStorage.setItem('sasta_rider_name', clean);
+      localStorage.setItem('throttlelog_rider_name', clean);
+    } catch {}
+    broadcastMessage({
+      type: 'RENAME',
+      riderId,
+      newName: clean,
+    });
+  }, [broadcastMessage, riderId]);
 
   // Leave Group Ride
   const leaveRoom = useCallback(() => {
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    retryCountRef.current = 0;
     try {
       broadcastMessage({ type: 'LEAVE', riderId });
     } catch {}
@@ -493,5 +585,6 @@ export function useGroupRide() {
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),
+    updateRiderName,
   };
 }

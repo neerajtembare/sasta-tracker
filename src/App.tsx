@@ -24,6 +24,7 @@ import { RideStoryModal } from './components/RideStoryModal';
 import { RideReportModal } from './components/RideReportModal';
 import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { GroupRideModal } from './components/GroupRideModal';
+import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { useGroupRide } from './hooks/useGroupRide';
 import { parseGPX } from './utils/gpxParser';
@@ -36,12 +37,12 @@ import {
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
 import { getStoredUnitSystem, setStoredUnitSystem } from './utils/units';
 import { 
-  Radio, Gauge, HelpCircle, FolderArchive, Home,
+  Radio, Gauge, HelpCircle, FolderArchive, Home, Users,
   Map as MapIcon, Activity, History, Bike as BikeIcon 
 } from 'lucide-react';
 import { RideDiagnosticsModal } from './components/RideDiagnosticsModal';
 
-export type AppTab = 'home' | 'analysis' | 'cockpit' | 'faq';
+export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
 export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
 
 export default function App() {
@@ -98,11 +99,20 @@ export default function App() {
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
-  // Check URL query for room invite link (e.g. ?room=MOTO44)
+  // Check URL query for room invite link (e.g. ?room=SUNDAY or ?crew=SUNDAY)
+  // Zero-friction 1-tap auto-join: joins immediately and switches to crew view!
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('room')) {
-      setIsGroupRideModalOpen(true);
+    const roomParam = params.get('room') || params.get('crew');
+    if (roomParam) {
+      const cleanCode = roomParam.trim().toUpperCase();
+      groupRide.joinRoom(cleanCode);
+      setCurrentTab('crew');
+      setSessionNotice(`🏍️ Connecting to Crew "${cleanCode}"... Tap your handle to edit anytime.`);
+      setTimeout(() => setSessionNotice(null), 5000);
+      try {
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch {}
     }
   }, []);
 
@@ -439,7 +449,7 @@ export default function App() {
         onUploadClick={triggerUploadClick}
         onOpenGarage={() => setIsGarageOpen(true)}
         onOpenCompare={() => setIsCompareModalOpen(true)}
-        onOpenGroupRide={() => setIsGroupRideModalOpen(true)}
+        onOpenGroupRide={() => setCurrentTab('crew')}
         onOpenCloudSync={() => setIsCloudSyncOpen(true)}
         groupRideConnected={groupRide.isConnected}
         groupRoomCode={groupRide.roomCode}
@@ -746,13 +756,38 @@ export default function App() {
             groupRoomCode={groupRide.roomCode}
             groupMembers={groupRide.members}
             sosAlert={groupRide.sosAlert}
-            onOpenGroupRideModal={() => setIsGroupRideModalOpen(true)}
+            onOpenGroupRideModal={() => setCurrentTab('crew')}
             onTriggerSos={groupRide.triggerSos}
             onUpdateMyLocation={groupRide.updateMyLocation}
           />
         </div>
 
-        {/* Tab 3: Tips & Help Guide */}
+        {/* Tab 3: Dedicated First-Class Crew Command Center */}
+        {currentTab === 'crew' && (
+          <div className="animate-in fade-in duration-300">
+            <CrewDashboard
+              roomCode={groupRide.roomCode}
+              riderName={groupRide.riderName}
+              isHost={groupRide.isHost}
+              isConnected={groupRide.isConnected}
+              connectionStatus={groupRide.connectionStatus}
+              statusMessage={groupRide.statusMessage}
+              members={groupRide.members}
+              sosAlert={groupRide.sosAlert}
+              onCreateRoom={groupRide.createRoom}
+              onJoinRoom={groupRide.joinRoom}
+              onLeaveRoom={groupRide.leaveRoom}
+              onTriggerSos={groupRide.triggerSos}
+              onDismissSos={groupRide.dismissSos}
+              onUpdateRiderName={groupRide.updateRiderName}
+              onGoToCockpit={() => setCurrentTab('cockpit')}
+              theme={theme}
+              unitSystem={unitSystem}
+            />
+          </div>
+        )}
+
+        {/* Tab 4: Tips & Help Guide */}
         {currentTab === 'faq' && (
           <div className="animate-in fade-in duration-300">
             <FaqAndArchitecture theme={theme} />
@@ -799,7 +834,7 @@ export default function App() {
           }`}
         >
           <Gauge className="w-4 h-4" />
-          <span>Ride Stats</span>
+          <span>Stats</span>
           {analysis && (
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0 right-2" />
           )}
@@ -822,6 +857,22 @@ export default function App() {
         </button>
 
         <button
+          id="mobile-tab-crew"
+          onClick={() => setCurrentTab('crew')}
+          className={`flex flex-col items-center gap-1 relative cursor-pointer transition-colors ${
+            currentTab === 'crew'
+              ? 'text-cyan-400 font-bold'
+              : theme === 'light' ? 'text-slate-500 hover:text-cyan-600' : 'text-[#8f9ca8] hover:text-cyan-400'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Crew</span>
+          {groupRide.isConnected && (
+            <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-1 right-2 animate-pulse" />
+          )}
+        </button>
+
+        <button
           id="mobile-tab-garage"
           onClick={() => setIsGarageOpen(true)}
           className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
@@ -830,19 +881,6 @@ export default function App() {
         >
           <FolderArchive className="w-4 h-4" />
           <span>My Rides</span>
-        </button>
-
-        <button
-          id="mobile-tab-faq"
-          onClick={() => setCurrentTab('faq')}
-          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
-            currentTab === 'faq'
-              ? theme === 'light' ? 'text-slate-950 font-bold' : 'text-white font-bold'
-              : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
-          }`}
-        >
-          <HelpCircle className="w-4 h-4" />
-          <span>Help</span>
         </button>
       </nav>
 

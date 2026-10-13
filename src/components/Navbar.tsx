@@ -124,35 +124,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <button
-            id="tab-btn-home"
-            onClick={() => setCurrentTab('home')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
-              currentTab === 'home'
-                ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+            id="tab-btn-crew"
+            onClick={() => setCurrentTab('crew')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+              currentTab === 'crew'
+                ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
                 : isLight
-                ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'
-                : 'text-[#8f9ca8] hover:text-sky-400 hover:bg-[#1a2530]'
+                ? 'text-slate-600 hover:text-cyan-600 hover:bg-slate-200/70'
+                : 'text-[#8f9ca8] hover:text-cyan-400 hover:bg-[#1a2530]'
             }`}
+            title="Motorcycle Crew Radar & Premade Groups"
           >
-            <Home className="w-3.5 h-3.5" />
-            <span>Home</span>
-          </button>
-
-          <button
-            id="tab-btn-analysis"
-            onClick={() => setCurrentTab('analysis')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
-              currentTab === 'analysis'
-                ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
-                : isLight
-                ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'
-                : 'text-[#8f9ca8] hover:text-sky-400 hover:bg-[#1a2530]'
-            }`}
-          >
-            <Gauge className="w-3.5 h-3.5" />
-            <span>Ride Stats</span>
-            {hasActiveRide && (
-              <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? 'bg-slate-950' : 'bg-emerald-400'}`} />
+            <Users className="w-3.5 h-3.5" />
+            <span>Crew Radar</span>
+            {groupRideConnected && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             )}
           </button>
 
@@ -166,30 +152,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ? 'text-slate-600 hover:text-emerald-600 hover:bg-slate-200/70'
                 : 'text-[#8f9ca8] hover:text-emerald-400 hover:bg-[#1a2530]'
             }`}
+            title="Live Handlebar GPS Logger"
           >
             <Radio className="w-3.5 h-3.5" />
-            <span>Record Ride</span>
+            <span>Ride Cockpit</span>
             {isRecordingLive && (
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             )}
           </button>
 
           <button
-            id="tab-btn-crew"
-            onClick={() => setCurrentTab('crew')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
-              currentTab === 'crew'
-                ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
+            id="tab-btn-analysis"
+            onClick={() => setCurrentTab('analysis')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+              currentTab === 'analysis' || currentTab === 'home'
+                ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                 : isLight
-                ? 'text-slate-600 hover:text-cyan-600 hover:bg-slate-200/70'
-                : 'text-[#8f9ca8] hover:text-cyan-400 hover:bg-[#1a2530]'
+                ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'
+                : 'text-[#8f9ca8] hover:text-sky-400 hover:bg-[#1a2530]'
             }`}
-            title="Motorcycle Crew Radar & Premade Groups"
+            title="Saved Rides, Telemetry & Route Map"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>Live Crew</span>
-            {groupRideConnected && (
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <FolderArchive className="w-3.5 h-3.5" />
+            <span>{hasActiveRide ? 'Ride Stats & Map' : 'My Rides'}</span>
+            {hasActiveRide && (
+              <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? 'bg-slate-950' : 'bg-emerald-400'}`} />
             )}
           </button>
 
@@ -208,7 +195,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Help, GPS Accuracy & Tips"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            <span>Help Guide</span>
+            <span>Help</span>
           </button>
         </div>
 
@@ -264,38 +251,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden md:inline">Install App</span>
             </button>
           )}
-
-          {onOpenGroupRide && (
-            <button
-              id="btn-nav-crew"
-              onClick={onOpenGroupRide}
-              title="Motorcycle Group Ride: Live location sharing with crew"
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                groupRideConnected
-                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-xs'
-                  : isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-cyan-400 text-cyan-400'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>{groupRideConnected ? `Crew: ${groupRoomCode}` : 'Crew'}</span>
-            </button>
-          )}
-
-          <button
-            id="btn-open-garage"
-            onClick={onOpenGarage}
-            title="Open Saved Rides & Garage"
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-              isLight
-                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
-                : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] hover:border-sky-400 text-sky-400'
-            }`}
-          >
-            <FolderArchive className="w-3.5 h-3.5" />
-            <span>My Rides</span>
-          </button>
 
           <button
             id="btn-upload-gpx"

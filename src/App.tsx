@@ -562,16 +562,16 @@ export default function App() {
             }`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={() => setIsGarageOpen(true)}
+                  onClick={handleCloseTrack}
                   className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     theme === 'light'
                       ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
                       : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-sky-400'
                   }`}
-                  title="Open saved rides garage"
+                  title="Return to all saved rides in garage"
                 >
                   <FolderArchive className="w-3.5 h-3.5" />
-                  <span>My Rides Garage</span>
+                  <span>← All Saved Rides</span>
                 </button>
 
                 <button
@@ -795,92 +795,71 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Navigation Bar (Optimized for one-hand thumb reach) */}
+      {/* Mobile Bottom Navigation Bar (Streamlined 3-Tab Rider Layout: Crew, Ride, My Rides) */}
       <nav 
         style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
-        className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-2 flex items-center justify-around text-[10px] font-mono shadow-lg ${
+        className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-1.5 flex items-center justify-around font-mono shadow-2xl transition-colors ${
           theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
         }`}
         aria-label="Mobile Bottom Navigation"
       >
-        <button
-          id="mobile-tab-home"
-          onClick={() => setCurrentTab('home')}
-          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
-            currentTab === 'home'
-              ? theme === 'light' ? 'text-sky-600 font-bold' : 'text-sky-400 font-bold'
-              : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          <span>Home</span>
-        </button>
-
-        <button
-          id="mobile-tab-analysis"
-          onClick={() => {
-            if (!analysis) {
-              setCurrentTab('home');
-              setSessionNotice('Upload a GPX file or choose a demo ride to view stats.');
-              setTimeout(() => setSessionNotice(null), 4000);
-            } else {
-              setCurrentTab('analysis');
-            }
-          }}
-          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors relative ${
-            currentTab === 'analysis'
-              ? theme === 'light' ? 'text-sky-600 font-bold' : 'text-sky-400 font-bold'
-              : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
-          }`}
-        >
-          <Gauge className="w-4 h-4" />
-          <span>Stats</span>
-          {analysis && (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0 right-2" />
-          )}
-        </button>
-
-        <button
-          id="mobile-tab-cockpit"
-          onClick={() => setCurrentTab('cockpit')}
-          className={`flex flex-col items-center gap-1 relative cursor-pointer transition-colors ${
-            currentTab === 'cockpit'
-              ? theme === 'light' ? 'text-emerald-600 font-bold' : 'text-emerald-400 font-bold'
-              : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
-          }`}
-        >
-          <Radio className="w-4 h-4" />
-          <span>Record</span>
-          {isRecordingLive && (
-            <span className="w-2 h-2 rounded-full bg-red-500 absolute -top-1 right-2 animate-ping" />
-          )}
-        </button>
-
+        {/* Tab 1: Crew Radar */}
         <button
           id="mobile-tab-crew"
           onClick={() => setCurrentTab('crew')}
-          className={`flex flex-col items-center gap-1 relative cursor-pointer transition-colors ${
+          className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
             currentTab === 'crew'
-              ? 'text-cyan-400 font-bold'
+              ? 'text-cyan-400 font-black'
               : theme === 'light' ? 'text-slate-500 hover:text-cyan-600' : 'text-[#8f9ca8] hover:text-cyan-400'
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>Crew</span>
-          {groupRide.isConnected && (
-            <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-1 right-2 animate-pulse" />
-          )}
+          <div className="relative">
+            <Users className="w-5 h-5" />
+            {groupRide.isConnected && (
+              <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-0.5 -right-1 animate-pulse" />
+            )}
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold">Crew</span>
         </button>
 
+        {/* Tab 2: Ride Cockpit */}
         <button
-          id="mobile-tab-garage"
-          onClick={() => setIsGarageOpen(true)}
-          className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${
-            theme === 'light' ? 'text-slate-600 hover:text-sky-600' : 'text-[#8f9ca8] hover:text-sky-400'
+          id="mobile-tab-cockpit"
+          onClick={() => setCurrentTab('cockpit')}
+          className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
+            currentTab === 'cockpit'
+              ? 'text-emerald-400 font-black'
+              : theme === 'light' ? 'text-slate-500 hover:text-emerald-600' : 'text-[#8f9ca8] hover:text-emerald-400'
           }`}
         >
-          <FolderArchive className="w-4 h-4" />
-          <span>My Rides</span>
+          <div className="relative">
+            <Radio className="w-5 h-5" />
+            {isRecordingLive && (
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 absolute -top-0.5 -right-1 animate-ping" />
+            )}
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold">Ride</span>
+        </button>
+
+        {/* Tab 3: My Rides & Stats */}
+        <button
+          id="mobile-tab-rides"
+          onClick={() => setCurrentTab('analysis')}
+          className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
+            currentTab === 'analysis' || currentTab === 'home'
+              ? theme === 'light' ? 'text-sky-600 font-black' : 'text-sky-400 font-black'
+              : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
+          }`}
+        >
+          <div className="relative">
+            <FolderArchive className="w-5 h-5" />
+            {analysis && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -top-0.5 -right-1" />
+            )}
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold">
+            {analysis ? 'Stats & Map' : 'My Rides'}
+          </span>
         </button>
       </nav>
 

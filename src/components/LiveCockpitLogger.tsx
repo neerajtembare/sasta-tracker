@@ -29,10 +29,12 @@ import {
   Clock,
   Sun,
   Hand,
-  Users
+  Users,
+  Share2
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { GroupRideHud } from './GroupRideHud';
+import { ShareLocationModal } from './ShareLocationModal';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
 
 interface LiveCockpitLoggerProps {
@@ -67,6 +69,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const isLight = theme === 'light';
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [shortRideWarning, setShortRideWarning] = useState<string | null>(null);
+  const [isShareLocModalOpen, setIsShareLocModalOpen] = useState(false);
 
   const [isGloveMode, setIsGloveMode] = useState<boolean>(() => {
     try {
@@ -405,6 +408,24 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                 <span>{groupRideConnected ? `${(groupMembers?.length || 0) + 1}` : 'OFF'}</span>
               </button>
             )}
+
+            {/* Share Live Location / WhatsApp Google Maps Pin */}
+            <button
+              id="btn-cockpit-share-loc"
+              onClick={() => {
+                triggerHaptic(40);
+                setIsShareLocModalOpen(true);
+              }}
+              title="Share live Google Maps pin with friends or family on WhatsApp"
+              className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
+                isLight
+                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                  : 'bg-emerald-950/30 hover:bg-emerald-900/40 border-emerald-500/40 text-emerald-300'
+              }`}
+            >
+              <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Share Pin</span>
+            </button>
 
             {/* Collapsible Info Button */}
             <button
@@ -771,6 +792,17 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           </div>
         )}
       </div>
+
+      {/* Share Location / Google Maps Pin Modal */}
+      <ShareLocationModal
+        isOpen={isShareLocModalOpen}
+        onClose={() => setIsShareLocModalOpen(false)}
+        coords={gps.currentCoords}
+        speedKmh={gps.currentSpeedKmh}
+        accuracyM={gps.gpsAccuracy}
+        crewCode={groupRoomCode}
+        theme={theme}
+      />
     </div>
   );
 };

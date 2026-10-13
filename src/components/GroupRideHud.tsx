@@ -1,6 +1,6 @@
 import React from 'react';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
-import { Users, AlertTriangle, Coffee } from 'lucide-react';
+import { Users, AlertTriangle, Coffee, Navigation } from 'lucide-react';
 
 interface GroupRideHudProps {
   roomCode: string;
@@ -50,11 +50,18 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
             : '';
 
           const isStopped = m.location && m.location.speedKmh < 2.0;
+          const gmapsUrl = m.location 
+            ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
+            : null;
 
           return (
-            <div
+            <a
               key={m.riderId}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] shrink-0"
+              href={gmapsUrl || '#'}
+              target={gmapsUrl ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              title={gmapsUrl ? `Navigate to ${m.name} in Google Maps (${distStr || 'Locating'})` : m.name}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 text-[11px] shrink-0 transition-colors cursor-pointer"
             >
               <div
                 className="w-2 h-2 rounded-full shrink-0"
@@ -76,7 +83,10 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
               {isStopped && (
                 <Coffee className="w-3 h-3 text-amber-400 shrink-0" />
               )}
-            </div>
+              {gmapsUrl && (
+                <Navigation className="w-2.5 h-2.5 text-sky-400 ml-0.5 shrink-0 opacity-70 hover:opacity-100" />
+              )}
+            </a>
           );
         })}
       </div>

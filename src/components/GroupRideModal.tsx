@@ -97,10 +97,31 @@ export const GroupRideModal: React.FC<GroupRideModalProps> = ({
   if (!isOpen) return null;
 
   const handleShareWhatsApp = () => {
-    const url = `${window.location.origin}/?room=${roomCode}`;
-    const text = `Hey! Join our motorcycle group ride on ThrottleLog.\n\nRoom Code: *${roomCode}*\nLive Location Link: ${url}`;
-    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank');
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude.toFixed(6);
+          const lon = pos.coords.longitude.toFixed(6);
+          const gmapsPin = `https://maps.google.com/?q=${lat},${lon}`;
+          const url = `${window.location.origin}/?room=${roomCode}`;
+          const text = `🏍️ ThrottleLog Crew Ride Alert!\n\nJoin our live motorcycle ride: ${url}\nRoom Code: *${roomCode}*\n\n📍 My Live Google Maps Pin:\n${gmapsPin}`;
+          const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+          window.open(waUrl, '_blank');
+        },
+        () => {
+          const url = `${window.location.origin}/?room=${roomCode}`;
+          const text = `🏍️ Join our motorcycle group ride on ThrottleLog!\n\nRoom Code: *${roomCode}*\nLive Link: ${url}`;
+          const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+          window.open(waUrl, '_blank');
+        },
+        { enableHighAccuracy: true, timeout: 4000 }
+      );
+    } else {
+      const url = `${window.location.origin}/?room=${roomCode}`;
+      const text = `🏍️ Join our motorcycle group ride on ThrottleLog!\n\nRoom Code: *${roomCode}*\nLive Link: ${url}`;
+      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+      window.open(waUrl, '_blank');
+    }
   };
 
   const handleCopyLink = () => {
@@ -235,6 +256,9 @@ export const GroupRideModal: React.FC<GroupRideModalProps> = ({
                     : 'Locating...';
 
                   const isStopped = m.location && m.location.speedKmh < 2.0;
+                  const gmapsNavUrl = m.location
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
+                    : null;
 
                   return (
                     <div key={m.riderId} className={`p-3 rounded-xl border flex items-center justify-between font-mono text-xs ${cardBg}`}>
@@ -265,7 +289,19 @@ export const GroupRideModal: React.FC<GroupRideModalProps> = ({
                         </div>
                       </div>
 
-                      <div className="text-right">
+                      <div className="text-right flex items-center gap-2">
+                        {gmapsNavUrl && (
+                          <a
+                            href={gmapsNavUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                            title={`Turn-by-turn navigation in Google Maps to ${m.name}`}
+                          >
+                            <Navigation className="w-3 h-3" />
+                            <span>Navigate</span>
+                          </a>
+                        )}
                         <span className="text-[10px] text-emerald-400 font-bold">Connected</span>
                       </div>
                     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppTheme, UnitSystem } from '../types';
 import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
-import { useGPS } from '../hooks/useGPS';
+import { useGPS, GPSState, GPSControls } from '../hooks/useGPS';
 import { exportPointsToGPX } from '../utils/gpxExporter';
 import { 
   Play, 
@@ -47,6 +47,8 @@ interface LiveCockpitLoggerProps {
   groupRoomCode?: string;
   groupMembers?: GroupMemberInfo[];
   sosAlert?: SosAlert | null;
+  gps?: GPSState;
+  controls?: GPSControls;
   onOpenGroupRideModal?: () => void;
   onTriggerSos?: () => void;
   onUpdateMyLocation?: (lat: number, lon: number, speedKmh: number, bearing: number | null) => void;
@@ -62,6 +64,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   groupRoomCode,
   groupMembers,
   sosAlert,
+  gps: externalGps,
+  controls: externalControls,
   onOpenGroupRideModal,
   onTriggerSos,
   onUpdateMyLocation,
@@ -105,19 +109,21 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     });
   };
   
-  const [gps, controls] = useGPS(unitSystem);
+  const [internalGps, internalControls] = useGPS(unitSystem, !externalGps);
+  const gps = externalGps || internalGps;
+  const controls = externalControls || internalControls;
 
   // Sync external recording state with hook
   // The hook manages its own isRecording; we bridge to the parent via controls
   const isRecording = gps.isRecording;
   const isPaused = gps.isPaused;
 
-  // Broadcast location to connected group ride crew with stable ref & primitive deps
+  // Broadcast location to parent and crew map with stable ref & primitive deps
   const onUpdateMyLocationRef = useRef(onUpdateMyLocation);
   onUpdateMyLocationRef.current = onUpdateMyLocation;
 
   useEffect(() => {
-    if (gps.currentCoords && groupRideConnected && onUpdateMyLocationRef.current) {
+    if (gps.currentCoords && onUpdateMyLocationRef.current) {
       onUpdateMyLocationRef.current(
         gps.currentCoords.lat,
         gps.currentCoords.lon,
@@ -129,8 +135,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     gps.currentCoords?.lat,
     gps.currentCoords?.lon,
     gps.currentSpeedKmh,
-    gps.currentHeading,
-    groupRideConnected
+    gps.currentHeading
   ]);
 
   const stopAndSaveRecording = () => {
@@ -294,11 +299,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${isLight ? 'border-slate-200' : 'border-[#1e2a38]'}`}>
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
-                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500') : 'bg-slate-500'
-              } opacity-75`} />
               <span className={`relative inline-flex rounded-full h-3 w-3 ${
-                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500') : 'bg-slate-500'
+                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500 ring-2 ring-rose-500/30') : 'bg-slate-500'
               }`} />
             </span>
             <span className="font-mono font-bold text-xs uppercase tracking-wider">
@@ -320,7 +322,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             </span>
             {isRecording && (
               gps.pointsCount < 2 ? (
-                <span className="text-[10px] text-amber-400 font-mono animate-pulse">
+                <span className="text-[10px] text-amber-400 font-mono font-bold">
                   🛰️ Acquiring Fix ({gps.pointsCount}/2 pts)
                 </span>
               ) : (

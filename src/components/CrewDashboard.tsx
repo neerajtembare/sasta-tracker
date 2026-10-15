@@ -13,17 +13,13 @@ import {
   Users, 
   Radio, 
   Share2, 
-  Copy, 
-  Check, 
-  AlertTriangle, 
-  Navigation, 
   Plus, 
   Trash2, 
   Edit3, 
-  Coffee, 
-  Shield, 
+  Navigation,
   Map as MapIcon,
-  Compass
+  Compass,
+  X
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { CrewLiveMap } from './CrewLiveMap';
@@ -53,6 +49,11 @@ interface CrewDashboardProps {
   onGoToCockpit?: () => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
+  isRecording?: boolean;
+  onStartRecording?: () => void;
+  onStopRecording?: () => void;
+  pointsCount?: number;
+  totalDistanceMeters?: number;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -75,6 +76,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   onGoToCockpit,
   theme = 'dark',
   unitSystem = 'metric',
+  isRecording = false,
+  onStartRecording,
+  onStopRecording,
+  pointsCount = 0,
+  totalDistanceMeters = 0,
 }) => {
   const isLight = theme === 'light';
 
@@ -85,9 +91,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [newCrewCode, setNewCrewCode] = useState('');
   const [newCrewFriends, setNewCrewFriends] = useState('');
 
-  // Inline handle editing state for disconnected screen
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [tempName, setTempName] = useState(riderName);
+  // Preflight callsign quick edit state
+  const [isEditingPreflightHandle, setIsEditingPreflightHandle] = useState(false);
+  const [preflightHandle, setPreflightHandle] = useState(riderName);
 
   // Quick join code input
   const [quickCodeInput, setQuickCodeInput] = useState('');
@@ -97,18 +103,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   useEffect(() => {
     setSavedCrews(getSavedCrews());
   }, []);
-
-  useEffect(() => {
-    setTempName(riderName);
-  }, [riderName]);
-
-  const handleSaveRiderName = () => {
-    if (tempName.trim()) {
-      onUpdateRiderName(tempName.trim());
-      setIsEditingName(false);
-      triggerHaptic(40);
-    }
-  };
 
   const handleCreateCrew = (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +142,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   const handleShareWhatsAppCrew = (code: string, crewName?: string) => {
-    const url = `${window.location.origin}/?room=${code}`;
+    const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
     const nameLabel = crewName ? `"${crewName}"` : code;
     
     if ('geolocation' in navigator) {
@@ -176,7 +170,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   const handleCopyInviteLink = (code: string) => {
-    const url = `${window.location.origin}/?room=${code}`;
+    const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopiedLink(true);
       triggerHaptic(30);
@@ -184,442 +178,328 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
     });
   };
 
-  const cardBg = isLight 
-    ? 'bg-white border-slate-200 text-slate-900 shadow-sm' 
-    : 'bg-[#131b24] border-[#1e2a38] text-white shadow-md';
-  const innerCardBg = isLight 
-    ? 'bg-slate-50 border-slate-200' 
-    : 'bg-[#0d131a] border-[#1e2a38]';
-  const subTextColor = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
-
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-4 animate-in fade-in duration-200">
+    <div className="relative w-full h-[calc(100dvh-108px)] md:h-[calc(100dvh-64px)] min-h-[420px] overflow-hidden rounded-xl sm:rounded-2xl">
       
       {/* ─────────────────────────────────────────────────────────────
-          STATE 1: CONNECTED CREW RADAR (Minimal, Front-and-Center Map)
+          PRIMARY LIVE MAP (Always Active - Previews GPS Even Before Joining)
       ───────────────────────────────────────────────────────────── */}
-      {isConnected ? (
-        <div className="space-y-2">
-          {/* Subtle View Switcher if multiple riders online */}
-          {members.length > 0 && (
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-xl p-0.5 text-xs font-mono font-bold">
-                <button
-                  onClick={() => {
-                    triggerHaptic(15);
-                    setConnectedViewMode('map');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                    connectedViewMode === 'map'
-                      ? 'bg-cyan-500 text-slate-950 font-black'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
+      {connectedViewMode === 'map' ? (
+        <CrewLiveMap
+          myLocation={myLocation}
+          myRiderName={riderName}
+          myColor={myColor}
+          isHost={isHost}
+          isConnected={isConnected}
+          members={members}
+          sosAlert={sosAlert}
+          roomCode={roomCode}
+          theme={theme}
+          unitSystem={unitSystem}
+          onTriggerSos={onTriggerSos}
+          onDismissSos={onDismissSos}
+          onLeaveRoom={onLeaveRoom}
+          onShareWhatsApp={() => handleShareWhatsAppCrew(roomCode)}
+          onCopyInviteLink={() => handleCopyInviteLink(roomCode)}
+          copiedLink={copiedLink}
+          onGoToCockpit={onGoToCockpit}
+          onUpdateRiderName={onUpdateRiderName}
+          isRecording={isRecording}
+          onStartRecording={onStartRecording}
+          onStopRecording={onStopRecording}
+          pointsCount={pointsCount}
+          totalDistanceMeters={totalDistanceMeters}
+        />
+      ) : (
+        /* Detailed Squad Formation List View */
+        <div className="w-full h-full p-3 sm:p-4 bg-[#080c10] overflow-y-auto space-y-3 font-mono">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setConnectedViewMode('map')}
+              className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <MapIcon className="w-3.5 h-3.5" />
+              <span>Back to Live Map</span>
+            </button>
+            <span className="text-xs text-slate-400">
+              {members.length + 1} Riders Online
+            </span>
+          </div>
+
+          {/* Members List */}
+          <div className="space-y-2 max-w-xl mx-auto pt-2">
+            {/* You */}
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2.5">
+                <div 
+                  className="w-7 h-7 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs"
+                  style={{ backgroundColor: myColor || '#00f0ff' }}
                 >
-                  <MapIcon className="w-3 h-3" />
-                  <span>Live Map</span>
-                </button>
-                <button
-                  onClick={() => {
-                    triggerHaptic(15);
-                    setConnectedViewMode('list');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                    connectedViewMode === 'list'
-                      ? 'bg-cyan-500 text-slate-950 font-black'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Users className="w-3 h-3" />
-                  <span>Riders List ({members.length + 1})</span>
-                </button>
-              </div>
-
-              {onGoToCockpit && (
-                <button
-                  onClick={onGoToCockpit}
-                  className="px-2.5 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                >
-                  <Radio className="w-3 h-3" />
-                  <span>Cockpit</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* VIEW MODE 1: LIVE MAP COCKPIT */}
-          {connectedViewMode === 'map' && (
-            <CrewLiveMap
-              myLocation={myLocation}
-              myRiderName={riderName}
-              myColor={myColor}
-              isHost={isHost}
-              members={members}
-              sosAlert={sosAlert}
-              roomCode={roomCode}
-              theme={theme}
-              unitSystem={unitSystem}
-              onTriggerSos={onTriggerSos}
-              onDismissSos={onDismissSos}
-              onLeaveRoom={onLeaveRoom}
-              onShareWhatsApp={() => handleShareWhatsAppCrew(roomCode)}
-              onCopyInviteLink={() => handleCopyInviteLink(roomCode)}
-              copiedLink={copiedLink}
-              onGoToCockpit={onGoToCockpit}
-              onUpdateRiderName={onUpdateRiderName}
-            />
-          )}
-
-          {/* VIEW MODE 2: SQUAD FORMATION LIST */}
-          {connectedViewMode === 'list' && (
-            <div className="space-y-3 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-                  <Compass className="w-4 h-4 text-cyan-400" />
-                  <span>Squad Formation ({members.length + 1} Riders Online)</span>
-                </h2>
-                <span className={`text-[11px] font-mono ${subTextColor}`}>
-                  Sorted by distance
-                </span>
-              </div>
-
-              {/* You */}
-              <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${cardBg}`}>
-                <div className="flex items-center gap-3">
-                  <div 
-                    className="w-10 h-10 rounded-xl text-slate-950 font-black flex items-center justify-center text-sm shadow-sm"
-                    style={{ backgroundColor: myColor || '#00f0ff' }}
-                  >
-                    {riderName.charAt(0).toUpperCase()}
+                  {riderName.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <span>{riderName}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300">YOU</span>
+                    {isHost && <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">LEADER</span>}
                   </div>
-                  <div>
-                    <div className="font-heading font-black text-sm flex items-center gap-2">
-                      <span>{riderName}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold">
-                        YOU
-                      </span>
-                      {isHost && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold">
-                          LEADER
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 mt-0.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      GPS Transmitting Live
-                    </div>
-                  </div>
+                  <div className="text-[10px] text-emerald-400">GPS Transmitting Live</div>
                 </div>
               </div>
+            </div>
 
-              {/* Connected Friends List */}
-              {members.map(m => {
-                const distFormatted = m.distanceFromMeMeters !== undefined
-                  ? m.distanceFromMeMeters < 1000
-                    ? `${Math.round(m.distanceFromMeMeters)} m away`
-                    : `${(m.distanceFromMeMeters / 1000).toFixed(1)} km away`
-                  : 'Locating GPS...';
+            {/* Friends */}
+            {members.map(m => {
+              const distFormatted = m.distanceFromMeMeters !== undefined
+                ? m.distanceFromMeMeters < 1000
+                  ? `${Math.round(m.distanceFromMeMeters)} m away`
+                  : `${(m.distanceFromMeMeters / 1000).toFixed(1)} km away`
+                : 'Locating...';
+              const gmapsUrl = m.location
+                ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
+                : null;
 
-                const isStopped = m.location && m.location.speedKmh < 2.0;
-                const gmapsNavUrl = m.location
-                  ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
-                  : null;
-
-                return (
-                  <div key={m.riderId} className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${cardBg}`}>
-                    <div className="flex items-center gap-3">
-                      <div 
-                        className="w-10 h-10 rounded-xl text-slate-950 font-black flex items-center justify-center text-sm shadow-sm"
-                        style={{ backgroundColor: m.color || '#ffe600' }}
-                      >
-                        {m.name.charAt(0).toUpperCase()}
+              return (
+                <div key={m.riderId} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div 
+                      className="w-7 h-7 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs"
+                      style={{ backgroundColor: m.color || '#ffe600' }}
+                    >
+                      {m.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        <span>{m.name}</span>
+                        {m.location && <span className="text-[10px] text-amber-400">{m.location.speedKmh.toFixed(0)} km/h</span>}
                       </div>
-                      <div>
-                        <div className="font-heading font-black text-sm flex items-center gap-2">
-                          <span>{m.name}</span>
-                          {m.location && (
-                            <span className="font-mono text-xs text-amber-400 font-bold">
-                              {m.location.speedKmh.toFixed(0)} km/h
-                            </span>
-                          )}
-                          {isStopped && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold flex items-center gap-0.5">
-                              <Coffee className="w-3 h-3" /> Stopped
-                            </span>
-                          )}
-                        </div>
-                        <div className={`text-xs font-mono flex items-center gap-2 mt-0.5 ${subTextColor}`}>
-                          <span className="text-cyan-400 font-bold">{distFormatted}</span>
-                          <span>•</span>
-                          <span className="text-emerald-400">Connected ●</span>
-                        </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                        <span className="text-cyan-400">{distFormatted}</span>
+                        <span>•</span>
+                        <span className="text-emerald-400">Connected</span>
                       </div>
                     </div>
-
-                    {gmapsNavUrl && (
-                      <a
-                        href={gmapsNavUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 font-mono font-bold text-xs flex items-center gap-1.5 transition-all self-end sm:self-auto cursor-pointer"
-                        title={`Open Google Maps directions to ${m.name}`}
-                      >
-                        <Navigation className="w-3.5 h-3.5" />
-                        <span>Navigate in Maps</span>
-                      </a>
-                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* ─────────────────────────────────────────────────────────────
-            STATE 2: DISCONNECTED / SIMPLE 1-TAP ENTRY
-        ───────────────────────────────────────────────────────────── */
-        <div className="space-y-5">
-          {/* Clean Header Bar */}
-          <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${cardBg}`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-400 flex items-center justify-center font-black">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="text-base sm:text-lg font-heading font-black uppercase tracking-tight">
-                  Crew Group Rides
-                </h1>
-                <p className={`text-xs font-mono ${subTextColor}`}>
-                  Live phone-to-phone GPS radar for motorcycle squads
-                </p>
-              </div>
-            </div>
 
-            {/* Rider Handle Pill */}
-            <div className="flex items-center gap-2">
-              {isEditingName ? (
-                <div className="flex items-center gap-1 bg-slate-900 border border-cyan-400 rounded-xl p-1">
+                  {gmapsUrl && (
+                    <a
+                      href={gmapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1"
+                    >
+                      <Navigation className="w-3 h-3" />
+                      <span>Directions</span>
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          DISCONNECTED: COMPACT FLOATING ACTION SHEET (Docks above mobile nav)
+      ───────────────────────────────────────────────────────────── */}
+      {!isConnected && (
+        <div className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-96 z-20 pointer-events-auto">
+          <div className="p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-slate-700/80 shadow-2xl space-y-2.5 text-xs font-mono">
+            
+            {/* Header: Callsign Tag & Inline Quick Edit */}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <span className="font-heading font-black text-white text-xs uppercase tracking-wider">
+                  Crew Radar
+                </span>
+              </div>
+              {isEditingPreflightHandle ? (
+                <div className="flex items-center gap-1">
                   <input
                     type="text"
-                    maxLength={18}
-                    value={tempName}
-                    onChange={e => setTempName(e.target.value)}
-                    placeholder="Rider handle..."
-                    className="px-2 py-1 bg-transparent text-xs font-mono font-bold text-white focus:outline-none w-28"
+                    maxLength={15}
+                    value={preflightHandle}
+                    onChange={e => setPreflightHandle(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        if (preflightHandle.trim()) onUpdateRiderName(preflightHandle.trim());
+                        setIsEditingPreflightHandle(false);
+                      }
+                      if (e.key === 'Escape') setIsEditingPreflightHandle(false);
+                    }}
+                    className="bg-slate-900 border border-cyan-400 px-1.5 py-0.5 rounded text-[11px] text-white font-mono w-24 focus:outline-none"
                     autoFocus
                   />
                   <button
-                    onClick={handleSaveRiderName}
-                    className="px-2.5 py-1 bg-cyan-500 text-slate-950 font-bold text-xs rounded-lg cursor-pointer"
+                    onClick={() => {
+                      if (preflightHandle.trim()) onUpdateRiderName(preflightHandle.trim());
+                      setIsEditingPreflightHandle(false);
+                    }}
+                    className="px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-bold text-[9px] cursor-pointer"
                   >
-                    Save
+                    OK
                   </button>
                 </div>
               ) : (
                 <button
-                  onClick={() => setIsEditingName(true)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer ${
-                    isLight 
-                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' 
-                      : 'bg-[#0d131a] hover:bg-[#182330] border-[#223140] text-cyan-400'
-                  }`}
-                  title="Change your rider handle"
+                  onClick={() => {
+                    setPreflightHandle(riderName);
+                    setIsEditingPreflightHandle(true);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Click to customize your rider handle before joining"
                 >
-                  <div className="w-5 h-5 rounded-md bg-cyan-500 text-slate-950 flex items-center justify-center text-[10px] font-black">
-                    {riderName.charAt(0).toUpperCase()}
-                  </div>
-                  <span>{riderName}</span>
-                  <Edit3 className="w-3 h-3 opacity-60" />
+                  <span>Callsign: <strong className="text-cyan-300 underline">{riderName}</strong></span>
+                  <Edit3 className="w-2.5 h-2.5 text-slate-500" />
                 </button>
               )}
             </div>
-          </div>
 
-          {/* Connection Error Notification */}
-          {statusMessage && connectionStatus === 'error' && (
-            <div className="p-3 rounded-xl border bg-rose-500/10 border-rose-500/30 text-rose-300 text-xs font-mono text-center">
-              {statusMessage}
-            </div>
-          )}
-
-          {/* 2 Primary Action Cards: Host or Join */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Host Card */}
-            <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${cardBg}`}>
-              <div>
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center mb-2.5">
-                  <Radio className="w-4 h-4" />
-                </div>
-                <h3 className="font-heading font-black text-base uppercase">
-                  Start Instant Crew Ride
-                </h3>
-                <p className={`text-xs font-mono mt-1 ${subTextColor}`}>
-                  Creates an instant room. Share the 1-tap WhatsApp link so friends join immediately on the live map.
-                </p>
+            {/* Error banner if connecting failed */}
+            {statusMessage && connectionStatus === 'error' && (
+              <div className="p-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] text-center">
+                {statusMessage}
               </div>
+            )}
 
+            {/* Instant 1-Tap Host & Inline Code Join */}
+            <div className="space-y-2">
               <button
-                onClick={() => onCreateRoom(riderName)}
+                onClick={() => {
+                  if (onStartRecording && !isRecording) onStartRecording();
+                  onCreateRoom(riderName);
+                }}
                 disabled={connectionStatus === 'connecting'}
-                className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50 mt-2 active:scale-98"
+                className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all disabled:opacity-50 active:scale-98"
               >
-                <Radio className="w-4 h-4 animate-pulse" />
-                <span>{connectionStatus === 'connecting' ? 'Starting...' : 'Host New Crew Ride'}</span>
+                <Radio className="w-3.5 h-3.5" />
+                <span>{connectionStatus === 'connecting' ? 'Starting...' : 'Start Instant Crew Ride'}</span>
               </button>
-            </div>
 
-            {/* Join with Code Card */}
-            <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${cardBg}`}>
-              <div>
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mb-2.5">
-                  <Users className="w-4 h-4" />
-                </div>
-                <h3 className="font-heading font-black text-base uppercase">
-                  Join with Room Code
-                </h3>
-                <p className={`text-xs font-mono mt-1 ${subTextColor}`}>
-                  Got a code from your ride leader? Enter it below to link onto the group radar.
-                </p>
-              </div>
-
-              <div className="space-y-2 mt-2">
+              <div className="flex items-center gap-1.5">
                 <input
                   type="text"
                   maxLength={10}
                   value={quickCodeInput}
                   onChange={e => setQuickCodeInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. SUNDAY, CREW48"
-                  className="w-full py-2.5 px-3 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono font-bold text-xs uppercase tracking-widest focus:outline-none focus:border-cyan-400"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && quickCodeInput.trim() && connectionStatus !== 'connecting') {
+                      if (onStartRecording && !isRecording) onStartRecording();
+                      onJoinRoom(quickCodeInput, riderName);
+                    }
+                  }}
+                  placeholder="Enter Room Code..."
+                  className="flex-1 py-1.5 px-2.5 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono font-bold text-xs uppercase tracking-wider focus:outline-none focus:border-cyan-400"
                 />
                 <button
-                  onClick={() => onJoinRoom(quickCodeInput, riderName)}
+                  onClick={() => {
+                    if (onStartRecording && !isRecording) onStartRecording();
+                    onJoinRoom(quickCodeInput, riderName);
+                  }}
                   disabled={!quickCodeInput.trim() || connectionStatus === 'connecting'}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all disabled:opacity-40 active:scale-98"
+                  className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs cursor-pointer shadow-xs transition-all disabled:opacity-40 shrink-0"
                 >
-                  <Users className="w-4 h-4" />
-                  <span>Join Crew Ride</span>
+                  Join
                 </button>
               </div>
             </div>
-          </div>
 
-          {/* Saved Riding Squads (Preset Groups) */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-heading font-black text-sm uppercase tracking-wider text-cyan-400 flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-cyan-400" />
-                  <span>Saved Riding Squads</span>
-                </h2>
-                <p className={`text-[11px] font-mono ${subTextColor}`}>
-                  Quick 1-tap connect for regular weekend squads
-                </p>
-              </div>
-
-              <button
-                onClick={() => setIsCreatingNewCrew(!isCreatingNewCrew)}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400 text-cyan-300 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isCreatingNewCrew ? 'Cancel' : 'New Squad'}</span>
-              </button>
-            </div>
-
-            {/* Create New Squad Form */}
-            {isCreatingNewCrew && (
-              <form onSubmit={handleCreateCrew} className={`p-4 rounded-2xl border space-y-3 ${innerCardBg}`}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className={`block font-mono text-[10px] font-bold uppercase mb-1 ${subTextColor}`}>
-                      Squad Name:
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={25}
-                      value={newCrewName}
-                      onChange={e => setNewCrewName(e.target.value)}
-                      placeholder="e.g. Sunday Ghats Riders"
-                      className="w-full py-2 px-3 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-cyan-400"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className={`block font-mono text-[10px] font-bold uppercase mb-1 ${subTextColor}`}>
-                      Custom Code (Optional):
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={8}
-                      value={newCrewCode}
-                      onChange={e => setNewCrewCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. GHATS, SUNDAY"
-                      className="w-full py-2 px-3 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono text-xs uppercase tracking-wider focus:outline-none focus:border-cyan-400"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save Squad</span>
-                </button>
-              </form>
-            )}
-
-            {/* Saved Squad Cards */}
+            {/* Saved Squads Quick Chips (if any exist) */}
             {savedCrews.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {savedCrews.map(crew => (
-                  <div key={crew.id} className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${cardBg}`}>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-heading font-black text-sm uppercase text-white truncate">
-                          {crew.name}
-                        </h3>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30">
-                          {crew.code}
-                        </span>
-                      </div>
-                      <p className={`text-[11px] font-mono mt-0.5 ${subTextColor}`}>
-                        {crew.members.join(', ')}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => onCreateRoom(riderName, crew.code)}
-                        disabled={connectionStatus === 'connecting'}
-                        className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
-                      >
-                        <Radio className="w-3 h-3" />
-                        <span>Start</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleShareWhatsAppCrew(crew.code, crew.name)}
-                        className="p-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 cursor-pointer"
-                        title="Share on WhatsApp"
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteCrew(crew.id)}
-                        className="p-2 text-slate-500 hover:text-rose-400 cursor-pointer"
-                        title="Delete squad"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+              <div className="pt-1 border-t border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                <span className="text-[10px] text-slate-500 shrink-0 font-bold">SAVED:</span>
+                {savedCrews.map(c => (
+                  <div key={c.id} className="inline-flex items-center rounded-full bg-slate-900 border border-slate-700 hover:border-slate-600 shrink-0 overflow-hidden">
+                    <button
+                      onClick={() => {
+                        if (onStartRecording && !isRecording) onStartRecording();
+                        onCreateRoom(riderName, c.code);
+                      }}
+                      className="pl-2 pr-1 py-0.5 hover:bg-slate-800 text-[10px] text-slate-300 hover:text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      title={`Launch ${c.name} (${c.code})`}
+                    >
+                      <span>{c.name}</span>
+                      <span className="text-[8px] text-cyan-400 font-mono">({c.code})</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCrew(c.id);
+                      }}
+                      className="px-1.5 py-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
+                      title="Delete squad"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Mini Squad Creator Toggle */}
+            <div className="flex items-center justify-between pt-0.5 text-[10px] text-slate-500">
+              <button
+                onClick={() => setIsCreatingNewCrew(!isCreatingNewCrew)}
+                className="hover:text-cyan-400 flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>{isCreatingNewCrew ? 'Close Squad Creator' : 'Save Recurring Squad'}</span>
+              </button>
+            </div>
+
+            {/* Inline Mini Squad Creator Form */}
+            {isCreatingNewCrew && (
+              <form onSubmit={handleCreateCrew} className="p-2 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5 text-[10px]">
+                <input
+                  type="text"
+                  maxLength={20}
+                  value={newCrewName}
+                  onChange={e => setNewCrewName(e.target.value)}
+                  placeholder="Squad Name (e.g. Sunday Ghats)"
+                  className="w-full py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white focus:outline-none focus:border-cyan-400"
+                  required
+                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    maxLength={8}
+                    value={newCrewCode}
+                    onChange={e => setNewCrewCode(e.target.value.toUpperCase())}
+                    placeholder="Custom Code (e.g. GHATS)"
+                    className="flex-1 py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white uppercase focus:outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    type="submit"
+                    className="px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+            )}
+
           </div>
         </div>
       )}
+
+      {/* Floating Formation List Toggle (When connected with multiple members) */}
+      {isConnected && members.length > 0 && connectedViewMode === 'map' && (
+        <div className="absolute top-12 left-2 z-10 pointer-events-auto">
+          <button
+            onClick={() => {
+              triggerHaptic(15);
+              setConnectedViewMode('list');
+            }}
+            className="h-7 px-2 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-400 hover:text-white text-[10px] font-mono font-bold flex items-center gap-1 shadow-md cursor-pointer transition-colors"
+            title="View formation list"
+          >
+            <Compass className="w-3 h-3 text-cyan-400" />
+            <span>List ({members.length + 1})</span>
+          </button>
+        </div>
+      )}
+
     </div>
   );
 };

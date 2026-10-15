@@ -26,8 +26,11 @@ import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { useGroupRide } from './hooks/useGroupRide';
+import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
-import { exportAnalysisToGPX, downloadFile } from './utils/gpxExporter';
+import { exportAnalysisToGPX, exportPointsToGPX, downloadFile } from './utils/gpxExporter';
+import { triggerHaptic } from './utils/audioChimes';
+import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
 import { 
   SAMPLE_GPX_DATA, 
@@ -48,13 +51,26 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('crew');
   // Don't preload demo ride — let landing page be the entry point
   const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
-  // Session-only toast: shown briefly when a ride is loaded
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
   const [isRecordingLive, setIsRecordingLive] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGarageOpen, setIsGarageOpen] = useState<boolean>(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
+
+  // Global Unit System (Metric km/h <-> Imperial mph)
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
+
+  const toggleUnitSystem = () => {
+    setUnitSystem(prev => {
+      const next: UnitSystem = prev === 'metric' ? 'imperial' : 'metric';
+      setStoredUnitSystem(next);
+      return next;
+    });
+  };
+
+  // Unified Single Source of Truth for GPS Tracking across Cockpit & Crew
+  const [gps, controls] = useGPS(unitSystem);
 
   // Global Theme State
   const [theme, setTheme] = useState<AppTheme>(() => {
@@ -66,17 +82,6 @@ export default function App() {
     setTheme(prev => {
       const next = prev === 'dark' ? 'light' : 'dark';
       localStorage.setItem('sasta_theme', next);
-      return next;
-    });
-  };
-
-  // Global Unit System (Metric km/h <-> Imperial mph)
-  const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
-
-  const toggleUnitSystem = () => {
-    setUnitSystem(prev => {
-      const next: UnitSystem = prev === 'metric' ? 'imperial' : 'metric';
-      setStoredUnitSystem(next);
       return next;
     });
   };
@@ -104,36 +109,50 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
   // Check URL query for room invite link (e.g. ?room=SUNDAY or ?crew=SUNDAY)
-  // Zero-friction 1-tap auto-join: joins immediately and switches to crew view!
+  // Zero-friction 1-tap auto-join: joins immediately, arms recording, and switches to crew view!
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room') || params.get('crew');
     if (roomParam) {
       const cleanCode = roomParam.trim().toUpperCase();
+      controls.startNewRecording();
+      setIsRecordingLive(true);
       groupRide.joinRoom(cleanCode);
       setCurrentTab('crew');
-      setSessionNotice(`🏍️ Connecting to Crew "${cleanCode}"... Tap your handle to edit anytime.`);
+      setSessionNotice(`🏍️ Joined Crew "${cleanCode}" & route logging active! Tap your handle to edit.`);
       setTimeout(() => setSessionNotice(null), 5000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
       } catch {}
     }
-  }, []);
+  }, [controls, groupRide]);
 
-  // Stable location update handler fed by useGPS inside LiveCockpitLogger (which remains mounted)
+  // Synchronize GPS coordinates directly from unified hook into groupRide and myLocation
+  useEffect(() => {
+    if (gps.currentCoords) {
+      setMyLocation({
+        lat: gps.currentCoords.lat,
+        lon: gps.currentCoords.lon,
+        speedKmh: gps.currentSpeedKmh,
+        heading: gps.currentHeading,
+      });
+      groupRide.updateMyLocation(
+        gps.currentCoords.lat,
+        gps.currentCoords.lon,
+        gps.currentSpeedKmh,
+        gps.currentHeading
+      );
+    }
+  }, [
+    gps.currentCoords?.lat,
+    gps.currentCoords?.lon,
+    gps.currentSpeedKmh,
+    gps.currentHeading,
+    groupRide.updateMyLocation,
+  ]);
+  // Backward-compatible location update handler
   const handleUpdateMyLocation = useCallback((lat: number, lon: number, kmh: number, bearing: number | null) => {
-    setMyLocation(prev => {
-      if (
-        prev &&
-        Math.abs(prev.lat - lat) < 0.000005 &&
-        Math.abs(prev.lon - lon) < 0.000005 &&
-        Math.abs(prev.speedKmh - kmh) < 0.3 &&
-        prev.heading === bearing
-      ) {
-        return prev;
-      }
-      return { lat, lon, speedKmh: kmh, heading: bearing };
-    });
+    setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
     groupRide.updateMyLocation(lat, lon, kmh, bearing);
   }, [groupRide.updateMyLocation]);
 
@@ -237,7 +256,7 @@ export default function App() {
     }
   };
 
-  const handleLiveRideRecorded = (gpxText: string) => {
+  const handleLiveRideRecorded = useCallback((gpxText: string) => {
     try {
       const parsed = parseGPX(gpxText);
       const rideName = `Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
@@ -264,7 +283,33 @@ export default function App() {
     } catch (err: any) {
       setErrorMessage('Error analyzing recorded ride: ' + err.message);
     }
-  };
+  }, []);
+
+  const handleStartRecording = useCallback(() => {
+    controls.startNewRecording();
+    setIsRecordingLive(true);
+    triggerHaptic(50);
+    setSessionNotice('🔴 Route tracking active — recording to your Garage.');
+    setTimeout(() => setSessionNotice(null), 4000);
+  }, [controls]);
+
+  const handleStopAndSaveRecording = useCallback(() => {
+    triggerHaptic(50);
+    if (gps.pointsCount < 2) {
+      alert('Cannot save ride: At least 2 GPS coordinate points are required to plot a route. Move outdoors with an open sky view.');
+      return;
+    }
+    const pts = controls.stopAndGetPoints();
+    setIsRecordingLive(false);
+    if (pts.length < 2) return;
+
+    const gpxString = exportPointsToGPX(
+      `Motorcycle Ride — ${new Date().toLocaleDateString()}`,
+      pts,
+      gps.markedWaypoints
+    );
+    handleLiveRideRecorded(gpxString);
+  }, [controls, gps.pointsCount, gps.markedWaypoints, handleLiveRideRecorded]);
 
   const triggerUploadClick = () => {
     globalFileInputRef.current?.click();
@@ -499,8 +544,15 @@ export default function App() {
         canInstallPwa={Boolean(deferredInstallPrompt)}
       />
 
-      {/* Main Container — pb-28 ensures fixed mobile bottom nav never covers content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 sm:pt-6 pb-28 sm:pb-8 space-y-4 sm:space-y-6">
+      {/* In-App Browser Helper Banner (e.g. WhatsApp / Instagram WebView) */}
+      <InAppBrowserBanner />
+
+      {/* Main Container */}
+      <main className={`w-full transition-all ${
+        currentTab === 'crew'
+          ? 'p-1 sm:p-2 max-w-none'
+          : 'max-w-7xl mx-auto px-3 sm:px-6 pt-2 sm:pt-4 pb-28 sm:pb-8 space-y-4 sm:space-y-6'
+      }`}>
         {/* Error message alert */}
         {errorMessage && (
           <div className={`p-3 border font-sans text-xs rounded-lg flex items-center justify-between shadow-sm ${
@@ -535,7 +587,10 @@ export default function App() {
             <LandingView
               onFileLoaded={handleFileLoaded}
               onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
-              onStartRecording={() => setCurrentTab('cockpit')}
+              onStartRecording={() => {
+                handleStartRecording();
+                setCurrentTab('cockpit');
+              }}
               theme={theme}
               activeRideName={analysis ? analysis.name : null}
               activeRideDistanceKm={analysis ? analysis.totalDistanceKm : null}
@@ -553,7 +608,10 @@ export default function App() {
             <LandingView
               onFileLoaded={handleFileLoaded}
               onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
-              onStartRecording={() => setCurrentTab('cockpit')}
+              onStartRecording={() => {
+                handleStartRecording();
+                setCurrentTab('cockpit');
+              }}
               theme={theme}
               activeRideName={null}
               activeRideDistanceKm={null}
@@ -773,8 +831,10 @@ export default function App() {
         <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300' : 'hidden'}>
           <LiveCockpitLogger
             onRideRecorded={handleLiveRideRecorded}
-            isRecording={isRecordingLive}
+            isRecording={gps.isRecording}
             setIsRecording={setIsRecordingLive}
+            gps={gps}
+            controls={controls}
             theme={theme}
             unitSystem={unitSystem}
             groupRideConnected={groupRide.isConnected}
@@ -810,6 +870,11 @@ export default function App() {
               onGoToCockpit={() => setCurrentTab('cockpit')}
               theme={theme}
               unitSystem={unitSystem}
+              isRecording={gps.isRecording}
+              onStartRecording={handleStartRecording}
+              onStopRecording={handleStopAndSaveRecording}
+              pointsCount={gps.pointsCount}
+              totalDistanceMeters={gps.totalDistanceMeters}
             />
           </div>
         )}
@@ -843,7 +908,7 @@ export default function App() {
           <div className="relative">
             <Users className="w-5 h-5" />
             {groupRide.isConnected && (
-              <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-0.5 -right-1 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-0.5 -right-1" />
             )}
           </div>
           <span className="text-[10px] uppercase tracking-wider font-bold">Crew</span>

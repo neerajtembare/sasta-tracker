@@ -75,7 +75,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 }
 
 // ─── Hook ────────────────────────────────────────────────────
-export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControls] {
+export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = true): [GPSState, GPSControls] {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -190,6 +190,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
 
   // ── Crash-recovery check (using persistent localStorage) ──
   useEffect(() => {
+    if (!enabled) return;
     try {
       // Check persistent v1 storage first, then legacy sessionStorage
       let raw = localStorage.getItem('sasta_live_recovery_v1');
@@ -204,7 +205,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
         }
       }
     } catch {}
-  }, [isRecording]);
+  }, [enabled, isRecording]);
 
   // ── Wake-lock ──
   useEffect(() => {
@@ -265,6 +266,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
 
   // ── Orientation listener (gyroscope) ──
   useEffect(() => {
+    if (!enabled) return;
     const handleOrientation = (e: DeviceOrientationEvent) => {
       if (e.gamma !== null) {
         const roll = Math.round(e.gamma);
@@ -286,7 +288,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation);
     };
-  }, [mountMode, tareOffset]);
+  }, [enabled, mountMode, tareOffset]);
 
   // ── Cleanup GPS watcher ──
   useEffect(() => {
@@ -310,10 +312,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
     watchIdRef.current = navigator.geolocation.watchPosition(
       position => {
         const { latitude, longitude, speed, heading, altitude, accuracy } = position.coords;
+        // Clear any previous transient GPS error when a fix is successfully acquired
+        setGpsError(null);
 
-        // 1. Accuracy filter: if satellite fix is already locked (> 3 points) and current accuracy is poor (> 35m),
-        // drop this fix to eliminate false 150m flyover/tunnel drift.
-        if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 35) {
+        // 1. Accuracy filter: if satellite fix is already locked (> 3 points) and current accuracy is poor (> 65m),
+        // drop this fix to eliminate false cell-tower triangulation or Wi-Fi jumps.
+        if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 65) {
           return;
         }
 
@@ -355,9 +359,14 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
               latitude,
               longitude,
             );
-            if (dMeters > 1.5 && dMeters < 800) {
-              totalDistanceMetersRef.current += dMeters;
-              setTotalDistanceMeters(totalDistanceMetersRef.current);
+            // Move deadband: only accumulate if moved > 1.5m to avoid GPS jitter when parked.
+            // If moved > 1.5m, accumulate distance if < 1500m (smooth tunnel exit) and ALWAYS update lastPositionRef
+            // so distance tracking never permanently deadlocks after tunnels or temporary signal gaps!
+            if (dMeters > 1.5) {
+              if (dMeters < 1500) {
+                totalDistanceMetersRef.current += dMeters;
+                setTotalDistanceMeters(totalDistanceMetersRef.current);
+              }
               lastPositionRef.current = { lat: latitude, lon: longitude };
             }
           } else {
@@ -429,15 +438,20 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
         let userMsg = 'GPS location acquisition failed.';
         if (error.code === 1) {
           userMsg = 'Location permission denied. Please allow location permissions in your browser site settings and ensure you are using HTTPS.';
+          setGpsError(userMsg);
+          playChime('warning');
         } else if (error.code === 2) {
           userMsg = 'No GPS satellite fix available. Please move outdoors with a clear sky view and verify Location is turned on.';
+          setGpsError(userMsg);
+          if (isRecordingRef.current) playChime('warning');
         } else if (error.code === 3) {
           userMsg = 'GPS acquisition timed out. Searching for satellite lock outdoors...';
+          setGpsError(userMsg);
+          // Do not play warning chime on normal standby timeouts
         } else if (error.message) {
           userMsg = error.message;
+          setGpsError(userMsg);
         }
-        setGpsError(userMsg);
-        playChime('warning');
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 },
     );
@@ -445,6 +459,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
 
   // Auto-start standby GPS fix on mount so satellite lock & accuracy are ready before user hits start
   useEffect(() => {
+    if (!enabled) return;
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       startGpsWatch();
     }
@@ -454,7 +469,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
         watchIdRef.current = null;
       }
     };
-  }, [startGpsWatch]);
+  }, [enabled, startGpsWatch]);
 
   // 1-second inaudible audio loop that tricks mobile browsers (iOS WebKit & Android Chrome)
   // into keeping background geolocation & JS timers active when phone screen locks in a pocket.
@@ -543,16 +558,17 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
   }, [pauseSilentAudio]);
 
   const markWaypointFn = useCallback((label: string) => {
-    if (!lastPositionRef.current) return;
+    const pos = lastPositionRef.current || currentCoords;
+    if (!pos) return;
     playChime('waypoint');
     const wp = {
       name: `${label} @ ${formatSec(elapsedSecondsRef.current)}`,
-      lat: lastPositionRef.current.lat,
-      lon: lastPositionRef.current.lon,
+      lat: pos.lat,
+      lon: pos.lon,
       ele: currentAltitude,
     };
     setMarkedWaypoints(prev => [...prev, wp]);
-  }, [currentAltitude]);
+  }, [currentAltitude, currentCoords]);
 
   const handleTareAngle = useCallback(async () => {
     await requestDeviceOrientationPermission();
@@ -603,7 +619,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
     }
     setHasRecoverableRide(false);
     setRecoverableData(null);
+    setIsRecording(true);
+    setIsPaused(false);
+    isRecordingRef.current = true;
+    isPausedRef.current = false;
     playSilentAudio();
+    playChime('resume');
     startGpsWatch();
   }, [recoverableData, startGpsWatch, playSilentAudio]);
 

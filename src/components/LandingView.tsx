@@ -124,7 +124,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-sky-400">
                   Ride in Memory
                 </span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               </div>
               <p className="font-heading font-black text-sm truncate">
                 {activeRideName}
@@ -202,7 +202,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
           <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center transition-transform group-hover:scale-110">
             <Radio className="w-10 h-10 text-emerald-500" />
           </div>
-          <span className="absolute inset-0 rounded-full border-2 border-emerald-400 animate-ping opacity-30" />
+          <span className="absolute inset-0 rounded-full border-2 border-emerald-400/40" />
         </div>
 
         <h2 className="font-heading font-black text-xl sm:text-2xl mb-1">

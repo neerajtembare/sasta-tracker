@@ -76,17 +76,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           : 'bg-[#0d131a]/95 border-[#1e2a38]'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-11 sm:h-12 flex items-center justify-between gap-2">
         {/* Brand identity */}
         <button 
           id="btn-nav-home"
           type="button"
           onClick={onHomeClick}
           title="Return to Home / Upload"
-          className="flex items-center gap-2 sm:gap-3 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 focus:outline-hidden focus:ring-2 focus:ring-sky-500 rounded-lg"
+          className="flex items-center gap-2 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 focus:outline-hidden rounded-lg"
         >
           <div
-            className={`w-8 h-8 sm:w-9 sm:h-9 border rounded-lg flex items-center justify-center text-sm sm:text-base shadow-sm ${
+            className={`w-7 h-7 sm:w-8 sm:h-8 border rounded-lg flex items-center justify-center text-xs sm:text-sm shadow-xs ${
               isLight
                 ? 'bg-slate-100 border-sky-500/40 text-slate-800'
                 : 'bg-[#131b24] border-sky-500/40 text-white'
@@ -94,26 +94,24 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             🏍️
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`font-heading font-black tracking-tight text-sm sm:text-lg ${
-                  isLight ? 'text-slate-900' : 'text-white'
-                }`}
-              >
-                THROTTLE<span className="text-sky-500">LOG</span>
-              </span>
-              <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-mono font-bold bg-sky-500/15 text-sky-500 border border-sky-500/30 rounded uppercase tracking-wider">
-                FREE
-              </span>
-            </div>
-            <p
-              className={`text-[10px] sm:text-[11px] font-mono truncate max-w-[120px] sm:max-w-xs ${
-                isLight ? 'text-slate-500' : 'text-[#8f9ca8]'
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`font-heading font-black tracking-tight text-xs sm:text-base ${
+                isLight ? 'text-slate-900' : 'text-white'
               }`}
             >
-              {rideName}
-            </p>
+              THROTTLE<span className="text-sky-500">LOG</span>
+            </span>
+            <span className="hidden sm:inline-block px-1 py-0.2 text-[8px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded uppercase tracking-wider">
+              FREE
+            </span>
+            {currentTab !== 'crew' && hasActiveRide && (
+              <span className={`hidden md:inline-block text-[10px] font-mono truncate max-w-[150px] px-1.5 py-0.5 rounded ${
+                isLight ? 'bg-slate-100 text-slate-600' : 'bg-slate-800/80 text-slate-300'
+              }`}>
+                {rideName}
+              </span>
+            )}
           </div>
         </button>
 
@@ -138,7 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Users className="w-3.5 h-3.5" />
             <span>Crew Radar</span>
             {groupRideConnected && (
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
             )}
           </button>
 
@@ -157,7 +155,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Radio className="w-3.5 h-3.5" />
             <span>Ride Cockpit</span>
             {isRecordingLive && (
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-rose-500/30" />
             )}
           </button>
 
@@ -206,14 +204,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-toggle-units"
               onClick={onToggleUnitSystem}
-              title={`Active Units: ${unitSystem === 'imperial' ? 'Imperial (mph, mi, ft)' : 'Metric (km/h, km, m)'}. Click to switch.`}
-              className={`px-2 py-1.5 rounded-lg border font-mono font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+              title={`Active Units: ${unitSystem === 'imperial' ? 'Imperial (mph)' : 'Metric (km/h)'}. Click to switch.`}
+              className={`px-2 py-1 rounded-lg border font-mono font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
                 isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
                   : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-200'
               }`}
             >
-              <span className="text-[10px] text-slate-400 font-normal">UNITS:</span>
               <span className={`font-black ${unitSystem === 'imperial' ? 'text-amber-400' : 'text-sky-400'}`}>
                 {unitSystem === 'imperial' ? 'MPH' : 'KM/H'}
               </span>
@@ -224,31 +221,31 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="btn-toggle-theme"
             onClick={onToggleTheme}
-            title={isLight ? 'Switch to Dark Mode' : 'Switch to High-Contrast Light Mode'}
-            className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
+            title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
               isLight
                 ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                 : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-amber-400'
             }`}
           >
-            {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {isLight ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
 
           {onInstallPwa && (
             <button
               id="btn-install-pwa"
               onClick={onInstallPwa}
-              title="Install ThrottleLog on your home screen for full-screen offline use"
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+              title="Install ThrottleLog"
+              className={`flex items-center gap-1 px-2 py-1 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                 canInstallPwa
-                  ? 'bg-sky-500/20 hover:bg-sky-500/30 border-sky-400 text-sky-400 shadow-xs'
+                  ? 'bg-sky-500/20 hover:bg-sky-500/30 border-sky-400 text-sky-400'
                   : isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                   : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
               }`}
             >
-              <Smartphone className="w-3.5 h-3.5 text-sky-400" />
-              <span className="hidden md:inline">Install App</span>
+              <Smartphone className="w-3 h-3 text-sky-400" />
+              <span className="hidden md:inline">Install</span>
             </button>
           )}
 
@@ -256,10 +253,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="btn-upload-gpx"
             onClick={onUploadClick}
             title="Upload GPX File"
-            className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md cursor-pointer font-sans shrink-0"
+            className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Upload GPX</span>
+            <span className="hidden sm:inline">Upload</span>
           </button>
         </div>
       </div>

@@ -122,6 +122,14 @@ export function useGroupRide() {
   const myLocationRef = useRef<{ lat: number; lon: number } | null>(null);
   const retryTimeoutRef = useRef<any>(null);
   const retryCountRef = useRef<number>(0);
+  const isHostRef = useRef<boolean>(false);
+  const riderNameRef = useRef<string>(riderName);
+  const isManualLeaveRef = useRef<boolean>(false);
+  const reconnectIntervalRef = useRef<any>(null);
+  const activeRoomCodeRef = useRef<string>('');
+
+  isHostRef.current = isHost;
+  riderNameRef.current = riderName;
 
   // Broadcast location or message to all connected peers
   const broadcastMessage = useCallback((payload: any) => {
@@ -271,6 +279,10 @@ export function useGroupRide() {
   // Setup connection event handlers
   const setupConnection = useCallback((conn: DataConnection) => {
     conn.on('open', () => {
+      if (reconnectIntervalRef.current) {
+        clearInterval(reconnectIntervalRef.current);
+        reconnectIntervalRef.current = null;
+      }
       connectionsRef.current.set(conn.peer, conn);
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -278,17 +290,19 @@ export function useGroupRide() {
 
       // Immediately send greeting identity so rider appears on HUD without waiting for GPS movement
       const myColor = getRiderColor(riderId);
+      const activeName = riderNameRef.current || 'Rider';
+      const activeIsHost = isHostRef.current;
       try {
         conn.send({
           type: 'GREETING',
           payload: {
             riderId,
-            name: riderName || 'Rider',
+            name: activeName,
             color: myColor,
-            isHost,
+            isHost: activeIsHost,
             location: myLocationRef.current ? {
               riderId,
-              name: riderName || 'Rider',
+              name: activeName,
               color: myColor,
               lat: myLocationRef.current.lat,
               lon: myLocationRef.current.lon,
@@ -301,8 +315,8 @@ export function useGroupRide() {
         });
       } catch {}
 
-      // If we are host, announce other peers to newly connected rider
-      if (isHost) {
+      // If we are host, announce other peers to newly connected rider so all members mesh together
+      if (activeIsHost) {
         const allPeerIds = Array.from(connectionsRef.current.keys()).concat(peerRef.current?.id || '');
         conn.send({ type: 'PEER_LIST', peers: allPeerIds });
       }
@@ -324,91 +338,71 @@ export function useGroupRide() {
           return next;
         });
       }
+
+      // Check if client lost connection to host / all peers
+      if (!isHostRef.current && connectionsRef.current.size === 0) {
+        setIsConnected(false);
+        if (isManualLeaveRef.current || !activeRoomCodeRef.current) {
+          setConnectionStatus('disconnected');
+          setStatusMessage('Disconnected from group ride.');
+        } else {
+          // Cellular dropout detected — trigger silent auto-reconnect loop
+          setConnectionStatus('connecting');
+          setStatusMessage('Cellular signal dropped. Auto-reconnecting in background...');
+
+          if (!reconnectIntervalRef.current) {
+            let attempts = 0;
+            reconnectIntervalRef.current = setInterval(() => {
+              if (isManualLeaveRef.current || !activeRoomCodeRef.current || attempts >= 8) {
+                if (reconnectIntervalRef.current) clearInterval(reconnectIntervalRef.current);
+                reconnectIntervalRef.current = null;
+                if (attempts >= 8) {
+                  setConnectionStatus('disconnected');
+                  setStatusMessage('Could not reconnect to crew. Tap to rejoin.');
+                }
+                return;
+              }
+              attempts += 1;
+              setStatusMessage(`Signal searching... Reconnecting (Attempt ${attempts}/8)...`);
+              joinRoom(activeRoomCodeRef.current, riderNameRef.current);
+            }, 6000);
+          }
+        }
+      } else {
+        setStatusMessage(`Connected with ${connectionsRef.current.size} rider(s)`);
+      }
     });
 
     conn.on('error', (err) => {
       console.warn('Connection error with peer:', conn.peer, err);
     });
-  }, [handleIncomingData, isHost, riderId, riderName]);
-
-  // Create a new Group Ride as Host
-  const createRoom = useCallback((name: string, customCode?: string) => {
-    const cleanName = name.trim() || generateRandomRiderName();
-    setRiderName(cleanName);
-    try {
-      localStorage.setItem('sasta_rider_name', cleanName);
-      localStorage.setItem('throttlelog_rider_name', cleanName);
-    } catch {}
-
-    const generated = customCode 
-      ? sanitizeCode(customCode) 
-      : 'RIDE' + Math.floor(1000 + Math.random() * 9000);
-    
-    setRoomCode(generated);
-    setIsHost(true);
-    setConnectionStatus('connecting');
-    setStatusMessage('Starting private group room...');
-
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    retryCountRef.current = 0;
-
-    if (peerRef.current) {
-      peerRef.current.destroy();
-    }
-
-    const hostPeerId = `sasta-${generated}-host`;
-    const peer = new Peer(hostPeerId, {
-      config: {
-        iceServers: ICE_SERVERS,
-      },
-    });
-
-    peer.on('open', () => {
-      setIsConnected(true);
-      setConnectionStatus('connected');
-      setStatusMessage(`Room ${generated} created! Share code or link with your crew.`);
-      playWaypointChime();
-    });
-
-    peer.on('connection', (conn) => {
-      setupConnection(conn);
-    });
-
-    peer.on('disconnected', () => {
-      try {
-        peer.reconnect();
-      } catch {}
-    });
-
-    peer.on('error', (err: any) => {
-      if (err.type === 'unavailable-id') {
-        setStatusMessage('Room code already in use. Generating alternate...');
-        createRoom(cleanName);
-      } else {
-        setConnectionStatus('error');
-        setStatusMessage(err.message || 'Peer connection error');
-      }
-    });
-
-    peerRef.current = peer;
-  }, [setupConnection]);
+  }, [handleIncomingData, riderId]);
 
   // Join an existing Group Ride with automatic 3x retry
   const joinRoom = useCallback((code: string, name?: string) => {
+    isManualLeaveRef.current = false;
+    if (reconnectIntervalRef.current) {
+      clearInterval(reconnectIntervalRef.current);
+      reconnectIntervalRef.current = null;
+    }
+
     const cleanCode = sanitizeCode(code);
     if (!cleanCode) {
       setStatusMessage('Please enter a valid 4-8 digit room code');
       return;
     }
-    const cleanName = (name && name.trim()) || riderName || generateRandomRiderName();
+    const cleanName = (name && name.trim()) || riderNameRef.current || generateRandomRiderName();
     setRiderName(cleanName);
+    riderNameRef.current = cleanName;
     try {
       localStorage.setItem('sasta_rider_name', cleanName);
       localStorage.setItem('throttlelog_rider_name', cleanName);
     } catch {}
 
     setRoomCode(cleanCode);
+    activeRoomCodeRef.current = cleanCode;
     setIsHost(false);
+    isHostRef.current = false;
     setConnectionStatus('connecting');
     setStatusMessage(`Connecting to room ${cleanCode}...`);
 
@@ -468,11 +462,88 @@ export function useGroupRide() {
     peerRef.current = peer;
   }, [riderId, riderName, setupConnection]);
 
+  // Create a new Group Ride as Host
+  const createRoom = useCallback((name: string, customCode?: string) => {
+    isManualLeaveRef.current = false;
+    if (reconnectIntervalRef.current) {
+      clearInterval(reconnectIntervalRef.current);
+      reconnectIntervalRef.current = null;
+    }
+
+    const cleanName = name.trim() || generateRandomRiderName();
+    setRiderName(cleanName);
+    riderNameRef.current = cleanName;
+    try {
+      localStorage.setItem('sasta_rider_name', cleanName);
+      localStorage.setItem('throttlelog_rider_name', cleanName);
+    } catch {}
+
+    const sanitized = customCode ? sanitizeCode(customCode) : '';
+    const generated = sanitized || ('RIDE' + Math.floor(1000 + Math.random() * 9000));
+    
+    setRoomCode(generated);
+    activeRoomCodeRef.current = generated;
+    setIsHost(true);
+    isHostRef.current = true;
+    setConnectionStatus('connecting');
+    setStatusMessage('Starting private group room...');
+
+    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+    retryCountRef.current = 0;
+
+    if (peerRef.current) {
+      peerRef.current.destroy();
+    }
+
+    const hostPeerId = `sasta-${generated}-host`;
+    const peer = new Peer(hostPeerId, {
+      config: {
+        iceServers: ICE_SERVERS,
+      },
+    });
+
+    peer.on('open', () => {
+      setIsConnected(true);
+      setConnectionStatus('connected');
+      setStatusMessage(`Room ${generated} created! Share code or link with your crew.`);
+      playWaypointChime();
+    });
+
+    peer.on('connection', (conn) => {
+      setupConnection(conn);
+    });
+
+    peer.on('disconnected', () => {
+      try {
+        peer.reconnect();
+      } catch {}
+    });
+
+    peer.on('error', (err: any) => {
+      if (err.type === 'unavailable-id') {
+        if (customCode) {
+          // A room with this custom squad code is already active! Seamlessly join the leader instead of abandoning the squad.
+          setStatusMessage(`Squad room "${generated}" is already active! Joining crew leader...`);
+          joinRoom(generated, cleanName);
+        } else {
+          setStatusMessage('Room code already in use. Generating alternate...');
+          createRoom(cleanName);
+        }
+      } else {
+        setConnectionStatus('error');
+        setStatusMessage(err.message || 'Peer connection error');
+      }
+    });
+
+    peerRef.current = peer;
+  }, [setupConnection, joinRoom]);
+
   // Update rider's callsign / name on the fly and notify all peers
   const updateRiderName = useCallback((newName: string) => {
     const clean = newName.trim();
     if (!clean) return;
     setRiderName(clean);
+    riderNameRef.current = clean;
     try {
       localStorage.setItem('sasta_rider_name', clean);
       localStorage.setItem('throttlelog_rider_name', clean);
@@ -486,6 +557,12 @@ export function useGroupRide() {
 
   // Leave Group Ride
   const leaveRoom = useCallback(() => {
+    isManualLeaveRef.current = true;
+    activeRoomCodeRef.current = '';
+    if (reconnectIntervalRef.current) {
+      clearInterval(reconnectIntervalRef.current);
+      reconnectIntervalRef.current = null;
+    }
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     retryCountRef.current = 0;
     try {
@@ -500,6 +577,7 @@ export function useGroupRide() {
     setMembers(new Map());
     setIsConnected(false);
     setIsHost(false);
+    isHostRef.current = false;
     setRoomCode('');
     setConnectionStatus('disconnected');
     setStatusMessage('');
@@ -608,6 +686,9 @@ export function useGroupRide() {
   // Clean up on unmount
   useEffect(() => {
     return () => {
+      if (reconnectIntervalRef.current) {
+        clearInterval(reconnectIntervalRef.current);
+      }
       if (peerRef.current) {
         peerRef.current.destroy();
       }

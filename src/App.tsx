@@ -45,7 +45,7 @@ export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
 export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<AppTab>('home');
+  const [currentTab, setCurrentTab] = useState<AppTab>('crew');
   // Don't preload demo ride — let landing page be the entry point
   const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
   // Session-only toast: shown briefly when a ride is loaded
@@ -465,7 +465,7 @@ export default function App() {
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
-        onHomeClick={() => setCurrentTab('home')}
+        onHomeClick={() => setCurrentTab('crew')}
         onLoadSample={handleLoadSample}
         onUploadClick={triggerUploadClick}
         onOpenGarage={() => setIsGarageOpen(true)}
@@ -479,7 +479,11 @@ export default function App() {
         isRecordingLive={isRecordingLive}
         hasActiveRide={!!analysis}
         rideName={
-          currentTab === 'home'
+          currentTab === 'crew'
+            ? groupRide.isConnected
+              ? `Crew: ${groupRide.roomCode}`
+              : 'Crew Group Radar'
+            : currentTab === 'home'
             ? analysis
               ? `Active: ${analysis.name}`
               : 'Ready for GPX or Live Track'

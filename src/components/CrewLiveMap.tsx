@@ -11,12 +11,11 @@ import {
   Navigation, 
   Copy, 
   Check, 
-  Layers, 
   Maximize2, 
   Minimize2,
-  Compass,
-  Radio,
-  ExternalLink
+  Edit3,
+  Coffee,
+  MessageCircle
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 
@@ -44,9 +43,10 @@ interface CrewLiveMapProps {
   onCopyInviteLink: () => void;
   copiedLink: boolean;
   onGoToCockpit?: () => void;
+  onUpdateRiderName?: (newName: string) => void;
 }
 
-type MapLayerType = 'dark' | 'streets' | 'satellite';
+export type MapLayerType = 'streets' | 'satellite';
 
 export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   myLocation,
@@ -65,6 +65,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   onCopyInviteLink,
   copiedLink,
   onGoToCockpit,
+  onUpdateRiderName,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -74,10 +75,15 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const memberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const sosMarkerRef = useRef<L.Marker | null>(null);
 
-  const [mapLayer, setMapLayer] = useState<MapLayerType>(theme === 'light' ? 'streets' : 'dark');
+  // Street map (OpenStreetMap) is default - 100% free, reliable, no API key or Carto 403 errors
+  const [mapLayer, setMapLayer] = useState<MapLayerType>('streets');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
+
+  // Inline handle editor
+  const [isEditingHandle, setIsEditingHandle] = useState(false);
+  const [tempHandle, setTempHandle] = useState(myRiderName);
 
   const isLight = theme === 'light';
 
@@ -101,6 +107,28 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return `${(meters / 1000).toFixed(1)} km`;
   };
 
+  const toggleFullscreen = () => {
+    triggerHaptic(20);
+    setIsFullscreen(prev => {
+      const next = !prev;
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 50);
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+      return next;
+    });
+  };
+
+  // Keyboard shortcut: Esc to exit fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 150);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -109,7 +137,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       delete (mapContainerRef.current as any)._leaflet_id;
     }
 
-    // Default center: My location, or first member location, or default center
     const initialLat = myLocation?.lat || members.find(m => m.location)?.location?.lat || 18.5204;
     const initialLon = myLocation?.lon || members.find(m => m.location)?.location?.lon || 73.8567;
 
@@ -121,7 +148,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       preferCanvas: true,
     });
 
-    // Add minimal zoom controls in top-left
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     // Disengage auto-follow when user manually drags or pans the map
@@ -131,10 +157,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     mapInstanceRef.current = map;
 
-    // Invalidate size after layout/tab transition completes
     const timer = setTimeout(() => {
       map.invalidateSize();
-    }, 250);
+    }, 200);
 
     const handleResize = () => {
       map.invalidateSize();
@@ -149,7 +174,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     };
   }, []);
 
-  // Handle Tile Layer Changes
+  // Handle Tile Layer Changes (Street via OpenStreetMap, Satellite via ArcGIS - NO broken Carto CDN dark tiles)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -158,21 +183,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       tileLayerRef.current.remove();
     }
 
-    let url = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    let url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
     let maxZoom = 19;
+    let attribution = '&copy; OpenStreetMap contributors';
 
-    if (mapLayer === 'streets') {
-      url = isLight 
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    } else if (mapLayer === 'satellite') {
+    if (mapLayer === 'satellite') {
       url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      attribution = '&copy; Esri World Imagery';
     }
 
-    const newLayer = L.tileLayer(url, { maxZoom, subdomains: 'abcd' });
+    const newLayer = L.tileLayer(url, { maxZoom, attribution });
     newLayer.addTo(map);
     tileLayerRef.current = newLayer;
-  }, [mapLayer, isLight]);
+  }, [mapLayer]);
 
   // Update "YOU" Marker
   useEffect(() => {
@@ -197,15 +220,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const html = `
       <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center;">
-        <!-- Pulsing halo -->
         <div style="position:absolute; width:40px; height:40px; border-radius:50%; background:${color}; opacity:0.35; animation:ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
-        <!-- Direction Arrow -->
         ${headingArrow}
-        <!-- Core Marker Pin -->
         <div style="position:relative; width:30px; height:30px; border-radius:50%; background:${color}; border:2.5px solid #080c10; box-shadow:0 0 16px ${color}, 0 4px 8px rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:12px;">
           ${initial}
         </div>
-        <!-- Live Tag Badge -->
         <div style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:9px; font-weight:900; padding:1px 5px; border-radius:4px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.8); letter-spacing:0.5px;">
           YOU • ${speed}
         </div>
@@ -334,11 +353,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       sosMarkerRef.current.setLatLng(pos);
     }
 
-    // Auto pan to SOS alert
     map.flyTo(pos, 16, { animate: true, duration: 1.2 });
   }, [sosAlert]);
 
-  // Initial Auto-fit Bounds when coordinates become available
+  // Initial Auto-fit Bounds
   useEffect(() => {
     if (!mapInstanceRef.current || hasInitialFit) return;
 
@@ -403,17 +421,25 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     });
   };
 
+  const handleSaveHandle = () => {
+    if (tempHandle.trim() && onUpdateRiderName) {
+      onUpdateRiderName(tempHandle.trim());
+      setIsEditingHandle(false);
+      triggerHaptic(40);
+    }
+  };
+
   const totalRiders = members.length + 1;
 
   return (
-    <div className={`relative flex flex-col rounded-2xl overflow-hidden border shadow-2xl transition-all ${
+    <div className={`relative flex flex-col overflow-hidden transition-all duration-300 ${
       isFullscreen 
-        ? 'fixed inset-0 z-[9999] rounded-none border-none' 
-        : 'h-[72vh] min-h-[460px] max-h-[750px] w-full'
+        ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-none shadow-none' 
+        : 'h-[calc(100vh-140px)] sm:h-[calc(100vh-160px)] min-h-[520px] w-full rounded-2xl border shadow-2xl'
     } ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#080c10] border-[#1e2a38]'}`}>
 
       {/* ─────────────────────────────────────────────────────────────
-          MAP CONTAINER
+          LEAFLET MAP CANVAS
       ───────────────────────────────────────────────────────────── */}
       <div 
         ref={mapContainerRef} 
@@ -421,131 +447,191 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       />
 
       {/* ─────────────────────────────────────────────────────────────
-          TOP FLOATING HUD BAR (Room Code, Riders, Layer, Fullscreen)
+          TOP STREAMLINED HUD: Room Code, Rider Handle, Layers, Maximize & Invite
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none gap-2">
-        {/* Left: Room Status Pill */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-cyan-500/40 text-white font-mono text-xs flex items-center gap-2 shadow-lg">
+      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        
+        {/* Left: Crew Status & Callsign */}
+        <div className="flex items-center gap-2 pointer-events-auto flex-wrap">
+          {/* Room Code Badge with 1-Tap Copy */}
+          <button
+            onClick={onCopyInviteLink}
+            className="px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-cyan-500/50 hover:border-cyan-400 text-white font-mono text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-all active:scale-95"
+            title="Click to copy 1-tap join link"
+          >
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-heading font-black tracking-wider text-cyan-400">
               {roomCode}
             </span>
-            <span className="text-slate-400 text-[10px]">|</span>
-            <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{totalRiders} {totalRiders === 1 ? 'Rider' : 'Riders'}</span>
+            {copiedLink ? (
+              <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                <Check className="w-3 h-3" /> Copied!
+              </span>
+            ) : (
+              <Copy className="w-3 h-3 text-slate-400" />
+            )}
+            <span className="text-slate-600">|</span>
+            <span className="text-[11px] font-bold text-slate-300">
+              {totalRiders} {totalRiders === 1 ? 'Rider' : 'Riders'}
             </span>
-          </div>
-
-          <button
-            onClick={onCopyInviteLink}
-            className="p-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-300 hover:text-white text-xs font-mono flex items-center gap-1 shadow-lg cursor-pointer transition-colors"
-            title="Copy 1-tap join link"
-          >
-            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
+
+          {/* Callsign Editor Pill */}
+          {isEditingHandle ? (
+            <div className="flex items-center gap-1 bg-slate-950/90 border border-cyan-400 rounded-xl p-0.5 shadow-lg">
+              <input
+                type="text"
+                maxLength={18}
+                value={tempHandle}
+                onChange={e => setTempHandle(e.target.value)}
+                placeholder="Rider handle..."
+                className="px-2 py-1 bg-transparent text-xs font-mono font-bold text-white focus:outline-none w-24 sm:w-32"
+                autoFocus
+              />
+              <button
+                onClick={handleSaveHandle}
+                className="px-2 py-1 bg-cyan-500 text-slate-950 font-bold text-[10px] rounded-lg cursor-pointer"
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setTempHandle(myRiderName);
+                setIsEditingHandle(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-slate-700/80 hover:border-slate-500 text-slate-300 hover:text-white font-mono text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-colors"
+              title="Click to change your rider callsign"
+            >
+              <div 
+                className="w-4 h-4 rounded-full text-slate-950 font-black text-[9px] flex items-center justify-center"
+                style={{ backgroundColor: myColor || '#00f0ff' }}
+              >
+                {myRiderName.charAt(0).toUpperCase()}
+              </div>
+              <span className="font-bold text-slate-200">{myRiderName}</span>
+              <Edit3 className="w-2.5 h-2.5 text-slate-500" />
+            </button>
+          )}
         </div>
 
-        {/* Right: Map Controls & Fullscreen */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Map Layer Switcher */}
-          <div className="flex items-center bg-slate-950/80 backdrop-blur-md border border-slate-700/80 rounded-xl p-0.5 shadow-lg">
-            <button
-              onClick={() => setMapLayer('dark')}
-              className={`px-2 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors cursor-pointer ${
-                mapLayer === 'dark' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Dark
-            </button>
+        {/* Right: Map Controls, Maximize & Quick Actions */}
+        <div className="flex items-center gap-1.5 pointer-events-auto ml-auto">
+          {/* Map Layer Switcher: Street (OSM) / Satellite (Esri) */}
+          <div className="flex items-center bg-slate-950/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-0.5 shadow-lg text-[11px] font-mono font-bold">
             <button
               onClick={() => setMapLayer('streets')}
-              className={`px-2 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors cursor-pointer ${
-                mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                mapLayer === 'streets'
+                  ? 'bg-cyan-500 text-slate-950 font-black'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               Street
             </button>
             <button
               onClick={() => setMapLayer('satellite')}
-              className={`px-2 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors cursor-pointer ${
-                mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                mapLayer === 'satellite'
+                  ? 'bg-cyan-500 text-slate-950 font-black'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              Sat
+              Satellite
             </button>
           </div>
 
-          {/* Fullscreen Toggle */}
+          {/* Prominent Maximize / Fullscreen Map Button */}
           <button
-            onClick={() => {
-              triggerHaptic(20);
-              setIsFullscreen(!isFullscreen);
-              setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
-            }}
-            className="p-2 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-300 hover:text-white shadow-lg cursor-pointer transition-colors"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Map'}
+            onClick={toggleFullscreen}
+            className={`px-3 py-1.5 rounded-xl backdrop-blur-md border font-mono font-bold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-95 ${
+              isFullscreen
+                ? 'bg-amber-500 hover:bg-amber-400 border-amber-400 text-slate-950'
+                : 'bg-slate-950/90 hover:bg-slate-900 border-cyan-500/50 hover:border-cyan-400 text-cyan-300'
+            }`}
+            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Maximize Map for Handlebar Cockpit'}
           >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Exit Full</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Maximize</span>
+              </>
+            )}
+          </button>
+
+          {/* Single WhatsApp Invite Button */}
+          <button
+            onClick={onShareWhatsApp}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 backdrop-blur-md border border-emerald-400/40 text-white font-mono font-bold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition-colors active:scale-95"
+            title="Invite friends on WhatsApp with 1-tap link"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Invite</span>
+          </button>
+
+          {/* Leave Button */}
+          <button
+            onClick={onLeaveRoom}
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-950/90 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-600 text-slate-400 hover:text-rose-300 font-mono text-xs font-bold flex items-center gap-1 shadow-lg cursor-pointer transition-colors"
+            title="Leave this group ride"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Leave</span>
           </button>
         </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          RIGHT FLOATING ACTION BUTTONS (Recenter, Fit, SOS, WhatsApp)
+          RIGHT FLOATING ACTION BUTTONS: Recenter, Fit, SOS
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute right-3 top-16 z-10 flex flex-col gap-2 pointer-events-auto">
         {/* Recenter on Me */}
         <button
           onClick={handleRecenterMe}
-          className={`p-2.5 rounded-xl backdrop-blur-md border shadow-lg cursor-pointer transition-all ${
+          className={`p-3 rounded-xl backdrop-blur-md border shadow-lg cursor-pointer transition-all ${
             selectedRiderId === 'me'
-              ? 'bg-cyan-500 border-cyan-400 text-slate-950 shadow-cyan-500/30'
-              : 'bg-slate-950/80 border-slate-700/80 text-cyan-400 hover:bg-slate-900'
+              ? 'bg-cyan-500 border-cyan-400 text-slate-950 shadow-cyan-500/40'
+              : 'bg-slate-950/90 border-slate-700/80 text-cyan-400 hover:bg-slate-900'
           }`}
           title="Recenter on My Location"
         >
           <Crosshair className="w-5 h-5" />
         </button>
 
-        {/* Fit All Group Members */}
+        {/* Fit All Crew Riders */}
         <button
           onClick={handleFitAllRiders}
-          className="p-2.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-200 hover:text-white shadow-lg cursor-pointer transition-colors"
-          title="Zoom to Fit All Crew Riders"
+          className="p-3 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-200 hover:text-white shadow-lg cursor-pointer transition-colors"
+          title="Zoom to Fit All Crew Members"
         >
           <Users className="w-5 h-5" />
         </button>
 
-        {/* WhatsApp Invite Pin */}
-        <button
-          onClick={onShareWhatsApp}
-          className="p-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 backdrop-blur-md border border-emerald-400/40 text-white shadow-lg shadow-emerald-900/30 cursor-pointer transition-colors"
-          title="Send WhatsApp Group Invite"
-        >
-          <Share2 className="w-5 h-5" />
-        </button>
-
-        {/* Call Regroup / SOS Ping */}
+        {/* SOS / Regroup Ping */}
         <button
           onClick={onTriggerSos}
-          className="p-2.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md border border-rose-400/50 text-white shadow-lg shadow-rose-900/40 cursor-pointer transition-colors"
-          title="Call Regroup / Distress Ping"
+          className="p-3 rounded-xl bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md border border-rose-400/60 text-white shadow-lg shadow-rose-900/40 cursor-pointer transition-colors"
+          title="Send Regroup Ping to All Crew Members"
         >
           <AlertTriangle className="w-5 h-5" />
         </button>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          SOS BANNER OVERLAY (If active)
+          SOS BANNER OVERLAY (If alert received)
       ───────────────────────────────────────────────────────────── */}
       {sosAlert && (
-        <div className="absolute top-16 left-3 right-16 z-20 p-3 rounded-xl bg-rose-950/90 backdrop-blur-md border border-rose-500/80 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2 animate-bounce">
+        <div className="absolute top-16 left-3 right-16 z-20 p-3 rounded-xl bg-rose-950/95 backdrop-blur-md border border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2 animate-bounce">
           <div className="flex items-center gap-2 truncate">
             <span className="text-base">🚨</span>
             <span className="font-bold text-rose-300 truncate">
-              REGROUP ALERT: {sosAlert.fromName}
+              REGROUP: {sosAlert.fromName} requested meet up!
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -553,15 +639,15 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1"
+              className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1"
             >
-              <Navigation className="w-3 h-3" />
+              <Navigation className="w-3.5 h-3.5" />
               <span>Navigate</span>
             </a>
             {onDismissSos && (
               <button
                 onClick={onDismissSos}
-                className="px-2 py-1 rounded border border-rose-700 hover:bg-rose-800 text-rose-300 text-[10px]"
+                className="px-2 py-1 rounded border border-rose-700 hover:bg-rose-800 text-rose-300 text-xs"
               >
                 Dismiss
               </button>
@@ -571,10 +657,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          BOTTOM FLOATING RIDER CHIPS TRAY
+          BOTTOM FLOATING RIDER CHIPS TRAY (Speed, Distance & 1-Tap Navigation)
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute bottom-3 left-3 right-3 z-10 pointer-events-none flex flex-col gap-2">
-        {/* Horizontal Scrollable Rider Cards */}
         <div className="pointer-events-auto flex items-center gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar">
           
           {/* Card: YOU */}
@@ -583,7 +668,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             className={`flex items-center gap-2.5 px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg cursor-pointer transition-all shrink-0 select-none ${
               selectedRiderId === 'me'
                 ? 'bg-cyan-950/90 border-cyan-400 text-white ring-1 ring-cyan-400'
-                : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-300'
+                : 'bg-slate-950/85 border-slate-800 hover:border-slate-700 text-slate-300'
             }`}
           >
             <div 
@@ -595,20 +680,23 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             <div className="font-mono text-left">
               <div className="text-xs font-bold text-white flex items-center gap-1">
                 <span>{myRiderName}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">YOU</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">YOU</span>
               </div>
-              <div className="text-[10px] text-cyan-400">
+              <div className="text-[11px] text-cyan-400 font-bold">
                 {myLocation ? formatSpeed(myLocation.speedKmh) : 'Acquiring GPS...'}
               </div>
             </div>
           </div>
 
-          {/* Cards for each Member */}
+          {/* Member Cards */}
           {members.map(m => {
             const isSelected = selectedRiderId === m.riderId;
             const isStopped = m.location && (m.location.status === 'stopped' || m.location.speedKmh < 2.0);
             const speedText = m.location ? formatSpeed(m.location.speedKmh) : 'Locating...';
             const distText = formatDistance(m.distanceFromMeMeters);
+            const gmapsUrl = m.location
+              ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
+              : null;
 
             return (
               <div
@@ -617,7 +705,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 className={`flex items-center gap-2.5 px-3 py-2 rounded-xl backdrop-blur-md border shadow-lg cursor-pointer transition-all shrink-0 select-none ${
                   isSelected
                     ? 'bg-slate-900/90 border-cyan-400 text-white ring-1 ring-cyan-400'
-                    : 'bg-slate-950/80 border-slate-800 hover:border-slate-700 text-slate-300'
+                    : 'bg-slate-950/85 border-slate-800 hover:border-slate-700 text-slate-300'
                 }`}
               >
                 <div 
@@ -630,12 +718,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   <div className="text-xs font-bold text-white flex items-center gap-1">
                     <span>{m.name}</span>
                     {isStopped && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                        STOP
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold flex items-center gap-0.5">
+                        <Coffee className="w-2.5 h-2.5" /> STOP
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 font-bold">
                     <span className={isStopped ? 'text-amber-400' : 'text-emerald-400'}>
                       {speedText}
                     </span>
@@ -643,46 +731,23 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                     <span className="text-sky-300">{distText}</span>
                   </div>
                 </div>
+
+                {/* 1-Tap Google Maps Navigation to this rider */}
+                {gmapsUrl && (
+                  <a
+                    href={gmapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="p-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 transition-colors ml-1"
+                    title={`Open Google Maps directions to ${m.name}`}
+                  >
+                    <Navigation className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             );
           })}
-
-          {/* Invite More Friends Pill */}
-          <button
-            onClick={onShareWhatsApp}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 backdrop-blur-md border border-dashed border-slate-700 text-slate-400 hover:text-emerald-400 font-mono text-xs font-bold shrink-0 cursor-pointer transition-colors shadow-lg"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>+ Invite Rider</span>
-          </button>
-        </div>
-
-        {/* Minimal Bottom Bar: Quick actions */}
-        <div className="pointer-events-auto flex items-center justify-between text-xs font-mono px-3 py-2 rounded-xl bg-slate-950/85 backdrop-blur-md border border-slate-800/80 text-slate-400 shadow-xl">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>P2P Encrypted • Low Data • Direct Phone-to-Phone</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {onGoToCockpit && (
-              <button
-                onClick={onGoToCockpit}
-                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>Cockpit</span>
-              </button>
-            )}
-
-            <button
-              onClick={onLeaveRoom}
-              className="px-2.5 py-1 rounded-lg border border-slate-700 hover:bg-rose-950/40 hover:border-rose-700/60 text-slate-400 hover:text-rose-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Leave</span>
-            </button>
-          </div>
         </div>
       </div>
 

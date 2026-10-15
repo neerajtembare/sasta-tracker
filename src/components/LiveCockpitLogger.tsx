@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppTheme, UnitSystem } from '../types';
 import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
 import { useGPS } from '../hooks/useGPS';
@@ -112,17 +112,26 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const isRecording = gps.isRecording;
   const isPaused = gps.isPaused;
 
-  // Broadcast location to connected group ride crew
+  // Broadcast location to connected group ride crew with stable ref & primitive deps
+  const onUpdateMyLocationRef = useRef(onUpdateMyLocation);
+  onUpdateMyLocationRef.current = onUpdateMyLocation;
+
   useEffect(() => {
-    if (gps.currentCoords && onUpdateMyLocation && groupRideConnected) {
-      onUpdateMyLocation(
+    if (gps.currentCoords && groupRideConnected && onUpdateMyLocationRef.current) {
+      onUpdateMyLocationRef.current(
         gps.currentCoords.lat,
         gps.currentCoords.lon,
         gps.currentSpeedKmh,
         gps.currentHeading
       );
     }
-  }, [gps.currentCoords, gps.currentSpeedKmh, gps.currentHeading, onUpdateMyLocation, groupRideConnected]);
+  }, [
+    gps.currentCoords?.lat,
+    gps.currentCoords?.lon,
+    gps.currentSpeedKmh,
+    gps.currentHeading,
+    groupRideConnected
+  ]);
 
   const stopAndSaveRecording = () => {
     triggerHaptic(50);

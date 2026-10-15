@@ -407,7 +407,7 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                 Saved Rides ({rides.length}):
               </span>
               {rides.length > 0 && (
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
                   Newest First
                 </span>
               )}
@@ -531,7 +531,7 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                       <div className="text-xs font-mono font-bold flex items-center gap-2 truncate">
                         <span className="truncate">{r.name}</span>
                         {idx === 0 && !searchQuery && (
-                          <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 border border-sky-500/40 text-[9px] font-bold shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/40 text-[9px] font-bold shrink-0">
                             LATEST
                           </span>
                         )}

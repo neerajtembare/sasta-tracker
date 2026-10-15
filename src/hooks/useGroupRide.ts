@@ -515,6 +515,22 @@ export function useGroupRide() {
   ) => {
     myLocationRef.current = { lat, lon };
 
+    // Update distances to members on local radar when my location updates
+    setMembers(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      next.forEach((member, id) => {
+        if (member.location) {
+          const d = haversineDistance(lat, lon, member.location.lat, member.location.lon);
+          if (member.distanceFromMeMeters === undefined || Math.abs(member.distanceFromMeMeters - d) > 2) {
+            next.set(id, { ...member, distanceFromMeMeters: d });
+            changed = true;
+          }
+        }
+      });
+      return changed ? next : prev;
+    });
+
     if (!isConnected) return;
 
     // Determine status (stopped if <2 km/h)

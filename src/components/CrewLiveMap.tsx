@@ -105,6 +105,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
+    if ((mapContainerRef.current as any)._leaflet_id) {
+      delete (mapContainerRef.current as any)._leaflet_id;
+    }
+
     // Default center: My location, or first member location, or default center
     const initialLat = myLocation?.lat || members.find(m => m.location)?.location?.lat || 18.5204;
     const initialLon = myLocation?.lon || members.find(m => m.location)?.location?.lon || 73.8567;
@@ -114,14 +118,32 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       zoom: 15,
       zoomControl: false,
       attributionControl: false,
+      preferCanvas: true,
     });
 
     // Add minimal zoom controls in top-left
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
+    // Disengage auto-follow when user manually drags or pans the map
+    map.on('dragstart', () => {
+      setSelectedRiderId(null);
+    });
+
     mapInstanceRef.current = map;
 
+    // Invalidate size after layout/tab transition completes
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+
     return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -203,7 +225,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       myMarkerRef.current.setIcon(icon);
       myMarkerRef.current.setLatLng(pos);
     }
-  }, [myLocation, myRiderName, myColor, unitSystem]);
+
+    if (selectedRiderId === 'me') {
+      map.panTo(pos, { animate: true, duration: 0.5 });
+    }
+  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId]);
 
   // Update Member Markers
   useEffect(() => {
@@ -569,7 +595,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             <div className="font-mono text-left">
               <div className="text-xs font-bold text-white flex items-center gap-1">
                 <span>{myRiderName}</span>
-                <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300">YOU</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">YOU</span>
               </div>
               <div className="text-[10px] text-cyan-400">
                 {myLocation ? formatSpeed(myLocation.speedKmh) : 'Acquiring GPS...'}
@@ -604,7 +630,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   <div className="text-xs font-bold text-white flex items-center gap-1">
                     <span>{m.name}</span>
                     {isStopped && (
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
                         STOP
                       </span>
                     )}

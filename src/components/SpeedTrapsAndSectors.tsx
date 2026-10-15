@@ -331,7 +331,7 @@ export const SpeedTrapsAndSectors: React.FC<SpeedTrapsAndSectorsProps> = ({
                         <span className={subText}>Logged Pit Stop</span>
                       )}
 
-                      <span className={`px-1.5 py-0.2 rounded border text-[9px] font-bold ${badge.color}`}>
+                      <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${badge.color}`}>
                         {badge.label}
                       </span>
                     </div>

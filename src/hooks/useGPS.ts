@@ -299,9 +299,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
   }, []);
 
   // ── Standby / Live GPS watch ──
-  const startGpsWatch = useCallback(async () => {
+  const startGpsWatch = useCallback(() => {
     if (watchIdRef.current !== null) return;
-    await requestDeviceOrientationPermission();
     if (!navigator.geolocation) {
       setGpsError('Geolocation is not supported by your browser.');
       return;
@@ -332,7 +331,10 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
           }
         }
 
-        setCurrentCoords({ lat: latitude, lon: longitude });
+        setCurrentCoords(prev => {
+          if (prev && prev.lat === latitude && prev.lon === longitude) return prev;
+          return { lat: latitude, lon: longitude };
+        });
         setCurrentSpeedKmh(kmh);
 
         // 3. Compass stabilization: only update heading when moving (>= 2.5 km/h) to stop compass spinning at red lights
@@ -439,7 +441,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric'): [GPSState, GPSControl
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 },
     );
-  }, [requestDeviceOrientationPermission]);
+  }, []);
 
   // Auto-start standby GPS fix on mount so satellite lock & accuracy are ready before user hits start
   useEffect(() => {

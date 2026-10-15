@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroTelemetry } from './components/HeroTelemetry';
 import { RideInsightsCard } from './components/RideInsightsCard';
@@ -120,38 +120,22 @@ export default function App() {
     }
   }, []);
 
-  // Background GPS broadcasting for group ride: ensures joiners via link immediately transmit location
-  useEffect(() => {
-    if (!groupRide.isConnected) return;
-
-    let watchId: number | null = null;
-    if ('geolocation' in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude, longitude, speed, heading } = pos.coords;
-          const kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
-          const loc = {
-            lat: latitude,
-            lon: longitude,
-            speedKmh: kmh,
-            heading: heading !== null && heading >= 0 ? heading : null,
-          };
-          setMyLocation(loc);
-          groupRide.updateMyLocation(latitude, longitude, kmh, heading !== null && heading >= 0 ? heading : null);
-        },
-        (err) => {
-          console.warn('Group ride background GPS watch warning:', err);
-        },
-        { enableHighAccuracy: true, maximumAge: 2500, timeout: 10000 }
-      );
-    }
-
-    return () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
+  // Stable location update handler fed by useGPS inside LiveCockpitLogger (which remains mounted)
+  const handleUpdateMyLocation = useCallback((lat: number, lon: number, kmh: number, bearing: number | null) => {
+    setMyLocation(prev => {
+      if (
+        prev &&
+        Math.abs(prev.lat - lat) < 0.000005 &&
+        Math.abs(prev.lon - lon) < 0.000005 &&
+        Math.abs(prev.speedKmh - kmh) < 0.3 &&
+        prev.heading === bearing
+      ) {
+        return prev;
       }
-    };
-  }, [groupRide.isConnected, groupRide.updateMyLocation]);
+      return { lat, lon, speedKmh: kmh, heading: bearing };
+    });
+    groupRide.updateMyLocation(lat, lon, kmh, bearing);
+  }, [groupRide.updateMyLocation]);
 
   const globalFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -795,10 +779,7 @@ export default function App() {
             sosAlert={groupRide.sosAlert}
             onOpenGroupRideModal={() => setCurrentTab('crew')}
             onTriggerSos={groupRide.triggerSos}
-            onUpdateMyLocation={(lat, lon, kmh, bearing) => {
-              setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
-              groupRide.updateMyLocation(lat, lon, kmh, bearing);
-            }}
+            onUpdateMyLocation={handleUpdateMyLocation}
           />
         </div>
 

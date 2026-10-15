@@ -59,23 +59,8 @@ const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelay',
-    credential: 'openrelay',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelay',
-    credential: 'openrelay',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelay',
-    credential: 'openrelay',
-  },
 ];
 
 export const RIDER_COLORS = [
@@ -147,27 +132,55 @@ export function useGroupRide() {
     }, 4500);
   }, []);
 
+
+
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
   const peerToRiderMapRef = useRef<Map<string, string>>(new Map());
-  const myLocationRef = useRef<{ lat: number; lon: number } | null>(null);
+  const myLocationRef = useRef<{ lat: number; lon: number; speedKmh: number; bearing: number | null } | null>(null);
+  const membersRef = useRef<Map<string, GroupMemberInfo>>(new Map());
   const retryTimeoutRef = useRef<any>(null);
-  const retryCountRef = useRef<number>(0);
+  const joinAttemptRef = useRef<number>(0);
   const isHostRef = useRef<boolean>(false);
   const riderNameRef = useRef<string>(riderName);
   const isManualLeaveRef = useRef<boolean>(false);
   const reconnectIntervalRef = useRef<any>(null);
   const activeRoomCodeRef = useRef<string>('');
+  const hasSwitchedFromHostRef = useRef<boolean>(false);
 
   isHostRef.current = isHost;
   riderNameRef.current = riderName;
 
-  // Broadcast location or message to all connected peers
+  // Sync state members to membersRef
+  const updateMembersState = useCallback((updater: (prev: Map<string, GroupMemberInfo>) => Map<string, GroupMemberInfo>) => {
+    setMembers(prev => {
+      const next = updater(prev);
+      membersRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Broadcast message to all directly connected peers
   const broadcastMessage = useCallback((payload: any) => {
     connectionsRef.current.forEach(conn => {
       if (conn.open) {
         try {
           conn.send(payload);
+        } catch (e) {
+          // ignore transient send errors
+        }
+      }
+    });
+  }, []);
+
+  // Host Star-Relay: forward data packets to all other peers (excluding the origin peer)
+  // Guarantees all riders receive telemetry even if mobile carrier CGNAT blocks direct P2P mesh
+  const relayToOthers = useCallback((data: any, excludePeerId: string) => {
+    if (!isHostRef.current) return;
+    connectionsRef.current.forEach((conn, peerId) => {
+      if (peerId !== excludePeerId && conn.open) {
+        try {
+          conn.send(data);
         } catch (e) {
           // ignore transient send errors
         }
@@ -181,10 +194,10 @@ export function useGroupRide() {
 
     if (data.type === 'GREETING') {
       const g = data.payload;
-      if (g?.riderId) {
+      if (g?.riderId && g.riderId !== riderId) {
         peerToRiderMapRef.current.set(fromPeerId, g.riderId);
-        setMembers(prev => {
-          const isNew = !prev.has(g.riderId) && g.riderId !== riderId;
+        updateMembersState(prev => {
+          const isNew = !prev.has(g.riderId);
           if (isNew) {
             playWaypointChime();
             postCrewNotification(`🏍️ ${g.name || 'A rider'} joined the crew radar!`, 'join');
@@ -208,17 +221,29 @@ export function useGroupRide() {
             lastSeen: Date.now(),
             location: g.location || existing?.location,
             distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
+            isStale: false,
           });
           return next;
         });
+
+        // If we are Host: relay this rider's greeting to all other riders
+        if (isHostRef.current) {
+          relayToOthers(data, fromPeerId);
+        }
       }
     } else if (data.type === 'LOCATION_UPDATE') {
       const loc: GroupRiderLocation = data.payload;
-      if (loc?.riderId) {
+      if (loc?.riderId && loc.riderId !== riderId) {
         peerToRiderMapRef.current.set(fromPeerId, loc.riderId);
-        setMembers(prev => {
+        updateMembersState(prev => {
+          const existing = prev.get(loc.riderId);
+          // If we already have a newer timestamp from direct mesh, don't overwrite with older relayed packet
+          if (existing?.location && existing.location.timestamp > loc.timestamp) {
+            return prev;
+          }
+
           const next = new Map(prev);
-          const existing = next.get(loc.riderId) || {
+          const base = existing || {
             riderId: loc.riderId,
             name: loc.name,
             color: loc.color,
@@ -237,34 +262,71 @@ export function useGroupRide() {
           }
 
           next.set(loc.riderId, {
-            ...existing,
+            ...base,
             name: loc.name,
             lastSeen: Date.now(),
             location: loc,
             distanceFromMeMeters: dist,
+            isStale: false,
           });
           return next;
         });
+
+        // If Host: forward this location update to all other squad members
+        if (isHostRef.current) {
+          relayToOthers(data, fromPeerId);
+        }
       }
+    } else if (data.type === 'CREW_SYNC' && Array.isArray(data.members)) {
+      // Instant synchronization of all existing riders in the squad from the host
+      updateMembersState(prev => {
+        const next = new Map(prev);
+        data.members.forEach((m: GroupMemberInfo) => {
+          if (m && m.riderId && m.riderId !== riderId) {
+            const existing = next.get(m.riderId);
+            let dist = m.distanceFromMeMeters;
+            if (myLocationRef.current && m.location) {
+              dist = haversineDistance(
+                myLocationRef.current.lat,
+                myLocationRef.current.lon,
+                m.location.lat,
+                m.location.lon
+              );
+            }
+            next.set(m.riderId, {
+              ...m,
+              distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
+              lastSeen: Date.now(),
+              isStale: false,
+            });
+          }
+        });
+        return next;
+      });
     } else if (data.type === 'HEARTBEAT') {
       const hbRiderId = data.riderId;
-      if (hbRiderId) {
+      if (hbRiderId && hbRiderId !== riderId) {
         peerToRiderMapRef.current.set(fromPeerId, hbRiderId);
-        setMembers(prev => {
+        updateMembersState(prev => {
           const existing = prev.get(hbRiderId);
           if (!existing) return prev;
           const next = new Map(prev);
           next.set(hbRiderId, {
             ...existing,
             lastSeen: Date.now(),
+            isStale: false,
           });
           return next;
         });
+
+        if (isHostRef.current) {
+          relayToOthers(data, fromPeerId);
+        }
       }
     } else if (data.type === 'LEAVE') {
       const leavingId = data.riderId;
-      if (leavingId) {
-        setMembers(prev => {
+      if (leavingId && leavingId !== riderId) {
+        updateMembersState(prev => {
           if (!prev.has(leavingId)) return prev;
           const leaver = prev.get(leavingId);
           if (leaver) {
@@ -274,6 +336,10 @@ export function useGroupRide() {
           next.delete(leavingId);
           return next;
         });
+
+        if (isHostRef.current) {
+          relayToOthers(data, fromPeerId);
+        }
       }
     } else if (data.type === 'HOST_CLOSED') {
       // Crew leader closed the room
@@ -286,12 +352,12 @@ export function useGroupRide() {
       setConnectionStatus('disconnected');
       setStatusMessage(`Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`);
       postCrewNotification(`🏁 Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`, 'info');
-      setMembers(new Map());
+      updateMembersState(() => new Map());
     } else if (data.type === 'RENAME') {
       const rId = data.riderId;
       const newName = data.newName;
-      if (rId && newName) {
-        setMembers(prev => {
+      if (rId && newName && rId !== riderId) {
+        updateMembersState(prev => {
           const existing = prev.get(rId);
           if (!existing) return prev;
           const next = new Map(prev);
@@ -302,26 +368,37 @@ export function useGroupRide() {
           });
           return next;
         });
+
+        if (isHostRef.current) {
+          relayToOthers(data, fromPeerId);
+        }
       }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
       setSosAlert(alert);
       playWarningChime();
+
+      if (isHostRef.current) {
+        relayToOthers(data, fromPeerId);
+      }
     } else if (data.type === 'PEER_LIST' && Array.isArray(data.peers)) {
-      // Connect to other members shared by host
+      // Connect directly to other members shared by host for mesh redundancy
       data.peers.forEach((peerId: string) => {
-        if (peerId !== peerRef.current?.id && !connectionsRef.current.has(peerId)) {
+        if (peerId && peerId !== peerRef.current?.id && !connectionsRef.current.has(peerId)) {
           connectToPeer(peerId);
         }
       });
     }
-  }, [postCrewNotification, riderId]);
+  }, [postCrewNotification, relayToOthers, riderId, updateMembersState]);
 
   // Connect to a peer
   const connectToPeer = useCallback((targetPeerId: string) => {
     if (!peerRef.current || peerRef.current.disconnected) return;
     try {
-      const conn = peerRef.current.connect(targetPeerId, { reliable: false });
+      const conn = peerRef.current.connect(targetPeerId, {
+        reliable: true,
+        serialization: 'json',
+      });
       setupConnection(conn);
     } catch (err) {
       console.warn('Failed connecting to peer:', targetPeerId, err);
@@ -330,11 +407,21 @@ export function useGroupRide() {
 
   // Setup connection event handlers
   const setupConnection = useCallback((conn: DataConnection) => {
-    conn.on('open', () => {
+    // 8-second watchdog for WebRTC data channel handshake
+    const handshakeTimer = setTimeout(() => {
+      if (!conn.open && !connectionsRef.current.has(conn.peer)) {
+        console.warn('WebRTC data channel handshake timed out for:', conn.peer);
+        try { conn.close(); } catch {}
+      }
+    }, 8000);
+
+    const handleOpen = () => {
+      clearTimeout(handshakeTimer);
       if (reconnectIntervalRef.current) {
         clearInterval(reconnectIntervalRef.current);
         reconnectIntervalRef.current = null;
       }
+      joinAttemptRef.current = 0;
       connectionsRef.current.set(conn.peer, conn);
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -358,10 +445,10 @@ export function useGroupRide() {
               color: myColor,
               lat: myLocationRef.current.lat,
               lon: myLocationRef.current.lon,
-              speedKmh: 0,
-              bearing: null,
+              speedKmh: myLocationRef.current.speedKmh || 0,
+              bearing: myLocationRef.current.bearing,
               timestamp: Date.now(),
-              status: 'stopped',
+              status: (myLocationRef.current.speedKmh || 0) < 2.0 ? 'stopped' : 'riding',
             } : undefined,
           },
         });
@@ -371,19 +458,35 @@ export function useGroupRide() {
       if (activeIsHost) {
         const allPeerIds = Array.from(connectionsRef.current.keys()).concat(peerRef.current?.id || '');
         conn.send({ type: 'PEER_LIST', peers: allPeerIds });
+
+        // Immediately send full crew state so new rider sees all riders and their positions with 0 waiting!
+        const currentMembers = Array.from(membersRef.current.values());
+        if (currentMembers.length > 0) {
+          conn.send({
+            type: 'CREW_SYNC',
+            members: currentMembers,
+          });
+        }
       }
-    });
+    };
+
+    if (conn.open) {
+      handleOpen();
+    } else {
+      conn.on('open', handleOpen);
+    }
 
     conn.on('data', (data) => {
       handleIncomingData(data, conn.peer);
     });
 
     conn.on('close', () => {
+      clearTimeout(handshakeTimer);
       const rId = peerToRiderMapRef.current.get(conn.peer);
       connectionsRef.current.delete(conn.peer);
       if (rId) {
         peerToRiderMapRef.current.delete(conn.peer);
-        setMembers(prev => {
+        updateMembersState(prev => {
           if (!prev.has(rId)) return prev;
           const next = new Map(prev);
           next.delete(rId);
@@ -400,7 +503,7 @@ export function useGroupRide() {
         } else {
           // Cellular dropout detected — trigger silent auto-reconnect loop
           setConnectionStatus('connecting');
-          setStatusMessage('Cellular signal dropped. Auto-reconnecting in background...');
+          setStatusMessage('Reconnecting to crew...');
 
           if (!reconnectIntervalRef.current) {
             let attempts = 0;
@@ -410,14 +513,14 @@ export function useGroupRide() {
                 reconnectIntervalRef.current = null;
                 if (attempts >= 8) {
                   setConnectionStatus('disconnected');
-                  setStatusMessage('Could not reconnect to crew. Tap to rejoin.');
+                  setStatusMessage(`Could not reconnect to crew "${activeRoomCodeRef.current}". Tap to rejoin.`);
                 }
                 return;
               }
               attempts += 1;
               setStatusMessage(`Signal searching... Reconnecting (Attempt ${attempts}/8)...`);
               joinRoom(activeRoomCodeRef.current, riderNameRef.current);
-            }, 6000);
+            }, 5000);
           }
         }
       } else {
@@ -426,11 +529,12 @@ export function useGroupRide() {
     });
 
     conn.on('error', (err) => {
+      clearTimeout(handshakeTimer);
       console.warn('Connection error with peer:', conn.peer, err);
     });
-  }, [handleIncomingData, riderId]);
+  }, [handleIncomingData, riderId, updateMembersState]);
 
-  // Join an existing Group Ride with automatic 3x retry
+  // Join an existing Group Ride as a squad member
   const joinRoom = useCallback((code: string, name?: string) => {
     isManualLeaveRef.current = false;
     if (reconnectIntervalRef.current) {
@@ -449,27 +553,30 @@ export function useGroupRide() {
     try {
       localStorage.setItem('sasta_rider_name', cleanName);
       localStorage.setItem('throttlelog_rider_name', cleanName);
+      localStorage.setItem('sasta_last_crew', cleanCode);
     } catch {}
 
     setRoomCode(cleanCode);
     setLastRoomCode(cleanCode);
     activeRoomCodeRef.current = cleanCode;
-    try {
-      localStorage.setItem('sasta_last_crew', cleanCode);
-    } catch {}
     setIsHost(false);
     isHostRef.current = false;
     setConnectionStatus('connecting');
-    setStatusMessage(`Connecting to room ${cleanCode}...`);
+    setStatusMessage(`Connecting to squad "${cleanCode}"...`);
 
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    retryCountRef.current = 0;
+    joinAttemptRef.current = 0;
 
     if (peerRef.current) {
-      peerRef.current.destroy();
+      try { peerRef.current.destroy(); } catch {}
+      peerRef.current = null;
     }
 
-    const myPeerId = `sasta-${cleanCode}-${riderId}`;
+    // Unique random session suffix guarantees zero ID collisions or socket locks on 0.peerjs.com
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const myPeerId = `sasta-${cleanCode}-${riderId}-${randomSuffix}`;
+    const hostPeerId = `sasta-${cleanCode}-host`;
+
     const peer = new Peer(myPeerId, {
       config: {
         iceServers: ICE_SERVERS,
@@ -477,9 +584,12 @@ export function useGroupRide() {
     });
 
     const attemptHostConnection = () => {
+      if (!peer || peer.destroyed || isManualLeaveRef.current) return;
       try {
-        const hostPeerId = `sasta-${cleanCode}-host`;
-        const conn = peer.connect(hostPeerId, { reliable: false });
+        const conn = peer.connect(hostPeerId, {
+          reliable: true,
+          serialization: 'json',
+        });
         setupConnection(conn);
       } catch (e) {
         console.warn('Error connecting to host peer:', e);
@@ -487,6 +597,7 @@ export function useGroupRide() {
     };
 
     peer.on('open', () => {
+      setStatusMessage(`Locating squad leader for "${cleanCode}"...`);
       attemptHostConnection();
     });
 
@@ -501,26 +612,40 @@ export function useGroupRide() {
     });
 
     peer.on('error', (err: any) => {
-      console.warn('Peer error during join:', err);
-      if (retryCountRef.current < 3) {
-        retryCountRef.current += 1;
-        setStatusMessage(`Connecting to room leader (Attempt ${retryCountRef.current}/3)...`);
-        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = setTimeout(() => {
-          attemptHostConnection();
-        }, 1200);
+      console.warn('Peer error during join:', err.type, err);
+      if (err.type === 'peer-unavailable') {
+        // Host peer was not found on signaling server
+        if (joinAttemptRef.current < 3 && !isManualLeaveRef.current && activeRoomCodeRef.current === cleanCode) {
+          joinAttemptRef.current += 1;
+          setStatusMessage(`Locating squad leader... (Attempt ${joinAttemptRef.current}/3)`);
+          if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = setTimeout(() => {
+            attemptHostConnection();
+          }, 1500);
+        } else {
+          setConnectionStatus('error');
+          setStatusMessage(`Squad leader for "${cleanCode}" not found yet. The leader might not have started the ride.`);
+        }
+      } else if (err.type === 'unavailable-id') {
+        // ID taken on signaling server, retry with a fresh session ID
+        if (!isManualLeaveRef.current && activeRoomCodeRef.current === cleanCode) {
+          setTimeout(() => {
+            joinRoom(cleanCode, cleanName);
+          }, 300);
+        }
       } else {
         setConnectionStatus('error');
-        setStatusMessage(`Could not find leader for room "${cleanCode}". Leader must be active online.`);
+        setStatusMessage(err.message || 'Connection error. Check cellular network.');
       }
     });
 
     peerRef.current = peer;
-  }, [riderId, riderName, setupConnection]);
+  }, [riderId, setupConnection]);
 
   // Create a new Group Ride as Host
   const createRoom = useCallback((name: string, customCode?: string) => {
     isManualLeaveRef.current = false;
+    hasSwitchedFromHostRef.current = false;
     if (reconnectIntervalRef.current) {
       clearInterval(reconnectIntervalRef.current);
       reconnectIntervalRef.current = null;
@@ -546,13 +671,14 @@ export function useGroupRide() {
     setIsHost(true);
     isHostRef.current = true;
     setConnectionStatus('connecting');
-    setStatusMessage('Starting private group room...');
+    setStatusMessage(`Starting squad room "${generated}"...`);
 
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    retryCountRef.current = 0;
+    joinAttemptRef.current = 0;
 
     if (peerRef.current) {
-      peerRef.current.destroy();
+      try { peerRef.current.destroy(); } catch {}
+      peerRef.current = null;
     }
 
     const hostPeerId = `sasta-${generated}-host`;
@@ -565,7 +691,7 @@ export function useGroupRide() {
     peer.on('open', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-      setStatusMessage(`Room ${generated} created! Share code or link with your crew.`);
+      setStatusMessage(`Squad "${generated}" active. Transmitting radar...`);
       playWaypointChime();
     });
 
@@ -581,13 +707,19 @@ export function useGroupRide() {
 
     peer.on('error', (err: any) => {
       if (err.type === 'unavailable-id') {
-        if (customCode) {
-          // A room with this custom squad code is already active! Seamlessly join the leader instead of abandoning the squad.
-          setStatusMessage(`Squad room "${generated}" is already active! Joining crew leader...`);
-          joinRoom(generated, cleanName);
-        } else {
-          setStatusMessage('Room code already in use. Generating alternate...');
-          createRoom(cleanName);
+        // Someone is ALREADY hosting this exact squad code!
+        // Seamlessly switch to client mode and join the existing leader
+        if (!hasSwitchedFromHostRef.current) {
+          hasSwitchedFromHostRef.current = true;
+          console.log(`Squad "${generated}" is already hosted. Joining leader...`);
+          setStatusMessage(`Squad "${generated}" is already active! Joining crew leader...`);
+          try { peer.destroy(); } catch {}
+          peerRef.current = null;
+          setTimeout(() => {
+            if (!isManualLeaveRef.current) {
+              joinRoom(generated, cleanName);
+            }
+          }, 200);
         }
       } else {
         setConnectionStatus('error');
@@ -627,12 +759,12 @@ export function useGroupRide() {
   const leaveRoom = useCallback(() => {
     isManualLeaveRef.current = true;
     activeRoomCodeRef.current = '';
+    joinAttemptRef.current = 0;
     if (reconnectIntervalRef.current) {
       clearInterval(reconnectIntervalRef.current);
       reconnectIntervalRef.current = null;
     }
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    retryCountRef.current = 0;
     try {
       if (isHostRef.current) {
         broadcastMessage({
@@ -650,7 +782,7 @@ export function useGroupRide() {
     }
     connectionsRef.current.clear();
     peerToRiderMapRef.current.clear();
-    setMembers(new Map());
+    updateMembersState(() => new Map());
     setIsConnected(false);
     setIsHost(false);
     isHostRef.current = false;
@@ -658,7 +790,7 @@ export function useGroupRide() {
     setConnectionStatus('disconnected');
     setStatusMessage('');
     setSosAlert(null);
-  }, [broadcastMessage, riderId]);
+  }, [broadcastMessage, riderId, updateMembersState]);
 
   // Update my current GPS location and broadcast to crew
   const updateMyLocation = useCallback((
@@ -667,10 +799,10 @@ export function useGroupRide() {
     speedKmh: number,
     bearing: number | null
   ) => {
-    myLocationRef.current = { lat, lon };
+    myLocationRef.current = { lat, lon, speedKmh, bearing };
 
     // Update distances to members on local radar when my location updates
-    setMembers(prev => {
+    updateMembersState(prev => {
       let changed = false;
       const next = new Map(prev);
       next.forEach((member, id) => {
@@ -693,7 +825,7 @@ export function useGroupRide() {
 
     const payload: GroupRiderLocation = {
       riderId,
-      name: riderName || 'Rider',
+      name: riderNameRef.current || 'Rider',
       color: myColor,
       lat,
       lon,
@@ -707,7 +839,7 @@ export function useGroupRide() {
       type: 'LOCATION_UPDATE',
       payload,
     });
-  }, [isConnected, riderId, riderName, broadcastMessage]);
+  }, [isConnected, riderId, broadcastMessage, updateMembersState]);
 
   // Trigger SOS / Regroup Ping
   const triggerSos = useCallback(() => {
@@ -726,16 +858,36 @@ export function useGroupRide() {
     playWarningChime();
   }, [isConnected, riderName, broadcastMessage]);
 
-  // 5-second keep-alive heartbeat to maintain WebRTC DataConnection across cellular carrier NAT timeouts
+  // 3.5-second continuous location broadcast & keep-alive
+  // Guarantees all peers receive live coordinates even if watchPosition is stationary
   useEffect(() => {
     if (!isConnected) return;
     const heartbeatInterval = setInterval(() => {
-      broadcastMessage({
-        type: 'HEARTBEAT',
-        riderId,
-        timestamp: Date.now(),
-      });
-    }, 5000);
+      if (myLocationRef.current) {
+        const myColor = getRiderColor(riderId);
+        const speed = myLocationRef.current.speedKmh || 0;
+        broadcastMessage({
+          type: 'LOCATION_UPDATE',
+          payload: {
+            riderId,
+            name: riderNameRef.current || 'Rider',
+            color: myColor,
+            lat: myLocationRef.current.lat,
+            lon: myLocationRef.current.lon,
+            speedKmh: speed,
+            bearing: myLocationRef.current.bearing,
+            timestamp: Date.now(),
+            status: speed < 2.0 ? 'stopped' : 'riding',
+          },
+        });
+      } else {
+        broadcastMessage({
+          type: 'HEARTBEAT',
+          riderId,
+          timestamp: Date.now(),
+        });
+      }
+    }, 3500);
     return () => clearInterval(heartbeatInterval);
   }, [isConnected, riderId, broadcastMessage]);
 
@@ -743,7 +895,7 @@ export function useGroupRide() {
   useEffect(() => {
     if (!isConnected) return;
     const cleanupInterval = setInterval(() => {
-      setMembers(prev => {
+      updateMembersState(prev => {
         let changed = false;
         const now = Date.now();
         const next = new Map(prev);
@@ -764,7 +916,7 @@ export function useGroupRide() {
       });
     }, 5000);
     return () => clearInterval(cleanupInterval);
-  }, [isConnected]);
+  }, [isConnected, updateMembersState]);
 
   // Clean up on unmount
   useEffect(() => {

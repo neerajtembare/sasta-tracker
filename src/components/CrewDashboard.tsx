@@ -20,7 +20,8 @@ import {
   Map as MapIcon,
   Compass,
   X,
-  RotateCw
+  RotateCw,
+  Crosshair
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { CrewLiveMap } from './CrewLiveMap';
@@ -108,6 +109,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [quickCodeInput, setQuickCodeInput] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [connectedViewMode, setConnectedViewMode] = useState<'map' | 'list'>('map');
+  const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedCrews(getSavedCrews());
@@ -151,7 +153,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   const handleShareWhatsAppCrew = (code: string, crewName?: string) => {
-    const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
+    const leaderParam = riderName ? `&leader=${encodeURIComponent(riderName)}` : '';
+    const url = `${window.location.origin}${window.location.pathname}?room=${code}${leaderParam}`;
     const nameLabel = crewName ? `"${crewName}"` : code;
     
     if ('geolocation' in navigator) {
@@ -179,7 +182,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   const handleCopyInviteLink = (code: string) => {
-    const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
+    const leaderParam = riderName ? `&leader=${encodeURIComponent(riderName)}` : '';
+    const url = `${window.location.origin}${window.location.pathname}?room=${code}${leaderParam}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopiedLink(true);
       triggerHaptic(30);
@@ -222,6 +226,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           onStopRecording={onStopRecording}
           pointsCount={pointsCount}
           totalDistanceMeters={totalDistanceMeters}
+          onToggleCrewList={() => setConnectedViewMode(prev => prev === 'map' ? 'list' : 'map')}
+          focusedRiderId={focusedRiderId}
         />
       ) : (
         /* Detailed Squad Formation List View */
@@ -253,12 +259,27 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 <div>
                   <div className="font-bold text-white flex items-center gap-1.5">
                     <span>{riderName}</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300">YOU</span>
-                    {isHost && <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">LEADER</span>}
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold">YOU</span>
+                    {isHost && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                        👑 LEADER
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] text-emerald-400">GPS Transmitting Live</div>
                 </div>
               </div>
+              <button
+                onClick={() => {
+                  setFocusedRiderId('me');
+                  setConnectedViewMode('map');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                title="Center map on your location"
+              >
+                <Crosshair className="w-3 h-3 text-cyan-400" />
+                <span>My Map</span>
+              </button>
             </div>
 
             {/* Friends */}
@@ -284,6 +305,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     <div>
                       <div className="font-bold text-white flex items-center gap-1.5">
                         <span>{m.name}</span>
+                        {m.isHost && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                            👑 LEADER
+                          </span>
+                        )}
                         {m.location && <span className="text-[10px] text-amber-400">{m.location.speedKmh.toFixed(0)} km/h</span>}
                       </div>
                       <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
@@ -294,17 +320,32 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     </div>
                   </div>
 
-                  {gmapsUrl && (
-                    <a
-                      href={gmapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1"
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setFocusedRiderId(m.riderId);
+                        setConnectedViewMode('map');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      title={`Show ${m.name} on Live Map`}
                     >
-                      <Navigation className="w-3 h-3" />
-                      <span>Directions</span>
-                    </a>
-                  )}
+                      <Crosshair className="w-3 h-3 text-cyan-400" />
+                      <span>Map</span>
+                    </button>
+
+                    {gmapsUrl && (
+                      <a
+                        href={gmapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                        title={`Open Google Maps turn-by-turn navigation to ${m.name}`}
+                      >
+                        <Navigation className="w-3 h-3" />
+                        <span>Directions</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -388,6 +429,22 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               </button>
             )}
 
+            {/* Live Progress Banner when connecting with Cancel button */}
+            {connectionStatus === 'connecting' && (
+              <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 text-[11px] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0 animate-ping" />
+                  <span className="truncate">{statusMessage || 'Connecting to crew...'}</span>
+                </div>
+                <button
+                  onClick={() => onLeaveRoom()}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer shrink-0"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
             {/* Error banner if connecting failed with Retry & Host options */}
             {statusMessage && connectionStatus === 'error' && (
               <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] space-y-1.5">
@@ -420,13 +477,23 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               <button
                 onClick={() => {
                   if (onStartRecording && !isRecording) onStartRecording();
-                  onCreateRoom(riderName);
+                  if (quickCodeInput.trim()) {
+                    onCreateRoom(riderName, quickCodeInput.trim());
+                  } else {
+                    onCreateRoom(riderName);
+                  }
                 }}
                 disabled={connectionStatus === 'connecting'}
                 className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all disabled:opacity-50 active:scale-98"
               >
                 <Radio className="w-3.5 h-3.5" />
-                <span>{connectionStatus === 'connecting' ? 'Starting...' : 'Start Crew Ride'}</span>
+                <span>
+                  {connectionStatus === 'connecting'
+                    ? 'Connecting...'
+                    : quickCodeInput.trim()
+                    ? `Start "${quickCodeInput.trim()}" Squad`
+                    : 'Start Crew Ride'}
+                </span>
               </button>
 
               <div className="flex items-center gap-1.5">
@@ -434,14 +501,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                   type="text"
                   maxLength={10}
                   value={quickCodeInput}
-                  onChange={e => setQuickCodeInput(e.target.value.toUpperCase())}
+                  onChange={e => setQuickCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && quickCodeInput.trim() && connectionStatus !== 'connecting') {
                       if (onStartRecording && !isRecording) onStartRecording();
                       onJoinRoom(quickCodeInput, riderName);
                     }
                   }}
-                  placeholder="Room Code..."
+                  placeholder="Enter Squad Code (e.g. SUNDAY)"
                   className="flex-1 py-1.5 px-2.5 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono font-bold text-xs uppercase tracking-wider focus:outline-none focus:border-cyan-400"
                 />
                 <button

@@ -15,7 +15,8 @@ import {
   Minimize2,
   Edit3,
   Coffee,
-  Radio
+  Radio,
+  Scan
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 
@@ -54,6 +55,8 @@ interface CrewLiveMapProps {
   onStopRecording?: () => void;
   pointsCount?: number;
   totalDistanceMeters?: number;
+  onToggleCrewList?: () => void;
+  focusedRiderId?: string | null;
 }
 
 export type MapLayerType = 'streets' | 'satellite';
@@ -86,6 +89,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   onStopRecording,
   pointsCount = 0,
   totalDistanceMeters = 0,
+  onToggleCrewList,
+  focusedRiderId = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -106,6 +111,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Inline handle editor
   const [isEditingHandle, setIsEditingHandle] = useState(false);
   const [tempHandle, setTempHandle] = useState(myRiderName);
+
+  // Focus specific rider when requested externally (e.g. from formation list)
+  useEffect(() => {
+    if (focusedRiderId) {
+      setSelectedRiderId(focusedRiderId);
+      if (focusedRiderId === 'me') {
+        if (myLocation && mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo([myLocation.lat, myLocation.lon], 16, { animate: true, duration: 0.8 });
+        }
+      } else {
+        const m = members.find(member => member.riderId === focusedRiderId);
+        if (m && m.location && mapInstanceRef.current) {
+          triggerHaptic(20);
+          mapInstanceRef.current.flyTo([m.location.lat, m.location.lon], 16, { animate: true, duration: 0.8 });
+        }
+      }
+    }
+  }, [focusedRiderId, members, myLocation]);
 
   const handleCopyCode = () => {
     if (!roomCode) return;
@@ -253,8 +276,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       ? `<div style="position:absolute; top:-7px; left:50%; transform:translateX(-50%) rotate(${heading}deg); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid ${color};"></div>`
       : '';
 
+    const myLeaderCrown = isHost
+      ? `<div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+      : '';
+
     const html = `
       <div style="position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center;">
+        ${myLeaderCrown}
         <div style="position:absolute; width:34px; height:34px; border-radius:50%; background:${color}; opacity:0.25; border:1.5px solid ${color};"></div>
         ${headingArrow}
         <div style="position:relative; width:26px; height:26px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 10px ${color}, 0 2px 5px rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px;">
@@ -283,7 +311,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     if (selectedRiderId === 'me') {
       map.panTo(pos, { animate: true, duration: 0.5 });
     }
-  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId]);
+  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost]);
 
   // Update Member Markers
   useEffect(() => {
@@ -313,9 +341,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         : '';
 
       const statusTag = isStopped ? 'STOP' : speed;
+      const leaderCrown = m.isHost
+        ? `<div style="position:absolute; top:-16px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+        : '';
 
       const html = `
         <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
+          ${leaderCrown}
           ${bearingArrow}
           <div style="width:24px; height:24px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:10px;">
             ${initial}
@@ -333,17 +365,34 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         iconAnchor: [17, 17],
       });
 
+      const distText = formatDistance(m.distanceFromMeMeters);
+      const roleLabel = m.isHost ? '👑 Crew Leader' : 'Crew Member';
+      const gmapsLink = `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`;
+      const popupHtml = `
+        <div style="font-family:monospace; min-width:145px; text-align:center; padding:2px;">
+          <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">${m.name}</div>
+          <div style="font-size:9px; color:#f59e0b; font-weight:bold; margin-bottom:4px;">${roleLabel}</div>
+          <div style="font-size:10px; color:#38bdf8; margin-bottom:8px;">
+            ${distText} • ${statusTag}
+          </div>
+          <a href="${gmapsLink}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; gap:4px; width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:5px 8px; border-radius:6px; text-decoration:none;">
+            🧭 Navigate in Maps
+          </a>
+        </div>
+      `;
+
       let marker = memberMarkersRef.current.get(m.riderId);
       if (!marker) {
         marker = L.marker(pos, { icon, zIndexOffset: 900 }).addTo(map);
+        marker.bindPopup(popupHtml, { offset: [0, -12] });
         marker.on('click', () => {
           setSelectedRiderId(m.riderId);
-          map.flyTo(pos, 16, { animate: true, duration: 1 });
         });
         memberMarkersRef.current.set(m.riderId, marker);
       } else {
         marker.setIcon(icon);
         marker.setLatLng(pos);
+        marker.setPopupContent(popupHtml);
       }
     });
   }, [members, unitSystem]);
@@ -497,23 +546,34 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         {/* Left: Room Status & Callsign */}
         <div className="flex items-center gap-1.5 pointer-events-auto">
           {isConnected && (
-            <button
-              onClick={onCopyInviteLink}
-              className="h-8 px-2.5 rounded-full bg-slate-950/85 backdrop-blur-md border border-cyan-500/50 hover:border-cyan-400 text-white font-mono text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95 shrink-0"
-              title="Tap to copy invite link"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="font-heading font-black tracking-wider text-cyan-400">{roomCode}</span>
-              {copiedLink ? (
-                <Check className="w-3 h-3 text-emerald-400" />
-              ) : (
-                <Copy className="w-3 h-3 text-slate-400" />
+            <div className="flex items-center h-8 bg-slate-950/85 backdrop-blur-md border border-cyan-500/50 rounded-full shadow-md overflow-hidden shrink-0">
+              <button
+                onClick={onCopyInviteLink}
+                className="h-full px-2.5 hover:bg-slate-900 text-white font-mono text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Tap to copy squad invite link"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="font-heading font-black tracking-wider text-cyan-400">{roomCode}</span>
+                {copiedLink ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3 h-3 text-slate-400" />
+                )}
+              </button>
+              {onToggleCrewList && (
+                <>
+                  <span className="text-slate-700">|</span>
+                  <button
+                    onClick={onToggleCrewList}
+                    className="h-full px-2.5 hover:bg-cyan-950/60 text-slate-300 hover:text-cyan-300 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    title="View Convoy Formation & Crew Roster"
+                  >
+                    <span>{totalRiders}</span>
+                    <Users className="w-3 h-3 text-cyan-400" />
+                  </button>
+                </>
               )}
-              <span className="text-slate-600">|</span>
-              <span className="text-[10px] font-bold text-slate-300">
-                {totalRiders} <Users className="w-2.5 h-2.5 inline text-cyan-400" />
-              </span>
-            </button>
+            </div>
           )}
 
           {/* Callsign Tag */}
@@ -721,30 +781,44 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          RIGHT FLOATING ACTION BUTTONS: Recenter, Fit, SOS (Circular Pills)
+          RIGHT FLOATING ACTION BUTTONS: Recenter, Fit Convoy, Crew Roster, SOS
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute right-2 top-12 z-10 flex flex-col gap-1.5 pointer-events-auto">
+      <div className="absolute right-2 top-12 z-10 flex flex-col gap-2 pointer-events-auto">
         {/* Recenter on Me */}
         <button
           onClick={handleRecenterMe}
-          className={`w-8 h-8 rounded-full backdrop-blur-md border shadow-md flex items-center justify-center cursor-pointer transition-all ${
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
             selectedRiderId === 'me'
-              ? 'bg-cyan-500 border-cyan-400 text-slate-950 shadow-cyan-500/40'
-              : 'bg-slate-950/85 border-slate-700/80 text-cyan-400 hover:bg-slate-900'
+              ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40 ring-2 ring-cyan-400/50'
+              : 'bg-slate-950/90 border-slate-700/80 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
           }`}
-          title="Recenter on Me"
+          title="Recenter on Me (GPS)"
         >
-          <Crosshair className="w-4 h-4" />
+          <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
 
-        {/* Fit All Crew Riders */}
+        {/* Fit All Crew Riders (Convoy Bounds) */}
         <button
           onClick={handleFitAllRiders}
-          className="w-8 h-8 rounded-full bg-slate-950/85 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-200 hover:text-white shadow-md flex items-center justify-center cursor-pointer transition-colors"
-          title="Fit All Riders"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-sky-400 text-sky-400 hover:text-sky-300 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95"
+          title="Fit Convoy (Show all riders on map)"
         >
-          <Users className="w-4 h-4" />
+          <Scan className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
+
+        {/* Squad Members Roster / Formation List */}
+        {isConnected && onToggleCrewList && (
+          <button
+            onClick={onToggleCrewList}
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-emerald-400 text-emerald-400 hover:text-emerald-300 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 relative"
+            title="View Crew Members Roster & Formation"
+          >
+            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-slate-950 font-mono font-black text-[9px] flex items-center justify-center shadow-xs">
+              {totalRiders}
+            </span>
+          </button>
+        )}
 
         {/* SOS / Regroup Ping */}
         {isConnected && onTriggerSos && (
@@ -754,10 +828,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 onTriggerSos();
               }
             }}
-            className="w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-500 backdrop-blur-md border border-rose-400/60 text-white shadow-md shadow-rose-900/40 flex items-center justify-center cursor-pointer transition-colors"
-            title="Call Regroup / SOS"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-rose-600 hover:bg-rose-500 backdrop-blur-md border border-rose-400/80 text-white shadow-lg shadow-rose-900/50 flex items-center justify-center cursor-pointer transition-all active:scale-95"
+            title="Emergency SOS / Call Regroup"
           >
-            <AlertTriangle className="w-4 h-4" />
+            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         )}
       </div>
@@ -819,6 +893,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               </div>
               <div className="font-mono text-[11px] font-bold flex items-center gap-1">
                 <span>YOU</span>
+                {isHost && (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black">
+                    LEADER
+                  </span>
+                )}
                 <span className="text-cyan-400">
                   {myLocation ? formatSpeed(myLocation.speedKmh) : 'GPS...'}
                 </span>
@@ -854,6 +933,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   </div>
                   <div className="font-mono text-[11px] font-bold flex items-center gap-1">
                     <span className="text-white">{m.name}</span>
+                    {m.isHost && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black flex items-center gap-0.5">
+                        👑 LEADER
+                      </span>
+                    )}
                     {isWeak ? (
                       <span className="text-amber-400 text-[10px] font-bold">Signal Weak</span>
                     ) : (
@@ -871,10 +955,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => e.stopPropagation()}
-                      className="p-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 transition-colors ml-0.5"
-                      title={`Directions to ${m.name}`}
+                      className="h-5 px-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 transition-colors ml-0.5 flex items-center gap-1 font-bold text-[9px]"
+                      title={`Open Google Maps turn-by-turn navigation to ${m.name}`}
                     >
                       <Navigation className="w-2.5 h-2.5" />
+                      <span>Directions</span>
                     </a>
                   )}
                 </div>

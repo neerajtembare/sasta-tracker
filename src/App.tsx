@@ -273,12 +273,12 @@ export default function App() {
           gpxContent: gpxText,
         });
         setCurrentRideId(saved.id);
-        setSessionNotice('🏍️ Ride auto-saved to your Garage! Open My Rides to see it.');
-        setTimeout(() => setSessionNotice(null), 5000);
+        setSessionNotice('Saved to Garage.');
+        setTimeout(() => setSessionNotice(null), 4000);
       } catch (saveErr: any) {
         console.warn('Auto-save failed:', saveErr);
-        setSessionNotice('⚠️ Could not auto-save ride. Use My Rides → Save to keep it manually.');
-        setTimeout(() => setSessionNotice(null), 6000);
+        setSessionNotice('Could not auto-save. Save manually.');
+        setTimeout(() => setSessionNotice(null), 5000);
       }
     } catch (err: any) {
       setErrorMessage('Error analyzing recorded ride: ' + err.message);
@@ -289,8 +289,8 @@ export default function App() {
     controls.startNewRecording();
     setIsRecordingLive(true);
     triggerHaptic(50);
-    setSessionNotice('🔴 Route tracking active — recording to your Garage.');
-    setTimeout(() => setSessionNotice(null), 4000);
+    setSessionNotice('Recording track to Garage.');
+    setTimeout(() => setSessionNotice(null), 3000);
   }, [controls]);
 
   const handleStopAndSaveRecording = useCallback(() => {
@@ -927,7 +927,7 @@ export default function App() {
           <div className="relative">
             <Radio className="w-5 h-5" />
             {isRecordingLive && (
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 absolute -top-0.5 -right-1 animate-ping" />
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-rose-500/30 absolute -top-0.5 -right-1" />
             )}
           </div>
           <span className="text-[10px] uppercase tracking-wider font-bold">Ride</span>

@@ -717,7 +717,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             </div>
             {gps.markedWaypoints.length > 0 && (
               <div className="text-[11px] font-mono text-emerald-500 text-center pt-1 font-bold">
-                {gps.markedWaypoints.length} waypoints saved to current session
+                {gps.markedWaypoints.length} waypoints saved
               </div>
             )}
           </div>
@@ -733,7 +733,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               }`}
             >
               <Play className={isGloveMode ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} />
-              <span>{isGloveMode ? 'START GPS LOGGING (GLOVE)' : 'START GPS LOGGING'}</span>
+              <span>START RIDE</span>
             </button>
           ) : isGloveMode ? (
             /* Glove Mode: Massive Dual Touch Blocks */
@@ -744,7 +744,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl cursor-pointer shadow-lg active:scale-98 min-h-[70px]"
                 >
                   <Play className="w-6 h-6 fill-current" />
-                  <span>RESUME RIDE</span>
+                  <span>RESUME</span>
                 </button>
               ) : (
                 <button
@@ -752,7 +752,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl cursor-pointer shadow-lg active:scale-98 min-h-[70px]"
                 >
                   <Pause className="w-6 h-6 fill-current" />
-                  <span>PAUSE RIDE</span>
+                  <span>PAUSE</span>
                 </button>
               )}
 
@@ -761,7 +761,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                 className="w-full py-5 bg-rose-500 hover:bg-rose-400 text-white font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl shadow-lg cursor-pointer active:scale-98 min-h-[70px]"
               >
                 <Square className="w-6 h-6 fill-current" />
-                <span>SAVE & STOP</span>
+                <span>FINISH & SAVE</span>
               </button>
             </div>
           ) : (
@@ -781,7 +781,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-sm uppercase flex items-center gap-2 rounded-xl cursor-pointer"
                 >
                   <Pause className="w-4 h-4 fill-current" />
-                  <span>PAUSE RIDE</span>
+                  <span>PAUSE</span>
                 </button>
               )}
 
@@ -790,7 +790,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                 className="px-5 py-3 bg-rose-500 hover:bg-rose-400 text-white font-mono font-bold text-sm uppercase flex items-center gap-2 rounded-xl shadow-lg cursor-pointer hover:shadow-rose-500/20"
               >
                 <Square className="w-4 h-4 fill-current" />
-                <span>SAVE & ANALYZE TRACK</span>
+                <span>FINISH & SAVE</span>
               </button>
             </div>
           )}

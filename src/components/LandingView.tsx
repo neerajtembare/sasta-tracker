@@ -206,10 +206,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
 
         <h2 className="font-heading font-black text-xl sm:text-2xl mb-1">
-          Start Tracking Your Ride
+          Record Live Ride
         </h2>
         <p className={`text-xs sm:text-sm max-w-sm leading-relaxed ${subText}`}>
-          Tap to begin live GPS recording. Mount your phone or keep it in your pocket — we handle the rest.
+          Live GPS tracking with speed, lean angle, and garage auto-save.
         </p>
 
         <div className="mt-5 flex items-center gap-3 flex-wrap justify-center">
@@ -345,14 +345,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
         <div className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 text-xs font-mono ${cardBg}`}>
           <div className="flex items-center gap-2 text-slate-400">
             <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>First time? Want to test without recording a ride?</span>
+            <span>Want to test without riding?</span>
           </div>
           <button
             type="button"
             onClick={() => onSelectRide(SAMPLE_GPX_DATA, SAMPLE_GPX_NAME)}
             className="px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500 text-sky-400 hover:text-slate-950 font-bold text-xs transition-all shrink-0 cursor-pointer"
           >
-            <span>Preview Sample Route →</span>
+            <span>Load Demo Ride →</span>
           </button>
         </div>
       )}
@@ -364,7 +364,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div className="font-mono font-bold text-xs">100% Private</div>
-          <div className={`text-[10px] leading-tight ${subText}`}>Zero servers. Data never leaves your phone.</div>
+          <div className={`text-[10px] leading-tight ${subText}`}>Stored locally on phone</div>
         </div>
 
         <div className={`p-3 sm:p-4 border rounded-xl space-y-1 ${cardBg}`}>
@@ -372,15 +372,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <Gauge className="w-5 h-5" />
           </div>
           <div className="font-mono font-bold text-xs">Speed Heatmaps</div>
-          <div className={`text-[10px] leading-tight ${subText}`}>Dynamic color-coded velocity line trace.</div>
+          <div className={`text-[10px] leading-tight ${subText}`}>Color-coded telemetry</div>
         </div>
 
         <div className={`p-3 sm:p-4 border rounded-xl space-y-1 ${cardBg}`}>
           <div className="text-amber-500 flex justify-center mb-1">
             <Coffee className="w-5 h-5" />
           </div>
-          <div className="font-mono font-bold text-xs">Pit Stop Logger</div>
-          <div className={`text-[10px] leading-tight ${subText}`}>Chai, fuel, food breaks with durations.</div>
+          <div className="font-mono font-bold text-xs">Pit Stops</div>
+          <div className={`text-[10px] leading-tight ${subText}`}>Fuel, rest & chai breaks</div>
         </div>
 
         <div className={`p-3 sm:p-4 border rounded-xl space-y-1 ${cardBg}`}>
@@ -388,7 +388,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <Smartphone className="w-5 h-5" />
           </div>
           <div className="font-mono font-bold text-xs">Install as App</div>
-          <div className={`text-[10px] leading-tight ${subText}`}>Add to home screen for native app speed.</div>
+          <div className={`text-[10px] leading-tight ${subText}`}>Runs offline on home screen</div>
         </div>
       </div>
     </div>

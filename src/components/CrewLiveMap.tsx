@@ -466,7 +466,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {!myLocation && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
           <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span>Acquiring GPS fix... (Move outdoors for sky view)</span>
+          <span>Acquiring GPS fix...</span>
         </div>
       )}
 
@@ -560,7 +560,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               title="Start logging route to your Garage while riding with crew"
             >
               <Radio className="w-3 h-3 text-emerald-400" />
-              <span className="hidden sm:inline">Log Track</span>
+              <span className="hidden sm:inline">Record</span>
             </button>
           ) : null}
 

@@ -151,19 +151,19 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           const lat = pos.coords.latitude.toFixed(6);
           const lon = pos.coords.longitude.toFixed(6);
           const gmapsPin = `https://maps.google.com/?q=${lat},${lon}`;
-          const text = `🏍️ ThrottleLog Crew Ride Alert!\n\nJoin our ${nameLabel} ride directly:\n👉 ${url}\n\nRoom Code: *${code}*\n(No login or app install needed, tap link to open live map!)\n\n📍 My Live Google Maps Pin:\n${gmapsPin}`;
+          const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*\n\n📍 Google Maps Pin:\n${gmapsPin}`;
           const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
           window.open(waUrl, '_blank');
         },
         () => {
-          const text = `🏍️ Join our ${nameLabel} ride on ThrottleLog!\n\n👉 Tap to join live radar:\n${url}\n\nRoom Code: *${code}*`;
+          const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*`;
           const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
           window.open(waUrl, '_blank');
         },
         { enableHighAccuracy: true, timeout: 3000 }
       );
     } else {
-      const text = `🏍️ Join our ${nameLabel} ride on ThrottleLog!\n\n👉 Tap to join live radar:\n${url}\n\nRoom Code: *${code}*`;
+      const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*`;
       const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
       window.open(waUrl, '_blank');
     }
@@ -374,7 +374,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all disabled:opacity-50 active:scale-98"
               >
                 <Radio className="w-3.5 h-3.5" />
-                <span>{connectionStatus === 'connecting' ? 'Starting...' : 'Start Instant Crew Ride'}</span>
+                <span>{connectionStatus === 'connecting' ? 'Starting...' : 'Start Crew Ride'}</span>
               </button>
 
               <div className="flex items-center gap-1.5">
@@ -389,7 +389,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       onJoinRoom(quickCodeInput, riderName);
                     }
                   }}
-                  placeholder="Enter Room Code..."
+                  placeholder="Room Code..."
                   className="flex-1 py-1.5 px-2.5 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono font-bold text-xs uppercase tracking-wider focus:outline-none focus:border-cyan-400"
                 />
                 <button
@@ -444,7 +444,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 className="hover:text-cyan-400 flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <Plus className="w-2.5 h-2.5" />
-                <span>{isCreatingNewCrew ? 'Close Squad Creator' : 'Save Recurring Squad'}</span>
+                <span>{isCreatingNewCrew ? 'Close' : 'Save Squad'}</span>
               </button>
             </div>
 
@@ -456,7 +456,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                   maxLength={20}
                   value={newCrewName}
                   onChange={e => setNewCrewName(e.target.value)}
-                  placeholder="Squad Name (e.g. Sunday Ghats)"
+                  placeholder="Squad Name"
                   className="w-full py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white focus:outline-none focus:border-cyan-400"
                   required
                 />
@@ -466,7 +466,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     maxLength={8}
                     value={newCrewCode}
                     onChange={e => setNewCrewCode(e.target.value.toUpperCase())}
-                    placeholder="Custom Code (e.g. GHATS)"
+                    placeholder="Code (optional)"
                     className="flex-1 py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white uppercase focus:outline-none focus:border-cyan-400"
                   />
                   <button

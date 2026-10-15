@@ -23,7 +23,6 @@ import { CorneringProfileCard } from './components/CorneringProfileCard';
 import { RideStoryModal } from './components/RideStoryModal';
 import { RideReportModal } from './components/RideReportModal';
 import { TrackComparisonModal } from './components/TrackComparisonModal';
-import { GroupRideModal } from './components/GroupRideModal';
 import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { useGroupRide } from './hooks/useGroupRide';
@@ -91,9 +90,14 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
-  const [isGroupRideModalOpen, setIsGroupRideModalOpen] = useState<boolean>(false);
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
   const groupRide = useGroupRide();
+  const [myLocation, setMyLocation] = useState<{
+    lat: number;
+    lon: number;
+    speedKmh: number;
+    heading: number | null;
+  } | null>(null);
   const [currentRideId, setCurrentRideId] = useState<string | null>(null);
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
@@ -115,6 +119,39 @@ export default function App() {
       } catch {}
     }
   }, []);
+
+  // Background GPS broadcasting for group ride: ensures joiners via link immediately transmit location
+  useEffect(() => {
+    if (!groupRide.isConnected) return;
+
+    let watchId: number | null = null;
+    if ('geolocation' in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude, speed, heading } = pos.coords;
+          const kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
+          const loc = {
+            lat: latitude,
+            lon: longitude,
+            speedKmh: kmh,
+            heading: heading !== null && heading >= 0 ? heading : null,
+          };
+          setMyLocation(loc);
+          groupRide.updateMyLocation(latitude, longitude, kmh, heading !== null && heading >= 0 ? heading : null);
+        },
+        (err) => {
+          console.warn('Group ride background GPS watch warning:', err);
+        },
+        { enableHighAccuracy: true, maximumAge: 2500, timeout: 10000 }
+      );
+    }
+
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [groupRide.isConnected, groupRide.updateMyLocation]);
 
   const globalFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -758,7 +795,10 @@ export default function App() {
             sosAlert={groupRide.sosAlert}
             onOpenGroupRideModal={() => setCurrentTab('crew')}
             onTriggerSos={groupRide.triggerSos}
-            onUpdateMyLocation={groupRide.updateMyLocation}
+            onUpdateMyLocation={(lat, lon, kmh, bearing) => {
+              setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
+              groupRide.updateMyLocation(lat, lon, kmh, bearing);
+            }}
           />
         </div>
 
@@ -768,6 +808,8 @@ export default function App() {
             <CrewDashboard
               roomCode={groupRide.roomCode}
               riderName={groupRide.riderName}
+              myColor={groupRide.myColor}
+              myLocation={myLocation}
               isHost={groupRide.isHost}
               isConnected={groupRide.isConnected}
               connectionStatus={groupRide.connectionStatus}
@@ -886,25 +928,6 @@ export default function App() {
         theme={theme}
       />
 
-      {/* Group Ride Live Tracking Modal */}
-      <GroupRideModal
-        isOpen={isGroupRideModalOpen}
-        onClose={() => setIsGroupRideModalOpen(false)}
-        roomCode={groupRide.roomCode}
-        riderName={groupRide.riderName}
-        isHost={groupRide.isHost}
-        isConnected={groupRide.isConnected}
-        connectionStatus={groupRide.connectionStatus}
-        statusMessage={groupRide.statusMessage}
-        members={groupRide.members}
-        sosAlert={groupRide.sosAlert}
-        onCreateRoom={groupRide.createRoom}
-        onJoinRoom={groupRide.joinRoom}
-        onLeaveRoom={groupRide.leaveRoom}
-        onTriggerSos={groupRide.triggerSos}
-        onDismissSos={groupRide.dismissSos}
-        theme={theme}
-      />
 
       {/* Personal Cloud Backup & Sync Modal */}
       <CloudSyncModal

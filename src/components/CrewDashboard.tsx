@@ -30,13 +30,22 @@ import {
   ChevronRight,
   ExternalLink,
   MessageCircle,
-  MapPin
+  MapPin,
+  Map as MapIcon
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
+import { CrewLiveMap } from './CrewLiveMap';
 
 interface CrewDashboardProps {
   roomCode: string;
   riderName: string;
+  myColor?: string;
+  myLocation?: {
+    lat: number;
+    lon: number;
+    speedKmh: number;
+    heading: number | null;
+  } | null;
   isHost: boolean;
   isConnected: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -57,6 +66,8 @@ interface CrewDashboardProps {
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   roomCode,
   riderName,
+  myColor = '#00f0ff',
+  myLocation = null,
   isHost,
   isConnected,
   connectionStatus,
@@ -93,6 +104,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   // Quick join code input
   const [quickCodeInput, setQuickCodeInput] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [connectedViewMode, setConnectedViewMode] = useState<'map' | 'list'>('map');
 
   useEffect(() => {
     setSavedCrews(getSavedCrews());
@@ -348,13 +360,45 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* View Switcher: Live Map vs Formation List */}
+              <div className="flex items-center p-1 rounded-xl bg-slate-900/90 border border-slate-700/80 text-xs font-mono font-bold">
+                <button
+                  onClick={() => {
+                    triggerHaptic(20);
+                    setConnectedViewMode('map');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    connectedViewMode === 'map'
+                      ? 'bg-cyan-500 text-slate-950 font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <MapIcon className="w-3.5 h-3.5" />
+                  <span>Live Map</span>
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic(20);
+                    setConnectedViewMode('list');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    connectedViewMode === 'list'
+                      ? 'bg-cyan-500 text-slate-950 font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Riders ({members.length + 1})</span>
+                </button>
+              </div>
+
               <button
                 onClick={() => handleShareWhatsAppCrew(roomCode)}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer transition-colors"
                 title="Send invite link directly on WhatsApp"
               >
                 <Share2 className="w-4 h-4" />
-                <span>WhatsApp Invite</span>
+                <span>Invite</span>
               </button>
 
               <button
@@ -363,7 +407,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 title="Copy 1-tap join link"
               >
                 {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedLink ? 'Copied Link!' : 'Copy Link'}</span>
+                <span>{copiedLink ? 'Copied!' : 'Copy'}</span>
               </button>
 
               <button
@@ -386,8 +430,33 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             </div>
           </div>
 
-          {/* Crew Formation Radar & Member Cards */}
-          <div className="space-y-3">
+          {/* VIEW MODE 1: MINIMALISTIC FULL LIVE MAP */}
+          {connectedViewMode === 'map' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <CrewLiveMap
+                myLocation={myLocation}
+                myRiderName={riderName}
+                myColor={myColor}
+                isHost={isHost}
+                members={members}
+                sosAlert={sosAlert}
+                roomCode={roomCode}
+                theme={theme}
+                unitSystem={unitSystem}
+                onTriggerSos={onTriggerSos}
+                onDismissSos={onDismissSos}
+                onLeaveRoom={onLeaveRoom}
+                onShareWhatsApp={() => handleShareWhatsAppCrew(roomCode)}
+                onCopyInviteLink={() => handleCopyInviteLink(roomCode)}
+                copiedLink={copiedLink}
+                onGoToCockpit={onGoToCockpit}
+              />
+            </div>
+          )}
+
+          {/* VIEW MODE 2: FORMATION LIST & RADAR CARDS */}
+          {connectedViewMode === 'list' && (
+            <div className="space-y-3 animate-in fade-in duration-200">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
                 <Compass className="w-4 h-4 text-cyan-400" />
@@ -519,6 +588,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               })
             )}
           </div>
+          )}
         </div>
       ) : (
         /* ─────────────────────────────────────────────────────────────

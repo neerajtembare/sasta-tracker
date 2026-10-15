@@ -52,16 +52,44 @@ const ICE_SERVERS = [
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelay',
+    credential: 'openrelay',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelay',
+    credential: 'openrelay',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelay',
+    credential: 'openrelay',
+  },
 ];
 
-const RIDER_COLORS = [
-  '#00f0ff', // Electric Cyan (Leader/You)
+export const RIDER_COLORS = [
+  '#00f0ff', // Electric Cyan
   '#ffe600', // Neon Amber/Yellow
   '#ff3366', // Hot Coral Rose
   '#00ff88', // Emerald Spring
   '#a855f7', // Vivid Purple
   '#38bdf8', // Sky Blue
+  '#f97316', // Blaze Orange
+  '#ec4899', // Hot Pink
 ];
+
+export function getRiderColor(id: string): string {
+  if (!id) return RIDER_COLORS[1];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+  }
+  const idx = Math.abs(hash) % RIDER_COLORS.length;
+  return RIDER_COLORS[idx];
+}
 
 function sanitizeCode(code: string): string {
   return code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -249,18 +277,19 @@ export function useGroupRide() {
       setStatusMessage(`Connected with ${connectionsRef.current.size} rider(s)`);
 
       // Immediately send greeting identity so rider appears on HUD without waiting for GPS movement
+      const myColor = getRiderColor(riderId);
       try {
         conn.send({
           type: 'GREETING',
           payload: {
             riderId,
             name: riderName || 'Rider',
-            color: RIDER_COLORS[0],
+            color: myColor,
             isHost,
             location: myLocationRef.current ? {
               riderId,
               name: riderName || 'Rider',
-              color: RIDER_COLORS[0],
+              color: myColor,
               lat: myLocationRef.current.lat,
               lon: myLocationRef.current.lon,
               speedKmh: 0,
@@ -490,7 +519,7 @@ export function useGroupRide() {
 
     // Determine status (stopped if <2 km/h)
     const status: 'riding' | 'stopped' = speedKmh < 2.0 ? 'stopped' : 'riding';
-    const myColor = RIDER_COLORS[0];
+    const myColor = getRiderColor(riderId);
 
     const payload: GroupRiderLocation = {
       riderId,
@@ -573,6 +602,7 @@ export function useGroupRide() {
     roomCode,
     riderName,
     riderId,
+    myColor: getRiderColor(riderId),
     isHost,
     isConnected,
     connectionStatus,

@@ -108,24 +108,29 @@ export default function App() {
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
-  // Check URL query for room invite link (e.g. ?room=SUNDAY or ?crew=SUNDAY)
+  // Check URL query for room invite link (e.g. ?room=SUNDAY or ?crew=SUNDAY&leader=GhostRider)
   // Zero-friction 1-tap auto-join: joins immediately, arms recording, and switches to crew view!
+  const hasProcessedInviteRef = useRef(false);
   useEffect(() => {
+    if (hasProcessedInviteRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room') || params.get('crew');
     if (roomParam) {
+      hasProcessedInviteRef.current = true;
       const cleanCode = roomParam.trim().toUpperCase();
+      const leaderParam = params.get('leader') || params.get('host');
       controls.startNewRecording();
       setIsRecordingLive(true);
       groupRide.joinRoom(cleanCode);
       setCurrentTab('crew');
-      setSessionNotice(`🏍️ Joined Crew "${cleanCode}" & route logging active! Tap your handle to edit.`);
-      setTimeout(() => setSessionNotice(null), 5000);
+      const leaderNotice = leaderParam ? ` (${leaderParam}'s Crew)` : '';
+      setSessionNotice(`🏍️ Joined Squad "${cleanCode}"${leaderNotice} & route logging active! Callsign: ${groupRide.riderName}`);
+      setTimeout(() => setSessionNotice(null), 6000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
       } catch {}
     }
-  }, [controls, groupRide]);
+  }, [controls, groupRide.joinRoom, groupRide.riderName]);
 
   // Synchronize GPS coordinates directly from unified hook into groupRide and myLocation
   useEffect(() => {
@@ -852,6 +857,7 @@ export default function App() {
           <div className="animate-in fade-in duration-300">
             <CrewDashboard
               roomCode={groupRide.roomCode}
+              lastRoomCode={groupRide.lastRoomCode}
               riderName={groupRide.riderName}
               myColor={groupRide.myColor}
               myLocation={myLocation}
@@ -861,8 +867,11 @@ export default function App() {
               statusMessage={groupRide.statusMessage}
               members={groupRide.members}
               sosAlert={groupRide.sosAlert}
+              crewNotification={groupRide.crewNotification}
+              onDismissCrewNotification={groupRide.dismissCrewNotification}
               onCreateRoom={groupRide.createRoom}
               onJoinRoom={groupRide.joinRoom}
+              onRejoinRoom={groupRide.rejoinRoom}
               onLeaveRoom={groupRide.leaveRoom}
               onTriggerSos={groupRide.triggerSos}
               onDismissSos={groupRide.dismissSos}

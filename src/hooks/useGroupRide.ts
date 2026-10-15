@@ -24,6 +24,14 @@ export interface GroupMemberInfo {
   lastSeen: number;
   location?: GroupRiderLocation;
   distanceFromMeMeters?: number;
+  isStale?: boolean;
+}
+
+export interface CrewNotification {
+  id: string;
+  text: string;
+  type: 'join' | 'leave' | 'info' | 'alert';
+  timestamp: number;
 }
 
 export interface SosAlert {
@@ -115,6 +123,29 @@ export function useGroupRide() {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [members, setMembers] = useState<Map<string, GroupMemberInfo>>(new Map());
   const [sosAlert, setSosAlert] = useState<SosAlert | null>(null);
+  const [lastRoomCode, setLastRoomCode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('sasta_last_crew') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
+  const notificationTimeoutRef = useRef<any>(null);
+
+  const postCrewNotification = useCallback((text: string, type: 'join' | 'leave' | 'info' | 'alert' = 'info') => {
+    if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
+    const notif: CrewNotification = {
+      id: 'notif_' + Date.now(),
+      text,
+      type,
+      timestamp: Date.now(),
+    };
+    setCrewNotification(notif);
+    notificationTimeoutRef.current = setTimeout(() => {
+      setCrewNotification(null);
+    }, 4500);
+  }, []);
 
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
@@ -153,6 +184,11 @@ export function useGroupRide() {
       if (g?.riderId) {
         peerToRiderMapRef.current.set(fromPeerId, g.riderId);
         setMembers(prev => {
+          const isNew = !prev.has(g.riderId) && g.riderId !== riderId;
+          if (isNew) {
+            playWaypointChime();
+            postCrewNotification(`🏍️ ${g.name || 'A rider'} joined the crew radar!`, 'join');
+          }
           const next = new Map(prev);
           const existing = next.get(g.riderId);
           let dist: number | undefined = undefined;
@@ -230,11 +266,27 @@ export function useGroupRide() {
       if (leavingId) {
         setMembers(prev => {
           if (!prev.has(leavingId)) return prev;
+          const leaver = prev.get(leavingId);
+          if (leaver) {
+            postCrewNotification(`👋 ${leaver.name} left the crew.`, 'leave');
+          }
           const next = new Map(prev);
           next.delete(leavingId);
           return next;
         });
       }
+    } else if (data.type === 'HOST_CLOSED') {
+      // Crew leader closed the room
+      isManualLeaveRef.current = true;
+      if (reconnectIntervalRef.current) {
+        clearInterval(reconnectIntervalRef.current);
+        reconnectIntervalRef.current = null;
+      }
+      setIsConnected(false);
+      setConnectionStatus('disconnected');
+      setStatusMessage(`Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`);
+      postCrewNotification(`🏁 Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`, 'info');
+      setMembers(new Map());
     } else if (data.type === 'RENAME') {
       const rId = data.riderId;
       const newName = data.newName;
@@ -263,7 +315,7 @@ export function useGroupRide() {
         }
       });
     }
-  }, []);
+  }, [postCrewNotification, riderId]);
 
   // Connect to a peer
   const connectToPeer = useCallback((targetPeerId: string) => {
@@ -400,7 +452,11 @@ export function useGroupRide() {
     } catch {}
 
     setRoomCode(cleanCode);
+    setLastRoomCode(cleanCode);
     activeRoomCodeRef.current = cleanCode;
+    try {
+      localStorage.setItem('sasta_last_crew', cleanCode);
+    } catch {}
     setIsHost(false);
     isHostRef.current = false;
     setConnectionStatus('connecting');
@@ -455,7 +511,7 @@ export function useGroupRide() {
         }, 1200);
       } else {
         setConnectionStatus('error');
-        setStatusMessage('Could not find room leader. Check room code or ensure leader is active.');
+        setStatusMessage(`Could not find leader for room "${cleanCode}". Leader must be active online.`);
       }
     });
 
@@ -482,7 +538,11 @@ export function useGroupRide() {
     const generated = sanitized || ('RIDE' + Math.floor(1000 + Math.random() * 9000));
     
     setRoomCode(generated);
+    setLastRoomCode(generated);
     activeRoomCodeRef.current = generated;
+    try {
+      localStorage.setItem('sasta_last_crew', generated);
+    } catch {}
     setIsHost(true);
     isHostRef.current = true;
     setConnectionStatus('connecting');
@@ -538,6 +598,14 @@ export function useGroupRide() {
     peerRef.current = peer;
   }, [setupConnection, joinRoom]);
 
+  // Rejoin the last room
+  const rejoinRoom = useCallback(() => {
+    const targetCode = activeRoomCodeRef.current || lastRoomCode;
+    if (targetCode) {
+      joinRoom(targetCode, riderNameRef.current);
+    }
+  }, [lastRoomCode, joinRoom]);
+
   // Update rider's callsign / name on the fly and notify all peers
   const updateRiderName = useCallback((newName: string) => {
     const clean = newName.trim();
@@ -566,7 +634,15 @@ export function useGroupRide() {
     if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     retryCountRef.current = 0;
     try {
-      broadcastMessage({ type: 'LEAVE', riderId });
+      if (isHostRef.current) {
+        broadcastMessage({
+          type: 'HOST_CLOSED',
+          riderId,
+          riderName: riderNameRef.current,
+        });
+      } else {
+        broadcastMessage({ type: 'LEAVE', riderId });
+      }
     } catch {}
     if (peerRef.current) {
       peerRef.current.destroy();
@@ -663,7 +739,7 @@ export function useGroupRide() {
     return () => clearInterval(heartbeatInterval);
   }, [isConnected, riderId, broadcastMessage]);
 
-  // Periodic cleanup of stale riders (lost signal in tunnels or dead battery > 45s)
+  // Periodic cleanup of stale riders (marked weak >25s, removed >60s)
   useEffect(() => {
     if (!isConnected) return;
     const cleanupInterval = setInterval(() => {
@@ -672,14 +748,21 @@ export function useGroupRide() {
         const now = Date.now();
         const next = new Map(prev);
         prev.forEach((info, id) => {
-          if (now - info.lastSeen > 45000) {
+          const age = now - info.lastSeen;
+          if (age > 60000) {
             next.delete(id);
+            changed = true;
+          } else if (age > 25000 && !info.isStale) {
+            next.set(id, { ...info, isStale: true });
+            changed = true;
+          } else if (age <= 25000 && info.isStale) {
+            next.set(id, { ...info, isStale: false });
             changed = true;
           }
         });
         return changed ? next : prev;
       });
-    }, 10000);
+    }, 5000);
     return () => clearInterval(cleanupInterval);
   }, [isConnected]);
 
@@ -697,6 +780,7 @@ export function useGroupRide() {
 
   return {
     roomCode,
+    lastRoomCode,
     riderName,
     riderId,
     myColor: getRiderColor(riderId),
@@ -706,12 +790,15 @@ export function useGroupRide() {
     statusMessage,
     members: Array.from(members.values()),
     sosAlert,
+    crewNotification,
     createRoom,
     joinRoom,
+    rejoinRoom,
     leaveRoom,
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),
+    dismissCrewNotification: () => setCrewNotification(null),
     updateRiderName,
   };
 }

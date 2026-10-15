@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
+import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem } from '../types';
 import { 
   Crosshair, 
@@ -34,12 +34,16 @@ interface CrewLiveMapProps {
   members: GroupMemberInfo[];
   sosAlert: SosAlert | null;
   roomCode?: string;
+  lastRoomCode?: string;
   isConnected?: boolean;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
   onTriggerSos?: () => void;
   onDismissSos?: () => void;
   onLeaveRoom?: () => void;
+  onRejoinRoom?: () => void;
+  crewNotification?: CrewNotification | null;
+  onDismissCrewNotification?: () => void;
   onShareWhatsApp?: () => void;
   onCopyInviteLink?: () => void;
   copiedLink?: boolean;
@@ -62,12 +66,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   members,
   sosAlert,
   roomCode = '',
+  lastRoomCode = '',
   isConnected = false,
   theme = 'dark',
   unitSystem = 'metric',
   onTriggerSos,
   onDismissSos,
   onLeaveRoom,
+  onRejoinRoom,
+  crewNotification = null,
+  onDismissCrewNotification,
   onShareWhatsApp,
   onCopyInviteLink,
   copiedLink = false,
@@ -92,10 +100,21 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Inline handle editor
   const [isEditingHandle, setIsEditingHandle] = useState(false);
   const [tempHandle, setTempHandle] = useState(myRiderName);
+
+  const handleCopyCode = () => {
+    if (!roomCode) return;
+    navigator.clipboard.writeText(roomCode).then(() => {
+      setCopiedCode(true);
+      triggerHaptic(25);
+      setTimeout(() => setCopiedCode(false), 2000);
+    });
+  };
 
   const isLight = theme === 'light';
 
@@ -613,15 +632,93 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           {/* Leave Button */}
           {isConnected && onLeaveRoom && (
             <button
-              onClick={onLeaveRoom}
+              onClick={() => setIsLeaveModalOpen(true)}
               className="h-8 w-8 rounded-full bg-slate-950/85 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-600 text-slate-400 hover:text-rose-300 flex items-center justify-center shadow-md cursor-pointer transition-colors"
-              title="Leave Room"
+              title={isHost ? "End Crew Ride" : "Leave Crew"}
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          1-TAP REJOIN PILL ON MAP (If disconnected but last squad known)
+      ───────────────────────────────────────────────────────────── */}
+      {!isConnected && lastRoomCode && onRejoinRoom && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+          <button
+            onClick={onRejoinRoom}
+            className="h-8 px-3.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-xs flex items-center gap-1.5 shadow-xl shadow-amber-500/30 cursor-pointer transition-all active:scale-95 animate-in fade-in"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>Rejoin Crew "{lastRoomCode}"</span>
+          </button>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed)
+      ───────────────────────────────────────────────────────────── */}
+      {crewNotification && (
+        <div className="absolute top-12 left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200">
+          <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-mono text-xs ${
+            crewNotification.type === 'join'
+              ? 'bg-emerald-950/92 border-emerald-500/60 text-emerald-200 shadow-emerald-950/40'
+              : crewNotification.type === 'leave'
+              ? 'bg-slate-900/92 border-slate-700 text-slate-300 shadow-black/40'
+              : 'bg-cyan-950/92 border-cyan-500/60 text-cyan-200 shadow-cyan-950/40'
+          }`}>
+            <span className="font-bold truncate">{crewNotification.text}</span>
+            {onDismissCrewNotification && (
+              <button
+                onClick={onDismissCrewNotification}
+                className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          SAFETY LEAVE CONFIRMATION MODAL
+      ───────────────────────────────────────────────────────────── */}
+      {isLeaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-4 shadow-2xl font-mono space-y-3 pointer-events-auto">
+            <div className="flex items-center gap-2 text-rose-400 font-heading font-black text-sm uppercase tracking-wider">
+              <LogOut className="w-4 h-4" />
+              <span>{isHost ? 'End Crew Ride?' : 'Leave Crew Radar?'}</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {isHost ? (
+                <>You are the <strong>Crew Leader</strong>. Leaving will end the live radar session for all connected riders.</>
+              ) : (
+                <>Disconnect from squad <strong>{roomCode}</strong>? Your personal GPS track recording in Garage will continue.</>
+              )}
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => setIsLeaveModalOpen(false)}
+                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+              >
+                Stay with Crew
+              </button>
+              <button
+                onClick={() => {
+                  setIsLeaveModalOpen(false);
+                  if (onLeaveRoom) onLeaveRoom();
+                }}
+                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-900/30 transition-colors"
+              >
+                {isHost ? 'End Ride' : 'Leave'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           RIGHT FLOATING ACTION BUTTONS: Recenter, Fit, SOS (Circular Pills)
@@ -731,7 +828,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             {/* Member Cards */}
             {members.map(m => {
               const isSelected = selectedRiderId === m.riderId;
-              const isStopped = m.location && (m.location.status === 'stopped' || m.location.speedKmh < 2.0);
+              const isWeak = m.isStale || (Date.now() - m.lastSeen > 25000);
+              const isStopped = !isWeak && m.location && (m.location.status === 'stopped' || m.location.speedKmh < 2.0);
               const speedText = m.location ? formatSpeed(m.location.speedKmh) : '...';
               const distText = formatDistance(m.distanceFromMeMeters);
               const gmapsUrl = m.location
@@ -756,9 +854,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   </div>
                   <div className="font-mono text-[11px] font-bold flex items-center gap-1">
                     <span className="text-white">{m.name}</span>
-                    <span className={isStopped ? 'text-amber-400' : 'text-emerald-400'}>
-                      {isStopped ? 'STOP' : speedText}
-                    </span>
+                    {isWeak ? (
+                      <span className="text-amber-400 text-[10px] font-bold">Signal Weak</span>
+                    ) : (
+                      <span className={isStopped ? 'text-amber-400' : 'text-emerald-400'}>
+                        {isStopped ? 'STOP' : speedText}
+                      </span>
+                    )}
                     <span className="text-slate-500">•</span>
                     <span className="text-sky-300">{distText}</span>
                   </div>

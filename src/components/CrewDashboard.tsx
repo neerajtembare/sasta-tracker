@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppTheme, UnitSystem } from '../types';
-import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
+import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
 import { 
   SavedCrew, 
   getSavedCrews, 
@@ -19,13 +19,15 @@ import {
   Navigation,
   Map as MapIcon,
   Compass,
-  X
+  X,
+  RotateCw
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { CrewLiveMap } from './CrewLiveMap';
 
 interface CrewDashboardProps {
   roomCode: string;
+  lastRoomCode?: string;
   riderName: string;
   myColor?: string;
   myLocation?: {
@@ -40,8 +42,11 @@ interface CrewDashboardProps {
   statusMessage: string;
   members: GroupMemberInfo[];
   sosAlert: SosAlert | null;
+  crewNotification?: CrewNotification | null;
+  onDismissCrewNotification?: () => void;
   onCreateRoom: (name: string, customCode?: string) => void;
   onJoinRoom: (code: string, name?: string) => void;
+  onRejoinRoom?: () => void;
   onLeaveRoom: () => void;
   onTriggerSos: () => void;
   onDismissSos: () => void;
@@ -58,6 +63,7 @@ interface CrewDashboardProps {
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   roomCode,
+  lastRoomCode = '',
   riderName,
   myColor = '#00f0ff',
   myLocation = null,
@@ -67,8 +73,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   statusMessage,
   members,
   sosAlert,
+  crewNotification = null,
+  onDismissCrewNotification,
   onCreateRoom,
   onJoinRoom,
+  onRejoinRoom,
   onLeaveRoom,
   onTriggerSos,
   onDismissSos,
@@ -194,11 +203,15 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           members={members}
           sosAlert={sosAlert}
           roomCode={roomCode}
+          lastRoomCode={lastRoomCode}
           theme={theme}
           unitSystem={unitSystem}
           onTriggerSos={onTriggerSos}
           onDismissSos={onDismissSos}
           onLeaveRoom={onLeaveRoom}
+          onRejoinRoom={onRejoinRoom}
+          crewNotification={crewNotification}
+          onDismissCrewNotification={onDismissCrewNotification}
           onShareWhatsApp={() => handleShareWhatsAppCrew(roomCode)}
           onCopyInviteLink={() => handleCopyInviteLink(roomCode)}
           copiedLink={copiedLink}
@@ -356,10 +369,49 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               )}
             </div>
 
-            {/* Error banner if connecting failed */}
+            {/* 1-Tap Quick Rejoin Last Squad */}
+            {lastRoomCode && (
+              <button
+                onClick={() => {
+                  if (onStartRecording && !isRecording) onStartRecording();
+                  if (onRejoinRoom) onRejoinRoom();
+                  else onJoinRoom(lastRoomCode, riderName);
+                }}
+                disabled={connectionStatus === 'connecting'}
+                className="w-full py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-mono font-bold text-xs flex items-center justify-between cursor-pointer transition-all active:scale-98 disabled:opacity-50 shadow-sm"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Rejoin Squad</span>
+                </span>
+                <span className="font-heading font-black text-amber-200 uppercase tracking-wider">{lastRoomCode}</span>
+              </button>
+            )}
+
+            {/* Error banner if connecting failed with Retry & Host options */}
             {statusMessage && connectionStatus === 'error' && (
-              <div className="p-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] text-center">
-                {statusMessage}
+              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] space-y-1.5">
+                <div className="text-center">{statusMessage}</div>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <button
+                    onClick={() => {
+                      const codeToRetry = quickCodeInput.trim() || lastRoomCode;
+                      if (codeToRetry) onJoinRoom(codeToRetry, riderName);
+                    }}
+                    className="flex-1 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <RotateCw className="w-2.5 h-2.5" />
+                    <span>Retry</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onCreateRoom(riderName, quickCodeInput.trim() || undefined);
+                    }}
+                    className="flex-1 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <span>Host this Room</span>
+                  </button>
+                </div>
               </div>
             )}
 

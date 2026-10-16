@@ -16,6 +16,12 @@ export function exportAnalysisToGPX(analysis: RideAnalysis): string {
         gpx += `    <ele>${wpt.ele.toFixed(1)}</ele>\n`;
       }
       gpx += `    <name>${escapeXml(wpt.name)}</name>\n`;
+      if (wpt.notes) {
+        gpx += `    <desc>${escapeXml(wpt.notes)}</desc>\n`;
+      }
+      if (wpt.category) {
+        gpx += `    <type>${escapeXml(wpt.category)}</type>\n`;
+      }
       gpx += `  </wpt>\n`;
     });
   }

@@ -268,10 +268,14 @@ export function importGarageBackup(importedRides: any[]): SavedRide[] {
   for (const r of importedRides) {
     if (!r || typeof r !== 'object' || !r.name || !r.gpxContent) continue;
     const safeId = r.id || generateSafeId();
+    const rideCreated = r.createdAt && !isNaN(Number(r.createdAt))
+      ? Number(r.createdAt)
+      : (r.date ? Date.parse(r.date) || Date.now() : Date.now());
     currentMap.set(safeId, {
       id: safeId,
       name: String(r.name),
       date: r.date ? String(r.date) : new Date().toLocaleDateString(),
+      createdAt: rideCreated,
       gpxContent: String(r.gpxContent),
       distanceKm: Number(r.distanceKm) || 0,
       maxSpeedKmh: Number(r.maxSpeedKmh) || 0,

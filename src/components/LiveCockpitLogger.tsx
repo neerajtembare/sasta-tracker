@@ -463,7 +463,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             members={groupMembers || []}
             sosAlert={sosAlert || null}
             onOpenModal={() => onOpenGroupRideModal?.()}
-            onTriggerSos={() => onTriggerSos?.()}
+            onTriggerSos={() => {
+              if (window.confirm('🚨 Broadcast EMERGENCY REGROUP alert to all crew riders?')) {
+                onTriggerSos?.();
+              }
+            }}
           />
         )}
 

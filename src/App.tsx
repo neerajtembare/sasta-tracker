@@ -526,7 +526,7 @@ export default function App() {
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
-        onHomeClick={() => setCurrentTab('crew')}
+        onHomeClick={() => setCurrentTab('home')}
         onLoadSample={handleLoadSample}
         onUploadClick={triggerUploadClick}
         onOpenGarage={() => setIsGarageOpen(true)}

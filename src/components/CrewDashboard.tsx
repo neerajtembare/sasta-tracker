@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { CrewLiveMap } from './CrewLiveMap';
+import { CrewManageModal } from './CrewManageModal';
 
 interface CrewDashboardProps {
   roomCode: string;
@@ -110,6 +111,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [connectedViewMode, setConnectedViewMode] = useState<'map' | 'list'>('map');
   const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
+  const [isCrewManageOpen, setIsCrewManageOpen] = useState(false);
+  const [crewManageInitialTab, setCrewManageInitialTab] = useState<'active' | 'saved' | 'create' | 'join'>('saved');
+
+  const handleOpenCrewManage = (tab: 'active' | 'saved' | 'create' | 'join' = 'saved') => {
+    setSavedCrews(getSavedCrews());
+    setCrewManageInitialTab(tab);
+    setIsCrewManageOpen(true);
+  };
 
   useEffect(() => {
     setSavedCrews(getSavedCrews());
@@ -227,6 +236,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           pointsCount={pointsCount}
           totalDistanceMeters={totalDistanceMeters}
           onToggleCrewList={() => setConnectedViewMode(prev => prev === 'map' ? 'list' : 'map')}
+          onOpenCrewManage={handleOpenCrewManage}
           focusedRiderId={focusedRiderId}
         />
       ) : (
@@ -556,47 +566,23 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               </div>
             )}
 
-            {/* Mini Squad Creator Toggle */}
-            <div className="flex items-center justify-between pt-0.5 text-[10px] text-slate-500">
+            {/* Direct Crew Management Actions */}
+            <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/80">
               <button
-                onClick={() => setIsCreatingNewCrew(!isCreatingNewCrew)}
-                className="hover:text-cyan-400 flex items-center gap-1 cursor-pointer transition-colors"
+                onClick={() => handleOpenCrewManage('saved')}
+                className="flex-1 py-1.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
               >
-                <Plus className="w-2.5 h-2.5" />
-                <span>{isCreatingNewCrew ? 'Close' : 'Save Squad'}</span>
+                <Users className="w-3 h-3 text-cyan-400" />
+                <span>Saved Squads ({savedCrews.length})</span>
+              </button>
+              <button
+                onClick={() => handleOpenCrewManage('create')}
+                className="py-1.5 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Make Crew</span>
               </button>
             </div>
-
-            {/* Inline Mini Squad Creator Form */}
-            {isCreatingNewCrew && (
-              <form onSubmit={handleCreateCrew} className="p-2 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5 text-[10px]">
-                <input
-                  type="text"
-                  maxLength={20}
-                  value={newCrewName}
-                  onChange={e => setNewCrewName(e.target.value)}
-                  placeholder="Squad Name"
-                  className="w-full py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white focus:outline-none focus:border-cyan-400"
-                  required
-                />
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    maxLength={8}
-                    value={newCrewCode}
-                    onChange={e => setNewCrewCode(e.target.value.toUpperCase())}
-                    placeholder="Code (optional)"
-                    className="flex-1 py-1 px-2 rounded-lg border bg-slate-950 border-slate-700 text-white uppercase focus:outline-none focus:border-cyan-400"
-                  />
-                  <button
-                    type="submit"
-                    className="px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold cursor-pointer"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-            )}
 
           </div>
         </div>
@@ -618,6 +604,37 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           </button>
         </div>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          CREW MANAGEMENT MODAL (Make Crew, Join Crew, Delete Crew, Saved Squads)
+      ───────────────────────────────────────────────────────────── */}
+      <CrewManageModal
+        isOpen={isCrewManageOpen}
+        onClose={() => setIsCrewManageOpen(false)}
+        roomCode={roomCode}
+        lastRoomCode={lastRoomCode}
+        riderName={riderName}
+        myColor={myColor}
+        isHost={isHost}
+        isConnected={isConnected}
+        members={members}
+        onCreateRoom={(name, code) => {
+          if (onStartRecording && !isRecording) onStartRecording();
+          onCreateRoom(name, code);
+        }}
+        onJoinRoom={(code, name) => {
+          if (onStartRecording && !isRecording) onStartRecording();
+          onJoinRoom(code, name);
+        }}
+        onLeaveRoom={onLeaveRoom}
+        onUpdateRiderName={onUpdateRiderName}
+        onFocusRider={(id) => {
+          setFocusedRiderId(id);
+          setConnectedViewMode('map');
+        }}
+        theme={theme}
+        initialTab={crewManageInitialTab}
+      />
 
     </div>
   );

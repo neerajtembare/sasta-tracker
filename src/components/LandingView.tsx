@@ -12,10 +12,12 @@ import {
   Smartphone,
   Navigation,
   Zap,
+  Utensils,
   Coffee,
   Clock,
   FolderArchive,
-  Play
+  Play,
+  Users
 } from 'lucide-react';
 import { 
   SAMPLE_GPX_DATA, 
@@ -27,6 +29,7 @@ interface LandingViewProps {
   onFileLoaded: (xmlText: string, fileName: string, rideId?: string) => void;
   onSelectRide: (gpxText: string, name: string) => void;
   onStartRecording: () => void;
+  onOpenCrew?: () => void;
   theme: AppTheme;
   activeRideName?: string | null;
   activeRideDistanceKm?: number | null;
@@ -39,6 +42,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   onFileLoaded,
   onSelectRide,
   onStartRecording,
+  onOpenCrew,
   theme,
   activeRideName,
   activeRideDistanceKm,
@@ -233,6 +237,50 @@ export const LandingView: React.FC<LandingViewProps> = ({
           <span className="flex items-center gap-1"><Gauge className="w-3 h-3 text-emerald-500" /> Auto-save</span>
         </div>
       </div>
+
+      {/* Crew Live Radar Banner Card */}
+      {onOpenCrew && (
+        <div 
+          onClick={onOpenCrew}
+          className={`p-4 sm:p-5 border rounded-2xl cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4 group shadow-xl ${
+            isLight
+              ? 'bg-gradient-to-r from-cyan-50 to-sky-50 border-cyan-200 hover:border-cyan-400'
+              : 'bg-gradient-to-r from-cyan-950/30 via-[#0d131a] to-slate-900 border-cyan-500/30 hover:border-cyan-400'
+          }`}
+        >
+          <div className="flex items-center gap-3.5 text-center sm:text-left">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400">
+                  Real-time Convoy
+                </span>
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              </div>
+              <h3 className="font-heading font-black text-base sm:text-lg text-white">
+                Live Motorcycle Crew Radar
+              </h3>
+              <p className={`text-xs max-w-md ${subText}`}>
+                Ride together with friends in a decentralized pack. Live distance gaps, speed, Google Maps directions, and 1-tap WhatsApp squad invites.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCrew();
+            }}
+            className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 shrink-0 shadow-md group-hover:shadow-cyan-500/20 transition-all cursor-pointer"
+          >
+            <span>Open Crew Radar</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      )}
 
       {/* Secondary: Import GPX file (compact) */}
       <div

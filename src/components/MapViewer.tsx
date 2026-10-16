@@ -1214,7 +1214,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               }`}
               title="ESRI World Imagery Satellite"
             >
-              Satellite
+              <span className="hidden sm:inline">Satellite</span>
+              <span className="sm:hidden">Sat</span>
             </button>
             <button
               id="map-style-dark"

@@ -56,6 +56,7 @@ interface CrewLiveMapProps {
   pointsCount?: number;
   totalDistanceMeters?: number;
   onToggleCrewList?: () => void;
+  onOpenCrewManage?: (tab?: 'active' | 'saved' | 'create' | 'join') => void;
   focusedRiderId?: string | null;
 }
 
@@ -90,6 +91,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   pointsCount = 0,
   totalDistanceMeters = 0,
   onToggleCrewList,
+  onOpenCrewManage,
   focusedRiderId = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -543,40 +545,30 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute top-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none gap-1.5">
         
-        {/* Left: Room Status & Callsign */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {isConnected && (
-            <div className="flex items-center h-8 bg-slate-950/85 backdrop-blur-md border border-cyan-500/50 rounded-full shadow-md overflow-hidden shrink-0">
-              <button
-                onClick={onCopyInviteLink}
-                className="h-full px-2.5 hover:bg-slate-900 text-white font-mono text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
-                title="Tap to copy squad invite link"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="font-heading font-black tracking-wider text-cyan-400">{roomCode}</span>
-                {copiedLink ? (
-                  <Check className="w-3 h-3 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3 h-3 text-slate-400" />
-                )}
-              </button>
-              {onToggleCrewList && (
-                <>
-                  <span className="text-slate-700">|</span>
-                  <button
-                    onClick={onToggleCrewList}
-                    className="h-full px-2.5 hover:bg-cyan-950/60 text-slate-300 hover:text-cyan-300 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                    title="View Convoy Formation & Crew Roster"
-                  >
-                    <span>{totalRiders}</span>
-                    <Users className="w-3 h-3 text-cyan-400" />
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+        {/* Left: Manage Crew Pill & Callsign */}
+        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+          <button
+            onClick={() => onOpenCrewManage ? onOpenCrewManage(isConnected ? 'active' : 'saved') : onToggleCrewList?.()}
+            className="h-8 px-2.5 rounded-full bg-slate-950/90 backdrop-blur-md border border-cyan-500/50 hover:border-cyan-400 text-white font-mono text-[11px] font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+            title="Open Crew Management (Make Crew, Join Crew, Saved Squads)"
+          >
+            {isConnected ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse" />
+                <span className="font-heading font-black tracking-wider text-cyan-400">Crew Radar</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                  {roomCode}
+                </span>
+              </>
+            ) : (
+              <>
+                <Users className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-slate-200">Manage Crew</span>
+              </>
+            )}
+          </button>
 
-          {/* Callsign Tag */}
+          {/* Callsign Tag (Compact on mobile, full on desktop) */}
           {isEditingHandle ? (
             <div className="flex items-center gap-1 bg-slate-950/90 border border-cyan-400 rounded-full h-8 px-2 shadow-md">
               <input
@@ -605,17 +597,17 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 setTempHandle(myRiderName);
                 setIsEditingHandle(true);
               }}
-              className="h-8 px-2.5 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-slate-500 text-slate-300 hover:text-white font-mono text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer transition-colors shrink-0"
+              className="hidden sm:flex h-8 px-2.5 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-slate-500 text-slate-300 hover:text-white font-mono text-[11px] items-center gap-1.5 shadow-md cursor-pointer transition-colors"
               title="Tap to change your rider callsign"
             >
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: myColor || '#00f0ff' }} />
-              <span className="font-bold truncate max-w-[80px] sm:max-w-[120px]">{myRiderName}</span>
+              <span className="font-bold truncate max-w-[90px]">{myRiderName}</span>
               <Edit3 className="w-2.5 h-2.5 text-slate-500" />
             </button>
           )}
         </div>
 
-        {/* Right: Map Controls, Maximize & Quick Actions */}
+        {/* Right: Map Controls, Layer Toggle & Maximize (Clean, spacious, unclipped) */}
         <div className="flex items-center gap-1 pointer-events-auto shrink-0">
           {/* 1-Tap Garage Route Recording Sync */}
           {isRecording ? (
@@ -643,21 +635,23 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </button>
           ) : null}
 
-          {/* Layer Toggle */}
-          <div className="flex items-center bg-slate-950/85 backdrop-blur-md border border-slate-700/80 rounded-full h-8 p-0.5 shadow-md text-[10px] font-mono font-bold">
+          {/* Layer Toggle: Prominent Street | Sat with dedicated space */}
+          <div className="flex items-center bg-slate-950/90 backdrop-blur-md border border-slate-700/80 rounded-full h-8 p-0.5 shadow-md text-[10px] font-mono font-bold shrink-0">
             <button
               onClick={() => setMapLayer('streets')}
-              className={`px-2 h-full rounded-full transition-colors cursor-pointer ${
-                mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 h-full rounded-full transition-colors cursor-pointer ${
+                mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950 font-black shadow-xs' : 'text-slate-400 hover:text-white'
               }`}
+              title="OpenStreetMap Standard Global Street View"
             >
               Street
             </button>
             <button
               onClick={() => setMapLayer('satellite')}
-              className={`px-2 h-full rounded-full transition-colors cursor-pointer ${
-                mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 h-full rounded-full transition-colors cursor-pointer ${
+                mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950 font-black shadow-xs' : 'text-slate-400 hover:text-white'
               }`}
+              title="Satellite View"
             >
               Sat
             </button>
@@ -666,7 +660,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           {/* Maximize Button */}
           <button
             onClick={toggleFullscreen}
-            className={`h-8 w-8 sm:w-auto sm:px-2.5 rounded-full backdrop-blur-md border font-mono font-bold text-[11px] flex items-center justify-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 ${
+            className={`h-8 w-8 sm:w-auto sm:px-2.5 rounded-full backdrop-blur-md border font-mono font-bold text-[11px] flex items-center justify-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 ${
               isFullscreen
                 ? 'bg-amber-500 hover:bg-amber-400 border-amber-400 text-slate-950'
                 : 'bg-slate-950/85 hover:bg-slate-900 border-cyan-500/50 text-cyan-300'
@@ -677,23 +671,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             <span className="hidden md:inline">{isFullscreen ? 'Exit' : 'Max'}</span>
           </button>
 
-          {/* WhatsApp Share Button */}
-          {isConnected && onShareWhatsApp && (
-            <button
-              onClick={onShareWhatsApp}
-              className="h-8 w-8 sm:w-auto sm:px-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 backdrop-blur-md border border-emerald-400/40 text-white font-mono font-bold text-[11px] flex items-center justify-center gap-1 shadow-md cursor-pointer transition-colors active:scale-95"
-              title="Share on WhatsApp"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Invite</span>
-            </button>
-          )}
-
-          {/* Leave Button */}
+          {/* Leave Button (Desktop) */}
           {isConnected && onLeaveRoom && (
             <button
               onClick={() => setIsLeaveModalOpen(true)}
-              className="h-8 w-8 rounded-full bg-slate-950/85 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-600 text-slate-400 hover:text-rose-300 flex items-center justify-center shadow-md cursor-pointer transition-colors"
+              className="hidden md:flex h-8 w-8 rounded-full bg-slate-950/85 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-600 text-slate-400 hover:text-rose-300 items-center justify-center shadow-md cursor-pointer transition-colors"
               title={isHost ? "End Crew Ride" : "Leave Crew"}
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -806,19 +788,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <Scan className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
 
-        {/* Squad Members Roster / Formation List */}
-        {isConnected && onToggleCrewList && (
-          <button
-            onClick={onToggleCrewList}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-emerald-400 text-emerald-400 hover:text-emerald-300 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 relative"
-            title="View Crew Members Roster & Formation"
-          >
-            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-slate-950 font-mono font-black text-[9px] flex items-center justify-center shadow-xs">
+        {/* Squad Members Roster & Crew Management */}
+        <button
+          onClick={() => onOpenCrewManage ? onOpenCrewManage(isConnected ? 'active' : 'saved') : onToggleCrewList?.()}
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 relative"
+          title="Open Crew Management (Make, Join, Delete & Manage Squads)"
+        >
+          <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+          {isConnected && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-cyan-500 text-slate-950 font-mono font-black text-[9px] flex items-center justify-center shadow-xs">
               {totalRiders}
             </span>
-          </button>
-        )}
+          )}
+        </button>
 
         {/* SOS / Regroup Ping */}
         {isConnected && onTriggerSos && (

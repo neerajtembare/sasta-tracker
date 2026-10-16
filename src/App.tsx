@@ -37,7 +37,7 @@ import {
   SAMPLE_GPX_NAME
 } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
-import { getStoredUnitSystem, setStoredUnitSystem } from './utils/units';
+import { getStoredUnitSystem, setStoredUnitSystem, convertDistance } from './utils/units';
 import { 
   Radio, Gauge, HelpCircle, FolderArchive, Home, Users,
   Map as MapIcon, Activity, History, Bike as BikeIcon 
@@ -48,7 +48,17 @@ export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
 export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<AppTab>('crew');
+  const [currentTab, setCurrentTab] = useState<AppTab>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('room') || params.get('crew')) {
+          return 'crew';
+        }
+      }
+    } catch {}
+    return 'home';
+  });
   // Don't preload demo ride — let landing page be the entry point
   const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
@@ -264,7 +274,8 @@ export default function App() {
   const handleLiveRideRecorded = useCallback((gpxText: string) => {
     try {
       const parsed = parseGPX(gpxText);
-      const rideName = `Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+      const squadPrefix = groupRide.roomCode ? `[Crew ${groupRide.roomCode}] ` : '';
+      const rideName = `${squadPrefix}Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
       parsed.name = rideName;
       setAnalysis(parsed);
       setCurrentTab('analysis');
@@ -558,6 +569,43 @@ export default function App() {
           ? 'p-1 sm:p-2 max-w-none'
           : 'max-w-7xl mx-auto px-3 sm:px-6 pt-2 sm:pt-4 pb-28 sm:pb-8 space-y-4 sm:space-y-6'
       }`}>
+        {/* Global Interrupted Session Recovery Banner (Surfaced across all views) */}
+        {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && (
+          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-mono text-xs animate-in fade-in duration-200 ${
+            theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+          }`}>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <span className="text-lg">⚠️</span>
+              <div>
+                <div className="font-bold text-sm">Interrupted Ride Session Found!</div>
+                <div className="text-[11px] opacity-80">
+                  {controls.recoverableData.points?.length || 0} unsaved GPS points ({convertDistance((controls.recoverableData.totalDistanceMeters || 0) / 1000, unitSystem).value.toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}) from your previous ride.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+              <button
+                onClick={() => {
+                  controls.handleResumeSession();
+                  setIsRecordingLive(true);
+                  setCurrentTab('cockpit');
+                }}
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
+              >
+                Resume Ride
+              </button>
+              <button
+                onClick={controls.handleDiscardSession}
+                className={`px-3 py-1.5 border rounded-xl transition-colors cursor-pointer ${
+                  theme === 'light' ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                }`}
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Error message alert */}
         {errorMessage && (
           <div className={`p-3 border font-sans text-xs rounded-lg flex items-center justify-between shadow-sm ${
@@ -596,6 +644,7 @@ export default function App() {
                 handleStartRecording();
                 setCurrentTab('cockpit');
               }}
+              onOpenCrew={() => setCurrentTab('crew')}
               theme={theme}
               activeRideName={analysis ? analysis.name : null}
               activeRideDistanceKm={analysis ? analysis.totalDistanceKm : null}
@@ -617,6 +666,7 @@ export default function App() {
                 handleStartRecording();
                 setCurrentTab('cockpit');
               }}
+              onOpenCrew={() => setCurrentTab('crew')}
               theme={theme}
               activeRideName={null}
               activeRideDistanceKm={null}

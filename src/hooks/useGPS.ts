@@ -2,6 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { LiveGpsPoint, UnitSystem } from '../types';
 import { convertDistance } from '../utils/units';
 import { playChime } from '../utils/audioChimes';
+import {
+  calculate3DOrientation,
+  createZeroCalibration,
+  loadSavedCalibration,
+  clearSavedCalibration,
+  blendGpsCentrifugalLean,
+  GyroCalibration,
+} from '../utils/gyro3d';
 
 export interface GPSState {
   // Position & motion
@@ -12,9 +20,15 @@ export interface GPSState {
   currentAltitude: number | null;
   gpsAccuracy: number | null;
 
-  // Orientation / lean
+  // Orientation / lean (3D Vector Decomposition)
   leanAngle: number;
+  pitchAngle: number;
   rawRoll: number;
+  rawPitch: number;
+  gForceLateral: number;
+  maxLeftLean: number;
+  maxRightLean: number;
+  isGyroCalibrated: boolean;
 
   // Trip meters
   elapsedSeconds: number;
@@ -35,6 +49,7 @@ export interface GPSState {
   // Calibration
   tareOffset: number;
   mountMode: 'handlebar' | 'pocket';
+  mountOrientation: 'auto' | 'portrait' | 'landscape';
 }
 
 export interface GPSControls {
@@ -46,6 +61,7 @@ export interface GPSControls {
   handleTareAngle: () => Promise<void>;
   handleResetTare: () => void;
   setMountMode: (mode: 'handlebar' | 'pocket') => Promise<void>;
+  setMountOrientation: (orientation: 'auto' | 'portrait' | 'landscape') => void;
   setIsRecording: (v: boolean) => void;
 
   // Session recovery
@@ -57,6 +73,9 @@ export interface GPSControls {
   // Voice feedback
   voiceFeedbackEnabled: boolean;
   setVoiceFeedbackEnabled: (v: boolean) => void;
+
+  // Real-time access & instant export
+  getCurrentPoints: () => LiveGpsPoint[];
 }
 
 // ─── Haversine ───────────────────────────────────────────────
@@ -85,9 +104,29 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const [currentAltitude, setCurrentAltitude] = useState<number | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [leanAngle, setLeanAngle] = useState(0);
+  const [pitchAngle, setPitchAngle] = useState(0);
   const [rawRoll, setRawRoll] = useState(0);
+  const [rawPitch, setRawPitch] = useState(0);
+  const [gForceLateral, setGForceLateral] = useState(0);
+  const [maxLeftLean, setMaxLeftLean] = useState(0);
+  const [maxRightLean, setMaxRightLean] = useState(0);
+  const [isGyroCalibrated, setIsGyroCalibrated] = useState(() => {
+    return loadSavedCalibration() !== null;
+  });
+  const calibrationRef = useRef<GyroCalibration | null>(loadSavedCalibration());
+  const lastOrientationEventRef = useRef<{ beta: number; gamma: number; alpha: number } | null>(null);
+  const lastGpsPointTimeRef = useRef<number>(Date.now());
+  const lastGpsHeadingRef = useRef<number | null>(null);
+
   const [tareOffset, setTareOffset] = useState(0);
   const [mountMode, setMountModeState] = useState<'handlebar' | 'pocket'>('handlebar');
+  const [mountOrientation, setMountOrientationState] = useState<'auto' | 'portrait' | 'landscape'>(() => {
+    try {
+      const saved = localStorage.getItem('sasta_mount_orientation');
+      if (saved === 'portrait' || saved === 'landscape' || saved === 'auto') return saved;
+    } catch {}
+    return 'auto';
+  });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [movingSeconds, setMovingSeconds] = useState(0);
   const [stoppedSeconds, setStoppedSeconds] = useState(0);
@@ -176,13 +215,28 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
   }, [isRecording, isPaused]);
 
-  // ── Accidental Navigation / Close Protection ──
+  // ── Accidental Navigation / Close Protection & Synchronous Flush ──
   useEffect(() => {
     if (!isRecording) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      try {
+        if (recordedPointsRef.current.length > 0) {
+          const snapshot = JSON.stringify({
+            points: recordedPointsRef.current,
+            elapsedSeconds: elapsedSecondsRef.current,
+            movingSeconds: movingSecondsRef.current,
+            stoppedSeconds: stoppedSecondsRef.current,
+            totalDistanceMeters: totalDistanceMetersRef.current,
+            waypoints: markedWaypointsRef.current,
+            timestamp: Date.now(),
+          });
+          localStorage.setItem('sasta_live_recovery_v1', snapshot);
+          sessionStorage.setItem('sasta_live_recovery', snapshot);
+        }
+      } catch {}
       e.preventDefault();
-      e.returnValue = '';
-      return '';
+      e.returnValue = 'A ride recording is currently active. Are you sure you want to leave?';
+      return e.returnValue;
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -264,31 +318,73 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     return true;
   }, []);
 
-  // ── Orientation listener (gyroscope) ──
+  // Helper to determine screen orientation angle
+  const getScreenAngle = useCallback((): number => {
+    if (typeof window === 'undefined') return 0;
+    if (window.screen?.orientation?.angle !== undefined) {
+      return window.screen.orientation.angle;
+    }
+    if (typeof (window as any).orientation === 'number') {
+      return (window as any).orientation;
+    }
+    if (window.innerWidth > window.innerHeight) {
+      return 90;
+    }
+    return 0;
+  }, []);
+
+  // ── Orientation listener (3D Vector Gyroscope Engine) ──
   useEffect(() => {
     if (!enabled) return;
     const handleOrientation = (e: DeviceOrientationEvent) => {
-      if (e.gamma !== null) {
-        const roll = Math.round(e.gamma);
-        setRawRoll(roll);
-        if (mountMode === 'handlebar') {
-          const calibrated = Math.min(60, Math.max(-60, roll - tareOffset));
-          leanAngleRef.current = calibrated;
-          setLeanAngle(calibrated);
-        } else {
-          leanAngleRef.current = 0;
-          setLeanAngle(0);
+      const beta = e.beta ?? 0;
+      const gamma = e.gamma ?? 0;
+      const alpha = e.alpha ?? 0;
+      lastOrientationEventRef.current = { beta, gamma, alpha };
+
+      if (mountMode === 'handlebar') {
+        const angle = getScreenAngle();
+        const reading = calculate3DOrientation(
+          beta,
+          gamma,
+          angle,
+          calibrationRef.current,
+          mountOrientation
+        );
+
+        // Session peak tracking
+        if (reading.leanAngle < 0) {
+          setMaxLeftLean(prev => Math.max(prev, Math.abs(reading.leanAngle)));
+        } else if (reading.leanAngle > 0) {
+          setMaxRightLean(prev => Math.max(prev, reading.leanAngle));
         }
+
+        leanAngleRef.current = reading.leanAngle;
+        setLeanAngle(reading.leanAngle);
+        setPitchAngle(reading.pitchAngle);
+        setRawRoll(reading.rawRoll);
+        setRawPitch(reading.rawPitch);
+        setGForceLateral(reading.gForceLateral);
+        setIsGyroCalibrated(reading.isCalibrated);
+      } else {
+        leanAngleRef.current = 0;
+        setLeanAngle(0);
+        setPitchAngle(0);
+        setGForceLateral(0);
+        setRawRoll(Math.round(gamma));
+        setRawPitch(Math.round(beta));
       }
     };
 
-    if (window.DeviceOrientationEvent) {
+    if (typeof window !== 'undefined' && window.DeviceOrientationEvent) {
       window.addEventListener('deviceorientation', handleOrientation);
     }
     return () => {
-      window.removeEventListener('deviceorientation', handleOrientation);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('deviceorientation', handleOrientation);
+      }
     };
-  }, [enabled, mountMode, tareOffset]);
+  }, [enabled, mountMode, mountOrientation, getScreenAngle]);
 
   // ── Cleanup GPS watcher ──
   useEffect(() => {
@@ -341,9 +437,22 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         });
         setCurrentSpeedKmh(kmh);
 
-        // 3. Compass stabilization: only update heading when moving (>= 2.5 km/h) to stop compass spinning at red lights
+        // 3. Compass stabilization & GPS centrifugal cornering fusion
         if (kmh >= 2.5 && heading !== null && !isNaN(heading)) {
           setCurrentHeading(heading);
+          if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
+            let dHeading = heading - lastGpsHeadingRef.current;
+            if (dHeading > 180) dHeading -= 360;
+            if (dHeading < -180) dHeading += 360;
+            const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
+            if (dtSec >= 0.2 && dtSec <= 3.0) {
+              const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
+              leanAngleRef.current = fused;
+              setLeanAngle(fused);
+            }
+          }
+          lastGpsHeadingRef.current = heading;
+          lastGpsPointTimeRef.current = nowTs;
         }
         if (altitude !== null) setCurrentAltitude(altitude);
         setGpsAccuracy(accuracy);
@@ -396,21 +505,20 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           const count = recordedPointsRef.current.length;
           setPointsCount(count);
 
-          // Persistent Session snapshot every 10 points
-          if (count % 10 === 0) {
-            try {
-              const snapshot = JSON.stringify({
-                points: recordedPointsRef.current,
-                elapsedSeconds: elapsedSecondsRef.current,
-                movingSeconds: movingSecondsRef.current,
-                stoppedSeconds: stoppedSecondsRef.current,
-                totalDistanceMeters: totalDistanceMetersRef.current,
-                waypoints: markedWaypointsRef.current,
-                timestamp: Date.now(),
-              });
-              localStorage.setItem('sasta_live_recovery_v1', snapshot);
-            } catch {}
-          }
+          // Continuous Persistent Session snapshot on EVERY point for zero data loss
+          try {
+            const snapshot = JSON.stringify({
+              points: recordedPointsRef.current,
+              elapsedSeconds: elapsedSecondsRef.current,
+              movingSeconds: movingSecondsRef.current,
+              stoppedSeconds: stoppedSecondsRef.current,
+              totalDistanceMeters: totalDistanceMetersRef.current,
+              waypoints: markedWaypointsRef.current,
+              timestamp: Date.now(),
+            });
+            localStorage.setItem('sasta_live_recovery_v1', snapshot);
+            sessionStorage.setItem('sasta_live_recovery', snapshot);
+          } catch {}
 
           // Voice milestones using up-to-date ref
           if (voiceFeedbackEnabledRef.current && 'speechSynthesis' in window) {
@@ -512,6 +620,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     totalDistanceMetersRef.current = 0;
     lastPositionRef.current = null;
     lastSpokenKmRef.current = 0;
+    setMaxLeftLean(0);
+    setMaxRightLean(0);
     setIsRecording(true);
     setIsPaused(false);
     playSilentAudio();
@@ -523,6 +633,21 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     setIsPaused(true);
     pauseStartRef.current = Date.now();
     pauseSilentAudio();
+    try {
+      if (recordedPointsRef.current.length > 0) {
+        const snapshot = JSON.stringify({
+          points: recordedPointsRef.current,
+          elapsedSeconds: elapsedSecondsRef.current,
+          movingSeconds: movingSecondsRef.current,
+          stoppedSeconds: stoppedSecondsRef.current,
+          totalDistanceMeters: totalDistanceMetersRef.current,
+          waypoints: markedWaypointsRef.current,
+          timestamp: Date.now(),
+        });
+        localStorage.setItem('sasta_live_recovery_v1', snapshot);
+        sessionStorage.setItem('sasta_live_recovery', snapshot);
+      }
+    } catch {}
     playChime('pause');
   }, [pauseSilentAudio]);
 
@@ -567,21 +692,48 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       lon: pos.lon,
       ele: currentAltitude,
     };
-    setMarkedWaypoints(prev => [...prev, wp]);
+    setMarkedWaypoints(prev => {
+      const next = [...prev, wp];
+      try {
+        const snapshot = JSON.stringify({
+          points: recordedPointsRef.current,
+          elapsedSeconds: elapsedSecondsRef.current,
+          movingSeconds: movingSecondsRef.current,
+          stoppedSeconds: stoppedSecondsRef.current,
+          totalDistanceMeters: totalDistanceMetersRef.current,
+          waypoints: next,
+          timestamp: Date.now(),
+        });
+        localStorage.setItem('sasta_live_recovery_v1', snapshot);
+        sessionStorage.setItem('sasta_live_recovery', snapshot);
+      } catch {}
+      return next;
+    });
   }, [currentAltitude, currentCoords]);
 
   const handleTareAngle = useCallback(async () => {
     await requestDeviceOrientationPermission();
-    setTareOffset(rawRoll);
+    const last = lastOrientationEventRef.current;
+    const beta = last?.beta ?? 0;
+    const gamma = last?.gamma ?? 0;
+    const alpha = last?.alpha ?? 0;
+    const screenAngle = getScreenAngle();
+    const cal = createZeroCalibration(beta, gamma, alpha, screenAngle);
+    calibrationRef.current = cal;
+    setIsGyroCalibrated(true);
+    setTareOffset(0);
     leanAngleRef.current = 0;
     setLeanAngle(0);
-  }, [rawRoll, requestDeviceOrientationPermission]);
+    setPitchAngle(0);
+    setGForceLateral(0);
+  }, [requestDeviceOrientationPermission, getScreenAngle]);
 
   const handleResetTare = useCallback(() => {
+    clearSavedCalibration();
+    calibrationRef.current = null;
+    setIsGyroCalibrated(false);
     setTareOffset(0);
-    leanAngleRef.current = rawRoll;
-    setLeanAngle(rawRoll);
-  }, [rawRoll]);
+  }, []);
 
   const setMountMode = useCallback(async (mode: 'handlebar' | 'pocket') => {
     setMountModeState(mode);
@@ -589,6 +741,13 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       await requestDeviceOrientationPermission();
     }
   }, [requestDeviceOrientationPermission]);
+
+  const setMountOrientation = useCallback((orientation: 'auto' | 'portrait' | 'landscape') => {
+    setMountOrientationState(orientation);
+    try {
+      localStorage.setItem('sasta_mount_orientation', orientation);
+    } catch {}
+  }, []);
 
   const handleResumeSession = useCallback(() => {
     if (!recoverableData) return;
@@ -646,7 +805,13 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     currentAltitude,
     gpsAccuracy,
     leanAngle,
+    pitchAngle,
     rawRoll,
+    rawPitch,
+    gForceLateral,
+    maxLeftLean,
+    maxRightLean,
+    isGyroCalibrated,
     elapsedSeconds,
     movingSeconds,
     stoppedSeconds,
@@ -659,6 +824,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     wakeLockActive,
     tareOffset,
     mountMode,
+    mountOrientation,
   };
 
   const controls: GPSControls = {
@@ -670,6 +836,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     handleTareAngle,
     handleResetTare,
     setMountMode,
+    setMountOrientation,
     setIsRecording,
     hasRecoverableRide,
     recoverableData,
@@ -677,6 +844,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     handleDiscardSession,
     voiceFeedbackEnabled,
     setVoiceFeedbackEnabled,
+    getCurrentPoints: () => [...recordedPointsRef.current],
   };
 
   return [state, controls];

@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
-import { AppTheme, UnitSystem } from '../types';
+import { AppTheme, UnitSystem, RideAnalysis, PitStop, TrackPoint } from '../types';
+import { openGoogleMapsNavigation, openGoogleMapsRoute } from '../utils/navigation';
+import { preCacheRouteTiles, CacheProgress, LatLngBounds } from '../utils/mapCache';
 import { 
   Crosshair, 
   Users, 
@@ -16,7 +18,13 @@ import {
   Edit3,
   Coffee,
   Radio,
-  Scan
+  Scan,
+  Compass,
+  RotateCw,
+  MapPin,
+  Route,
+  Download,
+  ArrowUp
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 
@@ -58,9 +66,10 @@ interface CrewLiveMapProps {
   onToggleCrewList?: () => void;
   onOpenCrewManage?: (tab?: 'active' | 'saved' | 'create' | 'join') => void;
   focusedRiderId?: string | null;
+  activeRoute?: RideAnalysis | null;
 }
 
-export type MapLayerType = 'streets' | 'satellite';
+export type MapLayerType = 'dark' | 'streets' | 'satellite';
 
 export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   myLocation,
@@ -93,17 +102,35 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   onToggleCrewList,
   onOpenCrewManage,
   focusedRiderId = null,
+  activeRoute = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const overlayTileLayerRef = useRef<L.TileLayer | null>(null);
 
   const myMarkerRef = useRef<L.Marker | null>(null);
+  const prevMyPosRef = useRef<{ lat: number; lon: number; speedKmh: number; heading: number | null } | null>(null);
   const memberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const memberCacheRef = useRef<Map<string, { lat: number; lon: number; speedText: string; bearing: number | null; isOnline: boolean; isStopped: boolean; isHost: boolean; color: string }>>(new Map());
   const sosMarkerRef = useRef<L.Marker | null>(null);
 
-  // Street map (OpenStreetMap) default - reliable, free, zero API/403 errors
-  const [mapLayer, setMapLayer] = useState<MapLayerType>('streets');
+  // Active Route layers
+  const routePolylineRef = useRef<L.Polyline | null>(null);
+  const routeGlowPolylineRef = useRef<L.Polyline | null>(null);
+  const routeMarkersRef = useRef<L.Marker[]>([]);
+
+  // Orientation & Compass state (Solves "map is inverted" on motorcycle mounts)
+  const [orientationMode, setOrientationMode] = useState<'north' | 'course'>('north');
+  const [isFlipped180, setIsFlipped180] = useState<boolean>(false);
+
+  // Offline route tile caching state
+  const [isCachingRoute, setIsCachingRoute] = useState(false);
+  const [cacheProgress, setCacheProgress] = useState<CacheProgress | null>(null);
+  const [cacheSuccessMsg, setCacheSuccessMsg] = useState<string | null>(null);
+
+  // Default to Dark map for eye comfort and stealth motorcycle cockpit look
+  const [mapLayer, setMapLayer] = useState<MapLayerType>('dark');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
@@ -113,6 +140,39 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Inline handle editor
   const [isEditingHandle, setIsEditingHandle] = useState(false);
   const [tempHandle, setTempHandle] = useState(myRiderName);
+
+  // Expose universal navigation helper to global window for Leaflet popup click handlers
+  useEffect(() => {
+    (window as any).__navTo = (lat: number, lon: number) => {
+      triggerHaptic(30);
+      openGoogleMapsNavigation(lat, lon);
+    };
+    return () => {
+      delete (window as any).__navTo;
+    };
+  }, []);
+
+  // Current heading from myLocation
+  const myHeading = myLocation?.heading !== null && myLocation?.heading !== undefined ? myLocation.heading : null;
+
+  // Calculate rotation for map container
+  // North-up: 0° (or 180° if flipped by user).
+  // Course-up: rotated by -myHeading so bike's forward path is ALWAYS UP on phone screen!
+  const targetMapRotation = useMemo(() => {
+    let base = 0;
+    if (orientationMode === 'course' && myHeading !== null) {
+      base = -myHeading;
+    }
+    return (isFlipped180 ? 180 : 0) + base;
+  }, [orientationMode, myHeading, isFlipped180]);
+
+  // Cardinal direction helper
+  const getCardinal = (deg: number | null) => {
+    if (deg === null) return 'N';
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    return dirs[idx];
+  };
 
   // Focus specific rider when requested externally (e.g. from formation list)
   useEffect(() => {
@@ -234,35 +294,192 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     };
   }, []);
 
-  // Handle Tile Layer Changes (Street via OpenStreetMap, Satellite via ArcGIS - NO broken Carto CDN dark tiles)
+  // Handle Tile Layer Changes (ArcGIS Dark Gray Canvas, OSM Streets, Satellite via ArcGIS)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
     if (tileLayerRef.current) {
       tileLayerRef.current.remove();
+      tileLayerRef.current = null;
+    }
+    if (overlayTileLayerRef.current) {
+      overlayTileLayerRef.current.remove();
+      overlayTileLayerRef.current = null;
     }
 
-    let url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-    let maxZoom = 19;
-    let attribution = '&copy; OpenStreetMap contributors';
-
-    if (mapLayer === 'satellite') {
-      url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      attribution = '&copy; Esri World Imagery';
+    if (mapLayer === 'streets') {
+      tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(map);
+    } else if (mapLayer === 'satellite') {
+      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 18,
+        attribution: '&copy; Esri World Imagery',
+      }).addTo(map);
+      overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 18,
+        opacity: 0.85,
+      }).addTo(map);
+    } else {
+      // Pristine Dark Mode Map (Esri Dark Gray Canvas + Crisp Street Label Reference - Zero Watermark)
+      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16,
+        attribution: '&copy; Esri Dark Canvas',
+      }).addTo(map);
+      overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16,
+        opacity: 0.85,
+      }).addTo(map);
     }
-
-    const newLayer = L.tileLayer(url, { maxZoom, attribution });
-    newLayer.addTo(map);
-    tileLayerRef.current = newLayer;
   }, [mapLayer]);
 
-  // Update "YOU" Marker (Crisp, high-contrast, zero continuous GPU repaints)
+  // ─── Active Route Rendering (Polyline, Start, Finish, Pit Stops) ───
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    // Cleanup existing route layers
+    if (routePolylineRef.current) {
+      routePolylineRef.current.remove();
+      routePolylineRef.current = null;
+    }
+    if (routeGlowPolylineRef.current) {
+      routeGlowPolylineRef.current.remove();
+      routeGlowPolylineRef.current = null;
+    }
+    routeMarkersRef.current.forEach(m => m.remove());
+    routeMarkersRef.current = [];
+
+    if (!activeRoute || !activeRoute.points || activeRoute.points.length < 2) return;
+
+    const latLngs: L.LatLngTuple[] = activeRoute.points.map(p => [p.lat, p.lon]);
+
+    // 1. Route outer ambient glow
+    const glow = L.polyline(latLngs, {
+      color: '#00f0ff',
+      weight: 6,
+      opacity: 0.35,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(map);
+    routeGlowPolylineRef.current = glow;
+
+    // 2. High-contrast main route line
+    const line = L.polyline(latLngs, {
+      color: '#00e5ff',
+      weight: 3.5,
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(map);
+    routePolylineRef.current = line;
+
+    // 3. Start Marker
+    const startPt = activeRoute.points[0];
+    const startHtml = `
+      <div style="background:#10b981; color:#080c10; font-family:monospace; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #10b981; white-space:nowrap; display:flex; align-items:center; gap:2px;">
+        <span>🟢</span> <span>START</span>
+      </div>
+    `;
+    const startIcon = L.divIcon({ className: 'route-start-badge', html: startHtml, iconAnchor: [24, 10] });
+    const startMarker = L.marker([startPt.lat, startPt.lon], { icon: startIcon, zIndexOffset: 700 }).addTo(map);
+    routeMarkersRef.current.push(startMarker);
+
+    // 4. Finish Marker (with 1-tap Google Maps Navigation)
+    const endPt = activeRoute.points[activeRoute.points.length - 1];
+    const finishHtml = `
+      <div style="background:#f59e0b; color:#080c10; font-family:monospace; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #f59e0b; white-space:nowrap; display:flex; align-items:center; gap:2px;">
+        <span>🏁</span> <span>FINISH</span>
+      </div>
+    `;
+    const finishIcon = L.divIcon({ className: 'route-finish-badge', html: finishHtml, iconAnchor: [24, 10] });
+    const finishMarker = L.marker([endPt.lat, endPt.lon], { icon: finishIcon, zIndexOffset: 700 }).addTo(map);
+    const finishPopup = `
+      <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
+        <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">🏁 ${activeRoute.name || 'Destination'}</div>
+        <div style="font-size:10px; color:#38bdf8; margin-bottom:8px;">${activeRoute.totalDistanceKm.toFixed(1)} km Total</div>
+        <button onclick="window.__navTo(${endPt.lat}, ${endPt.lon})" style="width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:6px; border-radius:6px; border:none; cursor:pointer;">
+          🧭 Google Maps Nav
+        </button>
+      </div>
+    `;
+    finishMarker.bindPopup(finishPopup, { offset: [0, -10] });
+    routeMarkersRef.current.push(finishMarker);
+
+    // 5. Pit Stop Markers (fuel, chai, scenic, dhaba)
+    if (activeRoute.pitStops && activeRoute.pitStops.length > 0) {
+      activeRoute.pitStops.forEach(stop => {
+        const emoji = stop.category === 'chai' ? '☕' : stop.category === 'fuel' ? '⛽' : stop.category === 'dhaba' ? '🍛' : '📍';
+        const stopHtml = `
+          <div style="background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; font-family:monospace; font-size:9px; font-weight:bold; padding:2px 5px; border-radius:10px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.7); display:flex; align-items:center; gap:2px;">
+            <span>${emoji}</span> <span>${stop.name || 'Pit Stop'}</span>
+          </div>
+        `;
+        const stopIcon = L.divIcon({ className: 'route-pitstop-badge', html: stopHtml, iconAnchor: [20, 10] });
+        const stopMarker = L.marker([stop.lat, stop.lon], { icon: stopIcon, zIndexOffset: 650 }).addTo(map);
+        const stopPopup = `
+          <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
+            <div style="font-weight:900; font-size:11px; color:#fff;">${emoji} ${stop.name}</div>
+            <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">${stop.distanceKm.toFixed(1)} km mark</div>
+            <button onclick="window.__navTo(${stop.lat}, ${stop.lon})" style="width:100%; background:#38bdf8; color:#080c10; font-weight:900; font-size:9px; padding:5px; border-radius:6px; border:none; cursor:pointer;">
+              🧭 Navigate in Maps
+            </button>
+          </div>
+        `;
+        stopMarker.bindPopup(stopPopup, { offset: [0, -10] });
+        routeMarkersRef.current.push(stopMarker);
+      });
+    }
+  }, [activeRoute]);
+
+  // ─── Offline Route Map Tile Pre-Caching ───
+  const handleCacheOfflineRoute = async () => {
+    if (!activeRoute || !activeRoute.points || activeRoute.points.length === 0) return;
+    triggerHaptic(30);
+    setIsCachingRoute(true);
+    setCacheSuccessMsg(null);
+
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    activeRoute.points.forEach(p => {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLng) minLng = p.lon;
+      if (p.lon > maxLng) maxLng = p.lon;
+    });
+
+    const bounds: LatLngBounds = {
+      minLat: minLat - 0.02,
+      maxLat: maxLat + 0.02,
+      minLng: minLng - 0.02,
+      maxLng: maxLng + 0.02,
+    };
+
+    try {
+      const result = await preCacheRouteTiles(bounds, 'dark', (progress) => {
+        setCacheProgress(progress);
+      });
+      setCacheSuccessMsg(`Saved ${result.cached} tiles offline!`);
+      triggerHaptic(40);
+      setTimeout(() => {
+        setIsCachingRoute(false);
+        setCacheProgress(null);
+        setCacheSuccessMsg(null);
+      }, 3500);
+    } catch {
+      setIsCachingRoute(false);
+      setCacheProgress(null);
+    }
+  };
+
+  // ─── Update "YOU" Marker (Optimized, Lag-Free with Delta Rendering) ───
   useEffect(() => {
     if (!mapInstanceRef.current || !myLocation) {
       if (myMarkerRef.current) {
         myMarkerRef.current.remove();
         myMarkerRef.current = null;
+        prevMyPosRef.current = null;
       }
       return;
     }
@@ -274,8 +491,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const speed = formatSpeed(myLocation.speedKmh);
     const heading = myLocation.heading !== null && myLocation.heading !== undefined ? myLocation.heading : null;
 
+    // In Course-Up mode, the map rotates to heading so the forward indicator points straight UP (0deg).
+    // In North-Up mode, the forward indicator rotates to heading.
+    const arrowRotation = orientationMode === 'course' ? 0 : (heading !== null ? heading : 0);
+
+    const prev = prevMyPosRef.current;
+    const headingDelta = prev?.heading !== null && heading !== null ? Math.abs((prev?.heading || 0) - heading) : 999;
+    const speedDelta = prev ? Math.abs(prev.speedKmh - myLocation.speedKmh) : 999;
+    const isFirstTime = !myMarkerRef.current || !prev;
+
+    // Centered 360° direction arrow
     const headingArrow = heading !== null 
-      ? `<div style="position:absolute; top:-7px; left:50%; transform:translateX(-50%) rotate(${heading}deg); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid ${color};"></div>`
+      ? `<div style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${arrowRotation}deg); pointer-events:none; transition:transform 0.25s ease;">
+           <div style="width:0; height:0; border-left:4.5px solid transparent; border-right:4.5px solid transparent; border-bottom:8px solid ${color}; transform:translateY(-4px); filter:drop-shadow(0 0 4px ${color});"></div>
+         </div>`
       : '';
 
     const myLeaderCrown = isHost
@@ -305,17 +534,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     if (!myMarkerRef.current) {
       myMarkerRef.current = L.marker(pos, { icon, zIndexOffset: 1000 }).addTo(map);
+      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading };
     } else {
-      myMarkerRef.current.setIcon(icon);
+      // Always update position smoothly (zero DOM thrashing)
       myMarkerRef.current.setLatLng(pos);
+
+      // Only rebuild icon if heading or speed changed significantly to prevent mobile lag
+      if (isFirstTime || headingDelta > 2.5 || speedDelta > 1.5) {
+        myMarkerRef.current.setIcon(icon);
+        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading };
+      }
     }
 
     if (selectedRiderId === 'me') {
       map.panTo(pos, { animate: true, duration: 0.5 });
     }
-  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost]);
+  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost, orientationMode]);
 
-  // Update Member Markers
+  // ─── Update Member Markers (Optimized Delta Cache, Lag-Free) ───
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -325,6 +561,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       if (!members.some(m => m.riderId === id)) {
         marker.remove();
         memberMarkersRef.current.delete(id);
+        memberCacheRef.current.delete(id);
       }
     });
 
@@ -337,18 +574,28 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const speed = formatSpeed(m.location.speedKmh);
       const isStopped = m.location.status === 'stopped' || m.location.speedKmh < 2.0;
       const bearing = m.location.bearing;
+      const isOnline = m.isOnline !== false;
+      const statusTag = !isOnline ? 'OFFLINE' : isStopped ? 'STOP' : speed;
 
+      const prev = memberCacheRef.current.get(m.riderId);
+      const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
+      const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color;
+
+      // Centered 360° rotating direction arrow
       const bearingArrow = bearing !== null && bearing !== undefined
-        ? `<div style="position:absolute; top:-6px; left:50%; transform:translateX(-50%) rotate(${bearing}deg); width:0; height:0; border-left:3.5px solid transparent; border-right:3.5px solid transparent; border-bottom:6px solid ${color};"></div>`
+        ? `<div style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${bearing}deg); pointer-events:none; transition:transform 0.25s ease;">
+             <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid ${color}; transform:translateY(-3px); filter:drop-shadow(0 0 3px ${color});"></div>
+           </div>`
         : '';
 
-      const statusTag = isStopped ? 'STOP' : speed;
       const leaderCrown = m.isHost
         ? `<div style="position:absolute; top:-16px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
         : '';
 
+      const opacity = isOnline ? '1' : '0.65';
+
       const html = `
-        <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
+        <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center; opacity:${opacity};">
           ${leaderCrown}
           ${bearingArrow}
           <div style="width:24px; height:24px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:10px;">
@@ -369,17 +616,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       const distText = formatDistance(m.distanceFromMeMeters);
       const roleLabel = m.isHost ? '👑 Crew Leader' : 'Crew Member';
-      const gmapsLink = `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`;
       const popupHtml = `
-        <div style="font-family:monospace; min-width:145px; text-align:center; padding:2px;">
+        <div style="font-family:monospace; min-width:145px; text-align:center; padding:3px;">
           <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">${m.name}</div>
           <div style="font-size:9px; color:#f59e0b; font-weight:bold; margin-bottom:4px;">${roleLabel}</div>
           <div style="font-size:10px; color:#38bdf8; margin-bottom:8px;">
             ${distText} • ${statusTag}
           </div>
-          <a href="${gmapsLink}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; justify-content:center; gap:4px; width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:5px 8px; border-radius:6px; text-decoration:none;">
-            🧭 Navigate in Maps
-          </a>
+          <button onclick="window.__navTo(${m.location.lat}, ${m.location.lon})" style="display:inline-flex; align-items:center; justify-content:center; gap:4px; width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:6px 8px; border-radius:6px; border:none; cursor:pointer;">
+            🧭 Navigate in Google Maps
+          </button>
         </div>
       `;
 
@@ -391,10 +637,35 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           setSelectedRiderId(m.riderId);
         });
         memberMarkersRef.current.set(m.riderId, marker);
+        memberCacheRef.current.set(m.riderId, {
+          lat: m.location.lat,
+          lon: m.location.lon,
+          speedText: statusTag,
+          bearing: bearing ?? null,
+          isOnline,
+          isStopped,
+          isHost: m.isHost,
+          color,
+        });
       } else {
-        marker.setIcon(icon);
+        // High-speed direct position update without DOM destruction
         marker.setLatLng(pos);
-        marker.setPopupContent(popupHtml);
+
+        // Only rebuild DOM icon if visual delta occurred
+        if (needRebuild) {
+          marker.setIcon(icon);
+          marker.setPopupContent(popupHtml);
+          memberCacheRef.current.set(m.riderId, {
+            lat: m.location.lat,
+            lon: m.location.lon,
+            speedText: statusTag,
+            bearing: bearing ?? null,
+            isOnline,
+            isStopped,
+            isHost: m.isHost,
+            color,
+          });
+        }
       }
     });
   }, [members, unitSystem]);
@@ -529,12 +800,22 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <div 
         ref={mapContainerRef} 
-        className="w-full h-full relative z-0 cursor-grab active:cursor-grabbing" 
+        style={{
+          transform: `rotate(${targetMapRotation}deg)`,
+          transformOrigin: 'center center',
+          transition: 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
+          width: orientationMode === 'course' || isFlipped180 ? '140%' : '100%',
+          height: orientationMode === 'course' || isFlipped180 ? '140%' : '100%',
+          top: orientationMode === 'course' || isFlipped180 ? '-20%' : '0',
+          left: orientationMode === 'course' || isFlipped180 ? '-20%' : '0',
+          position: 'absolute',
+        }}
+        className="cursor-grab active:cursor-grabbing" 
       />
 
       {/* Cold-Start Satellite Acquisition Pill */}
       {!myLocation && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
           <span className="w-2 h-2 rounded-full bg-amber-400" />
           <span>Acquiring GPS fix...</span>
         </div>
@@ -635,11 +916,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </button>
           ) : null}
 
-          {/* Layer Toggle: Prominent Street | Sat with dedicated space */}
+          {/* Layer Toggle: Dark | Street | Sat */}
           <div className="flex items-center bg-slate-950/90 backdrop-blur-md border border-slate-700/80 rounded-full h-8 p-0.5 shadow-md text-[10px] font-mono font-bold shrink-0">
             <button
+              onClick={() => setMapLayer('dark')}
+              className={`px-2 h-full rounded-full transition-colors cursor-pointer ${
+                mapLayer === 'dark' ? 'bg-cyan-500 text-slate-950 font-black shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Stealth Dark Mode Radar View"
+            >
+              Dark
+            </button>
+            <button
               onClick={() => setMapLayer('streets')}
-              className={`px-2.5 h-full rounded-full transition-colors cursor-pointer ${
+              className={`px-2 h-full rounded-full transition-colors cursor-pointer ${
                 mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950 font-black shadow-xs' : 'text-slate-400 hover:text-white'
               }`}
               title="OpenStreetMap Standard Global Street View"
@@ -648,7 +938,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </button>
             <button
               onClick={() => setMapLayer('satellite')}
-              className={`px-2.5 h-full rounded-full transition-colors cursor-pointer ${
+              className={`px-2 h-full rounded-full transition-colors cursor-pointer ${
                 mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950 font-black shadow-xs' : 'text-slate-400 hover:text-white'
               }`}
               title="Satellite View"
@@ -763,7 +1053,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          RIGHT FLOATING ACTION BUTTONS: Recenter, Fit Convoy, Crew Roster, SOS
+          RIGHT FLOATING ACTION BUTTONS: Recenter, Fit Convoy, Compass, Flip, Crew Roster, SOS
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute right-2 top-12 z-10 flex flex-col gap-2 pointer-events-auto">
         {/* Recenter on Me */}
@@ -777,6 +1067,50 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           title="Recenter on Me (GPS)"
         >
           <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+
+        {/* Compass & Course-Up Navigation Toggle (Solves inverted map!) */}
+        <button
+          onClick={() => {
+            triggerHaptic(20);
+            setOrientationMode(prev => prev === 'north' ? 'course' : 'north');
+            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+          }}
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 ${
+            orientationMode === 'course'
+              ? 'bg-amber-500 border-amber-300 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-500/40'
+              : 'bg-slate-950/90 border-slate-700/80 text-amber-400 hover:border-amber-400'
+          }`}
+          title={`Orientation: ${orientationMode === 'course' ? 'Course-Up (Direction Ahead)' : 'North-Up'}. Tap to toggle.`}
+        >
+          {/* Rotating magnetic needle pointing True North */}
+          <div 
+            style={{ transform: `rotate(${-targetMapRotation}deg)`, transition: 'transform 0.35s ease-out' }}
+            className="flex flex-col items-center justify-center w-4 h-4 pointer-events-none"
+          >
+            <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[6px] border-b-rose-500" />
+            <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[6px] border-t-slate-400" />
+          </div>
+          <span className="text-[7px] font-mono font-black -mt-0.5 tracking-tighter">
+            {myHeading !== null ? `${Math.round(myHeading)}°` : 'N'}
+          </span>
+        </button>
+
+        {/* Flip Map 180° (Fix for inverted or upside-down handlebar mounts) */}
+        <button
+          onClick={() => {
+            triggerHaptic(20);
+            setIsFlipped180(prev => !prev);
+            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+          }}
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+            isFlipped180
+              ? 'bg-purple-600 border-purple-300 text-white shadow-purple-600/40 ring-2 ring-purple-400/50'
+              : 'bg-slate-950/90 border-slate-700/80 text-slate-300 hover:border-purple-400'
+          }`}
+          title="Flip Map 180° (Fix inverted or reverse handlebar phone mount)"
+        >
+          <RotateCw className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
         </button>
 
         {/* Fit All Crew Riders (Convoy Bounds) */}
@@ -852,10 +1186,59 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          BOTTOM FLOATING RIDER TELEMETRY TRAY (Slim 32px height)
+          BOTTOM FLOATING RIDER TELEMETRY TRAY & ACTIVE ROUTE HUD
       ───────────────────────────────────────────────────────────── */}
-      {isConnected && (
-        <div className="absolute bottom-2 left-2 right-2 z-10 pointer-events-none flex flex-col gap-1.5">
+      <div className="absolute bottom-2 left-2 right-2 z-10 pointer-events-none flex flex-col gap-1.5">
+        
+        {/* Active Planned Route & Google Maps Voice Navigation Bar */}
+        {activeRoute && (
+          <div className="pointer-events-auto flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/92 backdrop-blur-md border border-cyan-500/50 shadow-xl font-mono text-xs">
+            <div className="flex items-center gap-2 truncate">
+              <Route className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold text-white truncate">{activeRoute.name || 'Planned Route'}</span>
+                <span className="text-cyan-300 ml-1.5 font-bold">({activeRoute.totalDistanceKm.toFixed(1)} km)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* 1-Tap Google Maps Voice Turn-by-Turn Navigation */}
+              <button
+                onClick={() => {
+                  triggerHaptic(30);
+                  if (activeRoute.points && activeRoute.points.length > 0) {
+                    const last = activeRoute.points[activeRoute.points.length - 1];
+                    openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
+                  }
+                }}
+                className="h-7 px-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                title="Launch Google Maps turn-by-turn voice navigation to destination"
+              >
+                <Navigation className="w-3 h-3" />
+                <span>Google Maps</span>
+              </button>
+
+              {/* 1-Tap Offline Route Tile Cache */}
+              <button
+                onClick={handleCacheOfflineRoute}
+                disabled={isCachingRoute}
+                className="h-7 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 text-slate-300 hover:text-white font-bold text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 disabled:opacity-60"
+                title="Pre-cache all map tiles along this route for offline riding in mountain passes"
+              >
+                <Download className="w-3 h-3 text-cyan-400" />
+                {isCachingRoute ? (
+                  <span className="text-cyan-300">{cacheProgress?.percentage || 0}%</span>
+                ) : cacheSuccessMsg ? (
+                  <span className="text-emerald-400">Saved</span>
+                ) : (
+                  <span className="hidden sm:inline">Offline</span>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isConnected && (
           <div className="pointer-events-auto flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
             
             {/* Card: YOU */}
@@ -893,9 +1276,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               const isStopped = !isWeak && m.location && (m.location.status === 'stopped' || m.location.speedKmh < 2.0);
               const speedText = m.location ? formatSpeed(m.location.speedKmh) : '...';
               const distText = formatDistance(m.distanceFromMeMeters);
-              const gmapsUrl = m.location
-                ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
-                : null;
 
               return (
                 <div
@@ -931,25 +1311,26 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                     <span className="text-sky-300">{distText}</span>
                   </div>
 
-                  {gmapsUrl && (
-                    <a
-                      href={gmapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="h-5 px-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 transition-colors ml-0.5 flex items-center gap-1 font-bold text-[9px]"
+                  {m.location && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic(25);
+                        openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
+                      }}
+                      className="h-5 px-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 transition-colors ml-0.5 flex items-center gap-1 font-bold text-[9px] cursor-pointer"
                       title={`Open Google Maps turn-by-turn navigation to ${m.name}`}
                     >
                       <Navigation className="w-2.5 h-2.5" />
                       <span>Directions</span>
-                    </a>
+                    </button>
                   )}
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );

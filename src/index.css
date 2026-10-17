@@ -71,11 +71,6 @@
   font-family: var(--font-mono) !important;
 }
 
-/* High-contrast dark mode filter for standard free OpenStreetMap tiles */
-.leaflet-dark-mode .leaflet-tile {
-  filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(95%);
-}
-
 .leaflet-dark-mode .leaflet-tile-container {
   background: #080c10;
 }
@@ -209,3 +204,17 @@
     break-inside: avoid !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE LANDSCAPE (MOTORCYCLE HANDLEBAR WIDESCREEN MOUNT)
+   Triggered on phones held or mounted horizontally (height <= 520px)
+───────────────────────────────────────────────────────────── */
+@media (orientation: landscape) and (max-height: 520px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+  .mobile-landscape-hidden {
+    display: none !important;
+  }
+}
+

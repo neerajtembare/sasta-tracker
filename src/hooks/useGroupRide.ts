@@ -1,16 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Peer, { DataConnection } from 'peerjs';
 import { haversineDistance } from '../utils/gpxParser';
 import { playWaypointChime, playWarningChime } from '../utils/audioChimes';
+import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 
 export interface GroupRiderLocation {
   riderId: string;
   name: string;
   color: string;
+  bikeModel?: string;
   lat: number;
   lon: number;
   speedKmh: number;
   bearing: number | null;
+  leanAngle?: number;
   timestamp: number;
   status: 'riding' | 'stopped' | 'sos';
   batteryPct?: number;
@@ -20,11 +23,13 @@ export interface GroupMemberInfo {
   riderId: string;
   name: string;
   color: string;
+  bikeModel?: string;
   isHost: boolean;
   lastSeen: number;
   location?: GroupRiderLocation;
   distanceFromMeMeters?: number;
   isStale?: boolean;
+  isOnline?: boolean;
 }
 
 export interface CrewNotification {
@@ -41,26 +46,25 @@ export interface SosAlert {
   timestamp: number;
 }
 
-export const MOTORCYCLE_CALLSIGNS = [
-  'ApexRider', 'GhostRider', 'ThunderRider', 'NightHawk', 'TrailBlazer',
-  'TurboRider', 'ShadowRider', 'HyperRider', 'Maverick', 'Viper',
-  'Phantom', 'Raptor', 'IronClaw', 'RoadWarrior', 'TorqueRider',
-  'NinjaRider', 'ApexPredator', 'MotoNomad', 'StormRider', 'FalconRider'
-];
-
-export function generateRandomRiderName(): string {
-  const prefix = MOTORCYCLE_CALLSIGNS[Math.floor(Math.random() * MOTORCYCLE_CALLSIGNS.length)];
-  const num = Math.floor(10 + Math.random() * 89);
-  return `${prefix}-${num}`;
+export interface RiderProfile {
+  id: string;
+  name: string;
+  bikeModel?: string;
+  color: string;
+  squadName: string;
+  isLoggedIn: boolean;
 }
 
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
+export interface FriendEntry {
+  id: string;
+  name: string;
+  bikeModel?: string;
+  color: string;
+}
+
+export const MOTORCYCLE_CALLSIGNS = [
+  'Neeraj', 'Rahul', 'Sam', 'Sid', 'Aryan',
+  'GhostRider', 'ThunderRider', 'ApexRider', 'NightHawk', 'Maverick'
 ];
 
 export const RIDER_COLORS = [
@@ -75,7 +79,7 @@ export const RIDER_COLORS = [
 ];
 
 export function getRiderColor(id: string): string {
-  if (!id) return RIDER_COLORS[1];
+  if (!id) return RIDER_COLORS[0];
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = ((hash << 5) - hash) + id.charCodeAt(i);
@@ -84,38 +88,182 @@ export function getRiderColor(id: string): string {
   return RIDER_COLORS[idx];
 }
 
-function sanitizeCode(code: string): string {
-  return code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+export const DEFAULT_SQUAD_NAME = 'Sunday Morning Crew';
+
+const STORAGE_KEYS = {
+  USER_PROFILE: 'sasta_rider_profile_v3',
+  ROSTER_CACHE: 'sasta_crew_roster_cache_v3',
+  CUSTOM_FRIENDS: 'sasta_custom_friends_v3',
+  SQUAD_NAME: 'sasta_crew_squad_name_v3',
+};
+
+// Seed default known crew friends for instant zero-wait friend radar
+export const DEFAULT_KNOWN_MEMBERS: FriendEntry[] = [
+  { id: 'neeraj', name: 'Neeraj', bikeModel: 'KTM Duke 390', color: '#00f0ff' },
+  { id: 'rahul', name: 'Rahul', bikeModel: 'Continental GT 650', color: '#ffe600' },
+  { id: 'sam', name: 'Sam', bikeModel: 'Triumph Speed 400', color: '#ff3366' },
+];
+
+function sanitizeKey(str: string): string {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
 }
 
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+];
+
 export function useGroupRide() {
-  const [roomCode, setRoomCode] = useState<string>('');
-  const [riderName, setRiderName] = useState<string>(() => {
+  // 1. Persistent Rider Identity Dual-Loaded from Cookies + LocalStorage + URL Params
+  const [profile, setProfile] = useState<RiderProfile>(() => {
     try {
-      const saved = localStorage.getItem('sasta_rider_name') || localStorage.getItem('throttlelog_rider_name');
-      if (saved && saved.trim()) return saved.trim();
-      const generated = generateRandomRiderName();
-      localStorage.setItem('sasta_rider_name', generated);
-      return generated;
+      // Priority 1: Check URL search params for 1-tap friend invite (e.g. ?rider=Rahul)
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const riderParam = params.get('rider') || params.get('name') || params.get('who');
+        const squadParam = params.get('squad') || params.get('crew') || params.get('room');
+        
+        if (riderParam && riderParam.trim()) {
+          const cleanName = riderParam.trim();
+          const cleanId = sanitizeKey(cleanName) || 'rider';
+          // Find matching bike if known
+          const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
+          const newProfile: RiderProfile = {
+            id: cleanId,
+            name: cleanName,
+            bikeModel: matched?.bikeModel || 'Motorcycle',
+            color: matched?.color || getRiderColor(cleanId),
+            squadName: squadParam?.trim() || DEFAULT_SQUAD_NAME,
+            isLoggedIn: true,
+          };
+          saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
+          saveIdentity('sasta_rider_name', cleanName);
+          // Clean URL param without page reload
+          try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('rider');
+            cleanUrl.searchParams.delete('name');
+            cleanUrl.searchParams.delete('who');
+            window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+          } catch {}
+          return newProfile;
+        }
+      }
+
+      // Priority 2: Persistent Cookie / LocalStorage
+      const savedRaw = getSavedIdentity(STORAGE_KEYS.USER_PROFILE);
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        if (parsed.name && parsed.id) return parsed;
+      }
+
+      // Priority 3: Legacy rider name
+      const legacyName = getSavedIdentity('sasta_rider_name') || 'Neeraj';
+      const cleanId = sanitizeKey(legacyName) || 'neeraj';
+      const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === legacyName.toLowerCase());
+      const fallbackProfile: RiderProfile = {
+        id: cleanId,
+        name: legacyName,
+        bikeModel: matched?.bikeModel || 'KTM Duke 390',
+        color: matched?.color || getRiderColor(cleanId),
+        squadName: DEFAULT_SQUAD_NAME,
+        isLoggedIn: true,
+      };
+      saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(fallbackProfile));
+      return fallbackProfile;
     } catch {
-      return generateRandomRiderName();
+      return {
+        id: 'neeraj',
+        name: 'Neeraj',
+        bikeModel: 'KTM Duke 390',
+        color: '#00f0ff',
+        squadName: DEFAULT_SQUAD_NAME,
+        isLoggedIn: true,
+      };
     }
   });
-  const [riderId] = useState<string>(() => 'rider_' + Math.random().toString(36).substring(2, 9));
-  const [isHost, setIsHost] = useState<boolean>(false);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-  const [statusMessage, setStatusMessage] = useState<string>('');
-  const [members, setMembers] = useState<Map<string, GroupMemberInfo>>(new Map());
+
+  // 2. Custom Friends List (saved to cookies + localStorage)
+  const [customFriends, setCustomFriends] = useState<FriendEntry[]>(() => {
+    try {
+      const raw = getSavedIdentity(STORAGE_KEYS.CUSTOM_FRIENDS);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+
+  // Combined squad members list (default friends + custom friends)
+  const getAllSquadFriends = useCallback((): FriendEntry[] => {
+    const list = [...DEFAULT_KNOWN_MEMBERS];
+    customFriends.forEach(cf => {
+      if (!list.some(m => m.id === cf.id)) {
+        list.push(cf);
+      }
+    });
+    return list;
+  }, [customFriends]);
+
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('connected');
+  const [statusMessage, setStatusMessage] = useState<string>('Crew Radar Active • All friends auto-connected');
+  const [isConnected, setIsConnected] = useState<boolean>(true);
+
+  // 3. Crew Members Map (Pre-seeded with all squad friends so map is NEVER empty!)
+  const [members, setMembers] = useState<Map<string, GroupMemberInfo>>(() => {
+    const map = new Map<string, GroupMemberInfo>();
+    
+    // Seed from persistent cache if available
+    try {
+      const raw = getSavedIdentity(STORAGE_KEYS.ROSTER_CACHE);
+      if (raw) {
+        const parsed: GroupMemberInfo[] = JSON.parse(raw);
+        parsed.forEach(m => {
+          if (m && m.riderId && m.riderId !== profile.id) {
+            map.set(m.riderId, { ...m, isOnline: false, isStale: true });
+          }
+        });
+      }
+    } catch {}
+
+    // Ensure all default friends are visible
+    DEFAULT_KNOWN_MEMBERS.forEach(def => {
+      if (def.id !== profile.id && !map.has(def.id)) {
+        map.set(def.id, {
+          riderId: def.id,
+          name: def.name,
+          color: def.color,
+          bikeModel: def.bikeModel,
+          isHost: false,
+          lastSeen: Date.now() - 3600000,
+          isOnline: false,
+          isStale: true,
+        });
+      }
+    });
+
+    return map;
+  });
+
   const [sosAlert, setSosAlert] = useState<SosAlert | null>(null);
-  const [lastRoomCode, setLastRoomCode] = useState<string>(() => {
-    try {
-      return localStorage.getItem('sasta_last_crew') || '';
-    } catch {
-      return '';
-    }
-  });
   const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
+
+  // References
+  const profileRef = useRef<RiderProfile>(profile);
+  profileRef.current = profile;
+
+  const membersRef = useRef<Map<string, GroupMemberInfo>>(members);
+  membersRef.current = members;
+
+  const myLocationRef = useRef<{ lat: number; lon: number; speedKmh: number; bearing: number | null; leanAngle?: number } | null>(null);
+  const peerRef = useRef<Peer | null>(null);
+  const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const heartbeatIntervalRef = useRef<any>(null);
+  const discoveryIntervalRef = useRef<any>(null);
   const notificationTimeoutRef = useRef<any>(null);
 
   const postCrewNotification = useCallback((text: string, type: 'join' | 'leave' | 'info' | 'alert' = 'info') => {
@@ -132,127 +280,57 @@ export function useGroupRide() {
     }, 4500);
   }, []);
 
-
-
-  const peerRef = useRef<Peer | null>(null);
-  const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
-  const peerToRiderMapRef = useRef<Map<string, string>>(new Map());
-  const myLocationRef = useRef<{ lat: number; lon: number; speedKmh: number; bearing: number | null } | null>(null);
-  const membersRef = useRef<Map<string, GroupMemberInfo>>(new Map());
-  const retryTimeoutRef = useRef<any>(null);
-  const joinAttemptRef = useRef<number>(0);
-  const isHostRef = useRef<boolean>(false);
-  const riderNameRef = useRef<string>(riderName);
-  const isManualLeaveRef = useRef<boolean>(false);
-  const reconnectIntervalRef = useRef<any>(null);
-  const activeRoomCodeRef = useRef<string>('');
-  const hasSwitchedFromHostRef = useRef<boolean>(false);
-
-  isHostRef.current = isHost;
-  riderNameRef.current = riderName;
-
-  // Sync state members to membersRef
+  // Update members state and persist cache to Cookie & LocalStorage
   const updateMembersState = useCallback((updater: (prev: Map<string, GroupMemberInfo>) => Map<string, GroupMemberInfo>) => {
     setMembers(prev => {
       const next = updater(prev);
       membersRef.current = next;
+      try {
+        const arr = Array.from(next.values());
+        saveIdentity(STORAGE_KEYS.ROSTER_CACHE, JSON.stringify(arr));
+      } catch {}
       return next;
     });
   }, []);
 
-  // Broadcast message to all directly connected peers
-  const broadcastMessage = useCallback((payload: any) => {
+  // Broadcast payload across all channels (WebRTC peers + BroadcastChannel)
+  const broadcastPayload = useCallback((payload: any) => {
+    // 1. Cross-tab BroadcastChannel (instant 0ms sync for same browser or dual testing)
+    if (broadcastChannelRef.current) {
+      try {
+        broadcastChannelRef.current.postMessage(payload);
+      } catch {}
+    }
+
+    // 2. WebRTC P2P DataChannels
     connectionsRef.current.forEach(conn => {
       if (conn.open) {
         try {
           conn.send(payload);
-        } catch (e) {
-          // ignore transient send errors
-        }
+        } catch {}
       }
     });
   }, []);
 
-  // Host Star-Relay: forward data packets to all other peers (excluding the origin peer)
-  // Guarantees all riders receive telemetry even if mobile carrier CGNAT blocks direct P2P mesh
-  const relayToOthers = useCallback((data: any, excludePeerId: string) => {
-    if (!isHostRef.current) return;
-    connectionsRef.current.forEach((conn, peerId) => {
-      if (peerId !== excludePeerId && conn.open) {
-        try {
-          conn.send(data);
-        } catch (e) {
-          // ignore transient send errors
-        }
-      }
-    });
-  }, []);
-
-  // Handle incoming data message from a peer
-  const handleIncomingData = useCallback((data: any, fromPeerId: string) => {
+  // Handle incoming data message from any transport
+  const handleIncomingMessage = useCallback((data: any) => {
     if (!data || typeof data !== 'object') return;
+    const currentMyId = profileRef.current.id;
 
-    if (data.type === 'GREETING') {
-      const g = data.payload;
-      if (g?.riderId && g.riderId !== riderId) {
-        peerToRiderMapRef.current.set(fromPeerId, g.riderId);
-        updateMembersState(prev => {
-          const isNew = !prev.has(g.riderId);
-          if (isNew) {
-            playWaypointChime();
-            postCrewNotification(`🏍️ ${g.name || 'A rider'} joined the crew radar!`, 'join');
-          }
-          const next = new Map(prev);
-          const existing = next.get(g.riderId);
-          let dist: number | undefined = undefined;
-          if (myLocationRef.current && g.location) {
-            dist = haversineDistance(
-              myLocationRef.current.lat,
-              myLocationRef.current.lon,
-              g.location.lat,
-              g.location.lon
-            );
-          }
-          next.set(g.riderId, {
-            riderId: g.riderId,
-            name: g.name,
-            color: g.color || RIDER_COLORS[1],
-            isHost: !!g.isHost,
-            lastSeen: Date.now(),
-            location: g.location || existing?.location,
-            distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
-            isStale: false,
-          });
-          return next;
-        });
-
-        // If we are Host: relay this rider's greeting to all other riders
-        if (isHostRef.current) {
-          relayToOthers(data, fromPeerId);
-        }
-      }
-    } else if (data.type === 'LOCATION_UPDATE') {
+    if (data.type === 'LOCATION' || data.type === 'HEARTBEAT') {
       const loc: GroupRiderLocation = data.payload;
-      if (loc?.riderId && loc.riderId !== riderId) {
-        peerToRiderMapRef.current.set(fromPeerId, loc.riderId);
+      if (loc && loc.riderId && loc.riderId !== currentMyId) {
         updateMembersState(prev => {
-          const existing = prev.get(loc.riderId);
-          // If we already have a newer timestamp from direct mesh, don't overwrite with older relayed packet
-          if (existing?.location && existing.location.timestamp > loc.timestamp) {
-            return prev;
+          const isPreviouslyOffline = !prev.has(loc.riderId) || !prev.get(loc.riderId)?.isOnline;
+          if (isPreviouslyOffline) {
+            playWaypointChime();
+            postCrewNotification(`🏍️ ${loc.name || 'Friend'} joined the Crew Radar!`, 'join');
           }
 
           const next = new Map(prev);
-          const base = existing || {
-            riderId: loc.riderId,
-            name: loc.name,
-            color: loc.color,
-            isHost: false,
-            lastSeen: Date.now(),
-          };
-
+          const existing = next.get(loc.riderId);
           let dist: number | undefined = undefined;
-          if (myLocationRef.current) {
+          if (myLocationRef.current && typeof loc.lat === 'number' && typeof loc.lon === 'number') {
             dist = haversineDistance(
               myLocationRef.current.lat,
               myLocationRef.current.lon,
@@ -261,696 +339,506 @@ export function useGroupRide() {
             );
           }
 
+          const hasValidCoords = typeof loc.lat === 'number' && typeof loc.lon === 'number';
+
           next.set(loc.riderId, {
-            ...base,
-            name: loc.name,
+            riderId: loc.riderId,
+            name: loc.name || existing?.name || 'Rider',
+            color: loc.color || existing?.color || getRiderColor(loc.riderId),
+            bikeModel: loc.bikeModel || existing?.bikeModel,
+            isHost: false,
             lastSeen: Date.now(),
-            location: loc,
-            distanceFromMeMeters: dist,
+            location: hasValidCoords ? {
+              ...loc,
+              color: loc.color || existing?.color || getRiderColor(loc.riderId),
+            } : existing?.location,
+            distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
             isStale: false,
+            isOnline: true,
           });
           return next;
         });
-
-        // If Host: forward this location update to all other squad members
-        if (isHostRef.current) {
-          relayToOthers(data, fromPeerId);
-        }
-      }
-    } else if (data.type === 'CREW_SYNC' && Array.isArray(data.members)) {
-      // Instant synchronization of all existing riders in the squad from the host
-      updateMembersState(prev => {
-        const next = new Map(prev);
-        data.members.forEach((m: GroupMemberInfo) => {
-          if (m && m.riderId && m.riderId !== riderId) {
-            const existing = next.get(m.riderId);
-            let dist = m.distanceFromMeMeters;
-            if (myLocationRef.current && m.location) {
-              dist = haversineDistance(
-                myLocationRef.current.lat,
-                myLocationRef.current.lon,
-                m.location.lat,
-                m.location.lon
-              );
-            }
-            next.set(m.riderId, {
-              ...m,
-              distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
-              lastSeen: Date.now(),
-              isStale: false,
-            });
-          }
-        });
-        return next;
-      });
-    } else if (data.type === 'HEARTBEAT') {
-      const hbRiderId = data.riderId;
-      if (hbRiderId && hbRiderId !== riderId) {
-        peerToRiderMapRef.current.set(fromPeerId, hbRiderId);
-        updateMembersState(prev => {
-          const existing = prev.get(hbRiderId);
-          if (!existing) return prev;
-          const next = new Map(prev);
-          next.set(hbRiderId, {
-            ...existing,
-            lastSeen: Date.now(),
-            isStale: false,
-          });
-          return next;
-        });
-
-        if (isHostRef.current) {
-          relayToOthers(data, fromPeerId);
-        }
-      }
-    } else if (data.type === 'LEAVE') {
-      const leavingId = data.riderId;
-      if (leavingId && leavingId !== riderId) {
-        updateMembersState(prev => {
-          if (!prev.has(leavingId)) return prev;
-          const leaver = prev.get(leavingId);
-          if (leaver) {
-            postCrewNotification(`👋 ${leaver.name} left the crew.`, 'leave');
-          }
-          const next = new Map(prev);
-          next.delete(leavingId);
-          return next;
-        });
-
-        if (isHostRef.current) {
-          relayToOthers(data, fromPeerId);
-        }
-      }
-    } else if (data.type === 'HOST_CLOSED') {
-      // Crew leader closed the room
-      isManualLeaveRef.current = true;
-      if (reconnectIntervalRef.current) {
-        clearInterval(reconnectIntervalRef.current);
-        reconnectIntervalRef.current = null;
-      }
-      setIsConnected(false);
-      setConnectionStatus('disconnected');
-      setStatusMessage(`Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`);
-      postCrewNotification(`🏁 Crew Leader (${data.riderName || 'Leader'}) ended the crew ride.`, 'info');
-      updateMembersState(() => new Map());
-    } else if (data.type === 'RENAME') {
-      const rId = data.riderId;
-      const newName = data.newName;
-      if (rId && newName && rId !== riderId) {
-        updateMembersState(prev => {
-          const existing = prev.get(rId);
-          if (!existing) return prev;
-          const next = new Map(prev);
-          next.set(rId, {
-            ...existing,
-            name: newName,
-            location: existing.location ? { ...existing.location, name: newName } : undefined,
-          });
-          return next;
-        });
-
-        if (isHostRef.current) {
-          relayToOthers(data, fromPeerId);
-        }
       }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
       setSosAlert(alert);
       playWarningChime();
-
-      if (isHostRef.current) {
-        relayToOthers(data, fromPeerId);
-      }
-    } else if (data.type === 'PEER_LIST' && Array.isArray(data.peers)) {
-      // Connect directly to other members shared by host for mesh redundancy
-      data.peers.forEach((peerId: string) => {
-        if (peerId && peerId !== peerRef.current?.id && !connectionsRef.current.has(peerId)) {
-          connectToPeer(peerId);
-        }
-      });
+      postCrewNotification(`🚨 REGROUP ALERT from ${alert.fromName}!`, 'alert');
     }
-  }, [postCrewNotification, relayToOthers, riderId, updateMembersState]);
+  }, [postCrewNotification, updateMembersState]);
 
-  // Connect to a peer
+  // Setup BroadcastChannel for instant same-browser / pair testing
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+    const squadKey = sanitizeKey(profile.squadName);
+    const channel = new BroadcastChannel(`sasta_crew_${squadKey}`);
+    channel.onmessage = (event) => {
+      handleIncomingMessage(event.data);
+    };
+    broadcastChannelRef.current = channel;
+
+    return () => {
+      channel.close();
+      broadcastChannelRef.current = null;
+    };
+  }, [profile.squadName, handleIncomingMessage]);
+
+  // ─── P2P Mesh Auto-Connect Engine ────────────────────────────────
   const connectToPeer = useCallback((targetPeerId: string) => {
-    if (!peerRef.current || peerRef.current.disconnected) return;
+    if (!peerRef.current || peerRef.current.destroyed || peerRef.current.disconnected) return;
+    if (connectionsRef.current.has(targetPeerId)) {
+      const existing = connectionsRef.current.get(targetPeerId);
+      if (existing && existing.open) return;
+    }
+
     try {
       const conn = peerRef.current.connect(targetPeerId, {
         reliable: true,
         serialization: 'json',
       });
-      setupConnection(conn);
-    } catch (err) {
-      console.warn('Failed connecting to peer:', targetPeerId, err);
-    }
-  }, []);
 
-  // Setup connection event handlers
-  const setupConnection = useCallback((conn: DataConnection) => {
-    // 8-second watchdog for WebRTC data channel handshake
-    const handshakeTimer = setTimeout(() => {
-      if (!conn.open && !connectionsRef.current.has(conn.peer)) {
-        console.warn('WebRTC data channel handshake timed out for:', conn.peer);
-        try { conn.close(); } catch {}
-      }
-    }, 8000);
+      conn.on('open', () => {
+        connectionsRef.current.set(targetPeerId, conn);
+        setIsConnected(true);
+        setConnectionStatus('connected');
+        setStatusMessage(`Crew Radar Connected • ${connectionsRef.current.size} squad mate(s) live`);
 
-    const handleOpen = () => {
-      clearTimeout(handshakeTimer);
-      if (reconnectIntervalRef.current) {
-        clearInterval(reconnectIntervalRef.current);
-        reconnectIntervalRef.current = null;
-      }
-      joinAttemptRef.current = 0;
-      connectionsRef.current.set(conn.peer, conn);
-      setIsConnected(true);
-      setConnectionStatus('connected');
-      setStatusMessage(`Connected with ${connectionsRef.current.size} rider(s)`);
-
-      // Immediately send greeting identity so rider appears on HUD without waiting for GPS movement
-      const myColor = getRiderColor(riderId);
-      const activeName = riderNameRef.current || 'Rider';
-      const activeIsHost = isHostRef.current;
-      try {
+        // Send presence greeting immediately upon connection
+        const greetingPayload: any = {
+          riderId: profileRef.current.id,
+          name: profileRef.current.name,
+          color: profileRef.current.color,
+          bikeModel: profileRef.current.bikeModel,
+          timestamp: Date.now(),
+          status: 'stopped',
+        };
+        if (myLocationRef.current) {
+          Object.assign(greetingPayload, myLocationRef.current);
+          greetingPayload.status = (myLocationRef.current.speedKmh || 0) < 2.0 ? 'stopped' : 'riding';
+        }
         conn.send({
-          type: 'GREETING',
-          payload: {
-            riderId,
-            name: activeName,
-            color: myColor,
-            isHost: activeIsHost,
-            location: myLocationRef.current ? {
-              riderId,
-              name: activeName,
-              color: myColor,
-              lat: myLocationRef.current.lat,
-              lon: myLocationRef.current.lon,
-              speedKmh: myLocationRef.current.speedKmh || 0,
-              bearing: myLocationRef.current.bearing,
-              timestamp: Date.now(),
-              status: (myLocationRef.current.speedKmh || 0) < 2.0 ? 'stopped' : 'riding',
-            } : undefined,
-          },
+          type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+          payload: greetingPayload,
         });
-      } catch {}
+      });
 
-      // If we are host, announce other peers to newly connected rider so all members mesh together
-      if (activeIsHost) {
-        const allPeerIds = Array.from(connectionsRef.current.keys()).concat(peerRef.current?.id || '');
-        conn.send({ type: 'PEER_LIST', peers: allPeerIds });
+      conn.on('data', (data) => {
+        handleIncomingMessage(data);
+      });
 
-        // Immediately send full crew state so new rider sees all riders and their positions with 0 waiting!
-        const currentMembers = Array.from(membersRef.current.values());
-        if (currentMembers.length > 0) {
-          conn.send({
-            type: 'CREW_SYNC',
-            members: currentMembers,
-          });
-        }
-      }
-    };
+      conn.on('close', () => {
+        connectionsRef.current.delete(targetPeerId);
+      });
 
-    if (conn.open) {
-      handleOpen();
-    } else {
-      conn.on('open', handleOpen);
+      conn.on('error', () => {
+        connectionsRef.current.delete(targetPeerId);
+      });
+    } catch {
+      // transient connection attempt
     }
+  }, [handleIncomingMessage]);
 
-    conn.on('data', (data) => {
-      handleIncomingData(data, conn.peer);
-    });
+  // Initialize PeerJS mesh
+  useEffect(() => {
+    if (!profile.isLoggedIn) return;
 
-    conn.on('close', () => {
-      clearTimeout(handshakeTimer);
-      const rId = peerToRiderMapRef.current.get(conn.peer);
-      connectionsRef.current.delete(conn.peer);
-      if (rId) {
-        peerToRiderMapRef.current.delete(conn.peer);
-        updateMembersState(prev => {
-          if (!prev.has(rId)) return prev;
-          const next = new Map(prev);
-          next.delete(rId);
-          return next;
-        });
-      }
-
-      // Check if client lost connection to host / all peers
-      if (!isHostRef.current && connectionsRef.current.size === 0) {
-        setIsConnected(false);
-        if (isManualLeaveRef.current || !activeRoomCodeRef.current) {
-          setConnectionStatus('disconnected');
-          setStatusMessage('Disconnected from group ride.');
-        } else {
-          // Cellular dropout detected — trigger silent auto-reconnect loop
-          setConnectionStatus('connecting');
-          setStatusMessage('Reconnecting to crew...');
-
-          if (!reconnectIntervalRef.current) {
-            let attempts = 0;
-            reconnectIntervalRef.current = setInterval(() => {
-              if (isManualLeaveRef.current || !activeRoomCodeRef.current || attempts >= 8) {
-                if (reconnectIntervalRef.current) clearInterval(reconnectIntervalRef.current);
-                reconnectIntervalRef.current = null;
-                if (attempts >= 8) {
-                  setConnectionStatus('disconnected');
-                  setStatusMessage(`Could not reconnect to crew "${activeRoomCodeRef.current}". Tap to rejoin.`);
-                }
-                return;
-              }
-              attempts += 1;
-              setStatusMessage(`Signal searching... Reconnecting (Attempt ${attempts}/8)...`);
-              joinRoom(activeRoomCodeRef.current, riderNameRef.current);
-            }, 5000);
-          }
-        }
-      } else {
-        setStatusMessage(`Connected with ${connectionsRef.current.size} rider(s)`);
-      }
-    });
-
-    conn.on('error', (err) => {
-      clearTimeout(handshakeTimer);
-      console.warn('Connection error with peer:', conn.peer, err);
-    });
-  }, [handleIncomingData, riderId, updateMembersState]);
-
-  // Join an existing Group Ride as a squad member
-  const joinRoom = useCallback((code: string, name?: string) => {
-    isManualLeaveRef.current = false;
-    if (reconnectIntervalRef.current) {
-      clearInterval(reconnectIntervalRef.current);
-      reconnectIntervalRef.current = null;
-    }
-
-    const cleanCode = sanitizeCode(code);
-    if (!cleanCode) {
-      setStatusMessage('Please enter a valid 4-8 digit room code');
-      return;
-    }
-    const cleanName = (name && name.trim()) || riderNameRef.current || generateRandomRiderName();
-    setRiderName(cleanName);
-    riderNameRef.current = cleanName;
-    try {
-      localStorage.setItem('sasta_rider_name', cleanName);
-      localStorage.setItem('throttlelog_rider_name', cleanName);
-      localStorage.setItem('sasta_last_crew', cleanCode);
-    } catch {}
-
-    setRoomCode(cleanCode);
-    setLastRoomCode(cleanCode);
-    activeRoomCodeRef.current = cleanCode;
-    setIsHost(false);
-    isHostRef.current = false;
-    setConnectionStatus('connecting');
-    setStatusMessage(`Connecting to squad "${cleanCode}"...`);
-
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    joinAttemptRef.current = 0;
+    const squadKey = sanitizeKey(profile.squadName);
+    const riderKey = sanitizeKey(profile.id);
+    const myPeerId = `sasta_${squadKey}_${riderKey}`;
 
     if (peerRef.current) {
       try { peerRef.current.destroy(); } catch {}
       peerRef.current = null;
     }
-
-    // Unique random session suffix guarantees zero ID collisions or socket locks on 0.peerjs.com
-    const randomSuffix = Math.random().toString(36).substring(2, 6);
-    const myPeerId = `sasta-${cleanCode}-${riderId}-${randomSuffix}`;
-    const hostPeerId = `sasta-${cleanCode}-host`;
 
     const peer = new Peer(myPeerId, {
-      config: {
-        iceServers: ICE_SERVERS,
-      },
-    });
-
-    const attemptHostConnection = () => {
-      if (!peer || peer.destroyed || isManualLeaveRef.current) return;
-      try {
-        const conn = peer.connect(hostPeerId, {
-          reliable: true,
-          serialization: 'json',
-        });
-        setupConnection(conn);
-      } catch (e) {
-        console.warn('Error connecting to host peer:', e);
-      }
-    };
-
-    peer.on('open', () => {
-      setStatusMessage(`Locating squad leader for "${cleanCode}"...`);
-      attemptHostConnection();
-    });
-
-    peer.on('connection', (conn) => {
-      setupConnection(conn);
-    });
-
-    peer.on('disconnected', () => {
-      try {
-        peer.reconnect();
-      } catch {}
-    });
-
-    peer.on('error', (err: any) => {
-      console.warn('Peer error during join:', err.type, err);
-      if (err.type === 'peer-unavailable') {
-        // Host peer was not found on signaling server
-        if (joinAttemptRef.current < 3 && !isManualLeaveRef.current && activeRoomCodeRef.current === cleanCode) {
-          joinAttemptRef.current += 1;
-          setStatusMessage(`Locating squad leader... (Attempt ${joinAttemptRef.current}/3)`);
-          if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-          retryTimeoutRef.current = setTimeout(() => {
-            attemptHostConnection();
-          }, 1500);
-        } else {
-          setConnectionStatus('error');
-          setStatusMessage(`Squad leader for "${cleanCode}" not found yet. The leader might not have started the ride.`);
-        }
-      } else if (err.type === 'unavailable-id') {
-        // ID taken on signaling server, retry with a fresh session ID
-        if (!isManualLeaveRef.current && activeRoomCodeRef.current === cleanCode) {
-          setTimeout(() => {
-            joinRoom(cleanCode, cleanName);
-          }, 300);
-        }
-      } else {
-        setConnectionStatus('error');
-        setStatusMessage(err.message || 'Connection error. Check cellular network.');
-      }
-    });
-
-    peerRef.current = peer;
-  }, [riderId, setupConnection]);
-
-  // Create a new Group Ride as Host
-  const createRoom = useCallback((name: string, customCode?: string) => {
-    isManualLeaveRef.current = false;
-    hasSwitchedFromHostRef.current = false;
-    if (reconnectIntervalRef.current) {
-      clearInterval(reconnectIntervalRef.current);
-      reconnectIntervalRef.current = null;
-    }
-
-    const cleanName = name.trim() || generateRandomRiderName();
-    setRiderName(cleanName);
-    riderNameRef.current = cleanName;
-    try {
-      localStorage.setItem('sasta_rider_name', cleanName);
-      localStorage.setItem('throttlelog_rider_name', cleanName);
-    } catch {}
-
-    const sanitized = customCode ? sanitizeCode(customCode) : '';
-    const generated = sanitized || ('RIDE' + Math.floor(1000 + Math.random() * 9000));
-    
-    setRoomCode(generated);
-    setLastRoomCode(generated);
-    activeRoomCodeRef.current = generated;
-    try {
-      localStorage.setItem('sasta_last_crew', generated);
-    } catch {}
-    setIsHost(true);
-    isHostRef.current = true;
-    setConnectionStatus('connecting');
-    setStatusMessage(`Starting squad room "${generated}"...`);
-
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    joinAttemptRef.current = 0;
-
-    if (peerRef.current) {
-      try { peerRef.current.destroy(); } catch {}
-      peerRef.current = null;
-    }
-
-    const hostPeerId = `sasta-${generated}-host`;
-    const peer = new Peer(hostPeerId, {
-      config: {
-        iceServers: ICE_SERVERS,
-      },
+      config: { iceServers: ICE_SERVERS },
     });
 
     peer.on('open', () => {
       setIsConnected(true);
       setConnectionStatus('connected');
-      setStatusMessage(`Squad "${generated}" active. Transmitting radar...`);
-      playWaypointChime();
+      setStatusMessage('Crew Radar Active • All friends auto-connected');
+
+      // Auto-connect to ALL other squad members (both default friends and custom additions)
+      const friends = getAllSquadFriends();
+      friends.forEach(m => {
+        if (m.id !== profile.id) {
+          const targetPeerId = `sasta_${squadKey}_${m.id}`;
+          connectToPeer(targetPeerId);
+        }
+      });
     });
 
     peer.on('connection', (conn) => {
-      setupConnection(conn);
+      conn.on('open', () => {
+        connectionsRef.current.set(conn.peer, conn);
+        setIsConnected(true);
+        setConnectionStatus('connected');
+
+        // Greet back with current location or presence heartbeat
+        const greetingPayload: any = {
+          riderId: profileRef.current.id,
+          name: profileRef.current.name,
+          color: profileRef.current.color,
+          bikeModel: profileRef.current.bikeModel,
+          timestamp: Date.now(),
+          status: 'stopped',
+        };
+        if (myLocationRef.current) {
+          Object.assign(greetingPayload, myLocationRef.current);
+          greetingPayload.status = (myLocationRef.current.speedKmh || 0) < 2.0 ? 'stopped' : 'riding';
+        }
+        conn.send({
+          type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+          payload: greetingPayload,
+        });
+      });
+
+      conn.on('data', (data) => {
+        handleIncomingMessage(data);
+      });
+
+      conn.on('close', () => {
+        connectionsRef.current.delete(conn.peer);
+      });
     });
 
     peer.on('disconnected', () => {
-      try {
-        peer.reconnect();
-      } catch {}
+      try { peer.reconnect(); } catch {}
     });
 
-    peer.on('error', (err: any) => {
-      if (err.type === 'unavailable-id') {
-        // Someone is ALREADY hosting this exact squad code!
-        // Seamlessly switch to client mode and join the existing leader
-        if (!hasSwitchedFromHostRef.current) {
-          hasSwitchedFromHostRef.current = true;
-          console.log(`Squad "${generated}" is already hosted. Joining leader...`);
-          setStatusMessage(`Squad "${generated}" is already active! Joining crew leader...`);
-          try { peer.destroy(); } catch {}
-          peerRef.current = null;
-          setTimeout(() => {
-            if (!isManualLeaveRef.current) {
-              joinRoom(generated, cleanName);
-            }
-          }, 200);
-        }
-      } else {
-        setConnectionStatus('error');
-        setStatusMessage(err.message || 'Peer connection error');
-      }
+    peer.on('error', (err) => {
+      console.warn('Crew peer warning:', err);
     });
 
     peerRef.current = peer;
-  }, [setupConnection, joinRoom]);
 
-  // Rejoin the last room
-  const rejoinRoom = useCallback(() => {
-    const targetCode = activeRoomCodeRef.current || lastRoomCode;
-    if (targetCode) {
-      joinRoom(targetCode, riderNameRef.current);
-    }
-  }, [lastRoomCode, joinRoom]);
+    // Periodic discovery loop: try reconnecting to offline members every 8s
+    discoveryIntervalRef.current = setInterval(() => {
+      if (!peer || peer.destroyed || peer.disconnected) return;
+      const friends = getAllSquadFriends();
+      friends.forEach(m => {
+        if (m.id !== profile.id && !connectionsRef.current.has(`sasta_${squadKey}_${m.id}`)) {
+          connectToPeer(`sasta_${squadKey}_${m.id}`);
+        }
+      });
+    }, 8000);
 
-  // Update rider's callsign / name on the fly and notify all peers
-  const updateRiderName = useCallback((newName: string) => {
-    const clean = newName.trim();
-    if (!clean) return;
-    setRiderName(clean);
-    riderNameRef.current = clean;
-    try {
-      localStorage.setItem('sasta_rider_name', clean);
-      localStorage.setItem('throttlelog_rider_name', clean);
-    } catch {}
-    broadcastMessage({
-      type: 'RENAME',
-      riderId,
-      newName: clean,
-    });
-  }, [broadcastMessage, riderId]);
-
-  // Leave Group Ride
-  const leaveRoom = useCallback(() => {
-    isManualLeaveRef.current = true;
-    activeRoomCodeRef.current = '';
-    joinAttemptRef.current = 0;
-    if (reconnectIntervalRef.current) {
-      clearInterval(reconnectIntervalRef.current);
-      reconnectIntervalRef.current = null;
-    }
-    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-    try {
-      if (isHostRef.current) {
-        broadcastMessage({
-          type: 'HOST_CLOSED',
-          riderId,
-          riderName: riderNameRef.current,
-        });
-      } else {
-        broadcastMessage({ type: 'LEAVE', riderId });
+    return () => {
+      if (discoveryIntervalRef.current) clearInterval(discoveryIntervalRef.current);
+      if (peerRef.current) {
+        try { peerRef.current.destroy(); } catch {}
+        peerRef.current = null;
       }
-    } catch {}
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-    }
-    connectionsRef.current.clear();
-    peerToRiderMapRef.current.clear();
-    updateMembersState(() => new Map());
-    setIsConnected(false);
-    setIsHost(false);
-    isHostRef.current = false;
-    setRoomCode('');
-    setConnectionStatus('disconnected');
-    setStatusMessage('');
-    setSosAlert(null);
-  }, [broadcastMessage, riderId, updateMembersState]);
+    };
+  }, [profile.isLoggedIn, profile.id, profile.squadName, connectToPeer, getAllSquadFriends, handleIncomingMessage]);
 
-  // Update my current GPS location and broadcast to crew
-  const updateMyLocation = useCallback((
-    lat: number,
-    lon: number,
-    speedKmh: number,
-    bearing: number | null
-  ) => {
-    myLocationRef.current = { lat, lon, speedKmh, bearing };
+  // Auto-reconnect when phone unlocks, browser tab wakes from background, or network reconnects
+  useEffect(() => {
+    if (!profile.isLoggedIn) return;
 
-    // Update distances to members on local radar when my location updates
-    updateMembersState(prev => {
-      let changed = false;
-      const next = new Map(prev);
-      next.forEach((member, id) => {
-        if (member.location) {
-          const d = haversineDistance(lat, lon, member.location.lat, member.location.lon);
-          if (member.distanceFromMeMeters === undefined || Math.abs(member.distanceFromMeMeters - d) > 2) {
-            next.set(id, { ...member, distanceFromMeMeters: d });
-            changed = true;
+    const handleWakeup = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      
+      // 1. If PeerJS disconnected from broker, reconnect immediately
+      if (peerRef.current && peerRef.current.disconnected && !peerRef.current.destroyed) {
+        try {
+          peerRef.current.reconnect();
+        } catch {}
+      }
+
+      // 2. Re-dial any squad peers that aren't open
+      const squadKey = sanitizeKey(profileRef.current.squadName);
+      const friends = getAllSquadFriends();
+      friends.forEach(m => {
+        if (m.id !== profileRef.current.id) {
+          const targetId = `sasta_${squadKey}_${m.id}`;
+          const existingConn = connectionsRef.current.get(targetId);
+          if (!existingConn || !existingConn.open) {
+            connectToPeer(targetId);
           }
         }
       });
-      return changed ? next : prev;
-    });
-
-    if (!isConnected) return;
-
-    // Determine status (stopped if <2 km/h)
-    const status: 'riding' | 'stopped' = speedKmh < 2.0 ? 'stopped' : 'riding';
-    const myColor = getRiderColor(riderId);
-
-    const payload: GroupRiderLocation = {
-      riderId,
-      name: riderNameRef.current || 'Rider',
-      color: myColor,
-      lat,
-      lon,
-      speedKmh,
-      bearing,
-      timestamp: Date.now(),
-      status,
     };
 
-    broadcastMessage({
-      type: 'LOCATION_UPDATE',
-      payload,
-    });
-  }, [isConnected, riderId, broadcastMessage, updateMembersState]);
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('online', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
 
-  // Trigger SOS / Regroup Ping
-  const triggerSos = useCallback(() => {
-    if (!myLocationRef.current || !isConnected) return;
-    const alert: SosAlert = {
-      fromName: riderName || 'Crew Member',
-      lat: myLocationRef.current.lat,
-      lon: myLocationRef.current.lon,
-      timestamp: Date.now(),
+    return () => {
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('online', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
     };
-    broadcastMessage({
-      type: 'SOS_PING',
-      payload: alert,
-    });
-    setSosAlert(alert);
-    playWarningChime();
-  }, [isConnected, riderName, broadcastMessage]);
+  }, [profile.isLoggedIn, connectToPeer, getAllSquadFriends]);
 
-  // 3.5-second continuous location broadcast & keep-alive
-  // Guarantees all peers receive live coordinates even if watchPosition is stationary
+  // ── Background Execution Keeper (Survives switching to Google Maps & Lock Screen) ──
+  // Inaudible audio loop that tricks mobile browsers (iOS WebKit & Android Chrome)
+  // into keeping background geolocation & JS peer mesh timers active when Google Maps is open.
+  const silentAudioRef = useRef<HTMLAudioElement | null>(null);
+
   useEffect(() => {
-    if (!isConnected) return;
-    const heartbeatInterval = setInterval(() => {
-      if (myLocationRef.current) {
-        const myColor = getRiderColor(riderId);
-        const speed = myLocationRef.current.speedKmh || 0;
-        broadcastMessage({
-          type: 'LOCATION_UPDATE',
-          payload: {
-            riderId,
-            name: riderNameRef.current || 'Rider',
-            color: myColor,
-            lat: myLocationRef.current.lat,
-            lon: myLocationRef.current.lon,
-            speedKmh: speed,
-            bearing: myLocationRef.current.bearing,
-            timestamp: Date.now(),
-            status: speed < 2.0 ? 'stopped' : 'riding',
-          },
-        });
-      } else {
-        broadcastMessage({
-          type: 'HEARTBEAT',
-          riderId,
-          timestamp: Date.now(),
-        });
+    if (!profile.isLoggedIn || !isConnected) {
+      if (silentAudioRef.current) {
+        try { silentAudioRef.current.pause(); } catch {}
+        silentAudioRef.current = null;
       }
-    }, 3500);
-    return () => clearInterval(heartbeatInterval);
-  }, [isConnected, riderId, broadcastMessage]);
+      return;
+    }
 
-  // Periodic cleanup of stale riders (marked weak >25s, removed >60s)
+    const startSilentKeeper = () => {
+      if (typeof Audio === 'undefined') return;
+      try {
+        if (!silentAudioRef.current) {
+          const audio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+          audio.loop = true;
+          audio.volume = 0.01;
+          silentAudioRef.current = audio;
+        }
+        silentAudioRef.current.play().catch(() => {});
+      } catch {}
+    };
+
+    startSilentKeeper();
+    const handleUserTouch = () => {
+      startSilentKeeper();
+      window.removeEventListener('click', handleUserTouch);
+      window.removeEventListener('touchstart', handleUserTouch);
+    };
+    window.addEventListener('click', handleUserTouch, { once: true });
+    window.addEventListener('touchstart', handleUserTouch, { once: true });
+
+    return () => {
+      window.removeEventListener('click', handleUserTouch);
+      window.removeEventListener('touchstart', handleUserTouch);
+      if (silentAudioRef.current) {
+        try { silentAudioRef.current.pause(); } catch {}
+        silentAudioRef.current = null;
+      }
+    };
+  }, [profile.isLoggedIn, isConnected]);
+
+  // Periodic heartbeat / location broadcast every 3 seconds (ensures instant online presence)
   useEffect(() => {
-    if (!isConnected) return;
-    const cleanupInterval = setInterval(() => {
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (!profile.isLoggedIn) return;
+      const payload: any = {
+        riderId: profile.id,
+        name: profile.name,
+        color: profile.color,
+        bikeModel: profile.bikeModel,
+        timestamp: Date.now(),
+        status: 'stopped',
+      };
+      if (myLocationRef.current) {
+        Object.assign(payload, myLocationRef.current);
+        payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
+      }
+      broadcastPayload({
+        type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+        payload,
+      });
+    }, 3000);
+
+    return () => {
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+    };
+  }, [profile, broadcastPayload]);
+
+  // Age out stale / offline members every 5 seconds
+  useEffect(() => {
+    const ageInterval = setInterval(() => {
+      const now = Date.now();
       updateMembersState(prev => {
         let changed = false;
-        const now = Date.now();
         const next = new Map(prev);
         prev.forEach((info, id) => {
           const age = now - info.lastSeen;
-          if (age > 60000) {
-            next.delete(id);
+          const isOffline = age > 90000; // > 1.5 minutes without heartbeat
+          const isStale = age > 25000;   // > 25s without heartbeat
+
+          if (info.isOnline && isOffline) {
+            next.set(id, { ...info, isOnline: false, isStale: true });
             changed = true;
-          } else if (age > 25000 && !info.isStale) {
+          } else if (info.isOnline && isStale && !info.isStale) {
             next.set(id, { ...info, isStale: true });
-            changed = true;
-          } else if (age <= 25000 && info.isStale) {
-            next.set(id, { ...info, isStale: false });
             changed = true;
           }
         });
         return changed ? next : prev;
       });
     }, 5000);
-    return () => clearInterval(cleanupInterval);
-  }, [isConnected, updateMembersState]);
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      if (reconnectIntervalRef.current) {
-        clearInterval(reconnectIntervalRef.current);
-      }
-      if (peerRef.current) {
-        peerRef.current.destroy();
-      }
+    return () => clearInterval(ageInterval);
+  }, [updateMembersState]);
+
+  // Public Methods
+  const updateMyLocation = useCallback((lat: number, lon: number, speedKmh: number, bearing: number | null, leanAngle?: number) => {
+    myLocationRef.current = { lat, lon, speedKmh, bearing, leanAngle };
+
+    // Broadcast immediately upon position update
+    broadcastPayload({
+      type: 'LOCATION',
+      payload: {
+        riderId: profileRef.current.id,
+        name: profileRef.current.name,
+        color: profileRef.current.color,
+        bikeModel: profileRef.current.bikeModel,
+        lat,
+        lon,
+        speedKmh,
+        bearing,
+        leanAngle,
+        timestamp: Date.now(),
+        status: speedKmh < 2.5 ? 'stopped' : 'riding',
+      },
+    });
+  }, [broadcastPayload]);
+
+  const triggerSos = useCallback(() => {
+    const loc = myLocationRef.current;
+    if (!loc) return;
+    const alert: SosAlert = {
+      fromName: profile.name,
+      lat: loc.lat,
+      lon: loc.lon,
+      timestamp: Date.now(),
     };
+    setSosAlert(alert);
+    broadcastPayload({
+      type: 'SOS_PING',
+      payload: alert,
+    });
+    playWarningChime();
+    postCrewNotification(`🚨 You broadcast an EMERGENCY REGROUP alert!`, 'alert');
+  }, [profile.name, broadcastPayload, postCrewNotification]);
+
+  // Switch rider callsign / bike with dual-storage persistence
+  const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {
+    const cleanName = (name && name.trim()) || 'Rider';
+    const cleanId = sanitizeKey(cleanName) || 'rider_' + Date.now();
+    const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
+    
+    const newProfile: RiderProfile = {
+      id: cleanId,
+      name: cleanName,
+      bikeModel: bikeModel || matched?.bikeModel || 'Motorcycle',
+      color: color || matched?.color || getRiderColor(cleanId),
+      squadName: squadName || DEFAULT_SQUAD_NAME,
+      isLoggedIn: true,
+    };
+    setProfile(newProfile);
+    
+    // Save to both persistent Cookie and LocalStorage
+    saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
+    saveIdentity('sasta_rider_name', cleanName);
+    
+    postCrewNotification(`👋 Checked in as ${cleanName}! Live on Crew Radar.`, 'join');
+  }, [postCrewNotification]);
+
+  const logoutRider = useCallback(() => {
+    setProfile(prev => ({ ...prev, isLoggedIn: false }));
+    const updated = { ...profile, isLoggedIn: false };
+    saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(updated));
+    setMembers(new Map());
+    setIsConnected(false);
+    setConnectionStatus('disconnected');
+    setStatusMessage('Logged out. Check in to rejoin crew radar.');
+  }, [profile]);
+
+  const updateRiderName = useCallback((newName: string) => {
+    if (!newName.trim()) return;
+    loginRider(newName.trim(), profile.bikeModel, profile.color, profile.squadName);
+  }, [loginRider, profile.bikeModel, profile.color, profile.squadName]);
+
+  // Add a new friend to the squad roster & auto-connect
+  const addSquadFriend = useCallback((name: string, bikeModel?: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    const cleanId = sanitizeKey(cleanName) || 'friend_' + Date.now();
+    const newFriend: FriendEntry = {
+      id: cleanId,
+      name: cleanName,
+      bikeModel: bikeModel || 'Motorcycle',
+      color: getRiderColor(cleanId),
+    };
+
+    setCustomFriends(prev => {
+      const next = [...prev.filter(f => f.id !== cleanId), newFriend];
+      saveIdentity(STORAGE_KEYS.CUSTOM_FRIENDS, JSON.stringify(next));
+      return next;
+    });
+
+    // Add to members map immediately
+    updateMembersState(prev => {
+      const next = new Map(prev);
+      if (!next.has(cleanId)) {
+        next.set(cleanId, {
+          riderId: cleanId,
+          name: cleanName,
+          color: newFriend.color,
+          bikeModel: newFriend.bikeModel,
+          isHost: false,
+          lastSeen: Date.now() - 3600000,
+          isOnline: false,
+          isStale: true,
+        });
+      }
+      return next;
+    });
+
+    postCrewNotification(`Added ${cleanName} to squad roster!`, 'info');
+
+    // Attempt connecting to friend immediately
+    if (peerRef.current && !peerRef.current.disconnected) {
+      const squadKey = sanitizeKey(profileRef.current.squadName);
+      connectToPeer(`sasta_${squadKey}_${cleanId}`);
+    }
+  }, [connectToPeer, postCrewNotification, updateMembersState]);
+
+  // Generate personalized WhatsApp invite link (so friend opens app and is instantly connected without typing)
+  const getFriendInviteUrl = useCallback((friendName?: string) => {
+    if (typeof window === 'undefined') return '';
+    const base = window.location.origin + window.location.pathname;
+    if (friendName) {
+      return `${base}?rider=${encodeURIComponent(friendName)}`;
+    }
+    return base;
   }, []);
 
+  const membersArray = useMemo(() => Array.from(members.values()), [members]);
+  const squadFriendsArray = useMemo(() => getAllSquadFriends(), [getAllSquadFriends]);
+
   return {
-    roomCode,
-    lastRoomCode,
-    riderName,
-    riderId,
-    myColor: getRiderColor(riderId),
-    isHost,
+    profile,
+    loginRider,
+    logoutRider,
+    roomCode: profile.squadName,
+    lastRoomCode: profile.squadName,
+    riderName: profile.name,
+    riderId: profile.id,
+    myColor: profile.color,
+    bikeModel: profile.bikeModel,
+    isHost: false,
     isConnected,
     connectionStatus,
     statusMessage,
-    members: Array.from(members.values()),
+    members: membersArray,
+    squadFriends: squadFriendsArray,
+    addSquadFriend,
+    getFriendInviteUrl,
     sosAlert,
     crewNotification,
-    createRoom,
-    joinRoom,
-    rejoinRoom,
-    leaveRoom,
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),
     dismissCrewNotification: () => setCrewNotification(null),
     updateRiderName,
+    // Backwards compatibility stubs for UI components
+    createRoom: (name: string) => loginRider(name),
+    joinRoom: (code: string, name?: string) => loginRider(name || profile.name, undefined, undefined, code),
+    rejoinRoom: () => loginRider(profile.name),
+    leaveRoom: logoutRider,
   };
 }

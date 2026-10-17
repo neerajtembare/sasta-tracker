@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AppTheme, UnitSystem } from '../types';
-import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
-import { 
-  SavedCrew, 
-  getSavedCrews, 
-  saveCrew, 
-  deleteCrew, 
-  addMemberToCrew, 
-  removeMemberFromCrew 
-} from '../utils/storage';
+import { AppTheme, UnitSystem, RideAnalysis } from '../types';
+import { GroupMemberInfo, SosAlert, CrewNotification, RiderProfile, RIDER_COLORS, getRiderColor } from '../hooks/useGroupRide';
 import { 
   Users, 
   Radio, 
@@ -20,12 +12,17 @@ import {
   Map as MapIcon,
   Compass,
   X,
-  RotateCw,
-  Crosshair
+  Crosshair,
+  UserCheck,
+  Bike,
+  Shield,
+  Activity,
+  Check,
+  AlertTriangle,
+  Copy
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { CrewLiveMap } from './CrewLiveMap';
-import { CrewManageModal } from './CrewManageModal';
 
 interface CrewDashboardProps {
   roomCode: string;
@@ -53,6 +50,8 @@ interface CrewDashboardProps {
   onTriggerSos: () => void;
   onDismissSos: () => void;
   onUpdateRiderName: (newName: string) => void;
+  onAddSquadFriend?: (name: string, bikeModel?: string) => void;
+  getFriendInviteUrl?: (friendName?: string) => string;
   onGoToCockpit?: () => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
@@ -61,7 +60,17 @@ interface CrewDashboardProps {
   onStopRecording?: () => void;
   pointsCount?: number;
   totalDistanceMeters?: number;
+  activeRoute?: RideAnalysis | null;
+  onLoadSampleRide?: () => void;
 }
+
+const DEFAULT_FRIENDS = [
+  { name: 'Neeraj', bike: 'KTM Duke 390', color: '#00f0ff' },
+  { name: 'Rahul', bike: 'Continental GT 650', color: '#ffe600' },
+  { name: 'Sam', bike: 'Speed 400', color: '#ff3366' },
+  { name: 'Sid', bike: 'Himalayan 450', color: '#00ff88' },
+  { name: 'Aryan', bike: 'Yamaha R3', color: '#a855f7' },
+];
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   roomCode,
@@ -77,13 +86,12 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   sosAlert,
   crewNotification = null,
   onDismissCrewNotification,
-  onCreateRoom,
-  onJoinRoom,
-  onRejoinRoom,
   onLeaveRoom,
   onTriggerSos,
   onDismissSos,
   onUpdateRiderName,
+  onAddSquadFriend,
+  getFriendInviteUrl,
   onGoToCockpit,
   theme = 'dark',
   unitSystem = 'metric',
@@ -92,549 +100,544 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   onStopRecording,
   pointsCount = 0,
   totalDistanceMeters = 0,
+  activeRoute = null,
+  onLoadSampleRide,
 }) => {
   const isLight = theme === 'light';
 
-  // Saved crews state
-  const [savedCrews, setSavedCrews] = useState<SavedCrew[]>([]);
-  const [isCreatingNewCrew, setIsCreatingNewCrew] = useState(false);
-  const [newCrewName, setNewCrewName] = useState('');
-  const [newCrewCode, setNewCrewCode] = useState('');
-  const [newCrewFriends, setNewCrewFriends] = useState('');
+  // Login / Switch Rider Modal
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginNameInput, setLoginNameInput] = useState('');
+  const [loginBikeInput, setLoginBikeInput] = useState('');
+  const [loginColorInput, setLoginColorInput] = useState(myColor || '#00f0ff');
 
-  // Preflight callsign quick edit state
-  const [isEditingPreflightHandle, setIsEditingPreflightHandle] = useState(false);
-  const [preflightHandle, setPreflightHandle] = useState(riderName);
+  // Add Friend to Squad Modal
+  const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
+  const [newFriendName, setNewFriendName] = useState('');
+  const [newFriendBike, setNewFriendBike] = useState('');
+  const [justAddedFriend, setJustAddedFriend] = useState<{ name: string; bike?: string; url: string } | null>(null);
 
-  // Quick join code input
-  const [quickCodeInput, setQuickCodeInput] = useState('');
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [connectedViewMode, setConnectedViewMode] = useState<'map' | 'list'>('map');
+  // Offline friend ping modal
+  const [offlinePingModal, setOfflinePingModal] = useState<GroupMemberInfo | null>(null);
+
+  // Selected Rider for Map Focus
   const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
-  const [isCrewManageOpen, setIsCrewManageOpen] = useState(false);
-  const [crewManageInitialTab, setCrewManageInitialTab] = useState<'active' | 'saved' | 'create' | 'join'>('saved');
+  const [isConvoyDrawerExpanded, setIsConvoyDrawerExpanded] = useState(true);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  const handleOpenCrewManage = (tab: 'active' | 'saved' | 'create' | 'join' = 'saved') => {
-    setSavedCrews(getSavedCrews());
-    setCrewManageInitialTab(tab);
-    setIsCrewManageOpen(true);
+  const handleQuickLogin = (name: string, bike?: string, color?: string) => {
+    onUpdateRiderName(name);
+    setIsLoginModalOpen(false);
+    triggerHaptic(30);
   };
 
-  useEffect(() => {
-    setSavedCrews(getSavedCrews());
-  }, []);
-
-  const handleCreateCrew = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCrewName.trim()) return;
-
-    const generatedCode = newCrewCode.trim().toUpperCase() || 
-      'CREW' + Math.floor(1000 + Math.random() * 9000);
-
-    const friendList = newCrewFriends
-      .split(',')
-      .map(f => f.trim())
-      .filter(Boolean);
-
-    const newCrew: SavedCrew = {
-      id: 'crew_' + Date.now(),
-      name: newCrewName.trim(),
-      code: generatedCode,
-      members: friendList.length > 0 ? friendList : [riderName || 'You'],
-      createdAt: Date.now(),
-    };
-
-    const updated = saveCrew(newCrew);
-    setSavedCrews(updated);
-    setNewCrewName('');
-    setNewCrewCode('');
-    setNewCrewFriends('');
-    setIsCreatingNewCrew(false);
-    triggerHaptic(50);
+  const handleShareWhatsApp = (customUrl?: string, friendName?: string) => {
+    const squad = roomCode || 'Sunday Morning Crew';
+    const link = customUrl || (getFriendInviteUrl ? getFriendInviteUrl(friendName) : `${window.location.origin}${window.location.pathname}`);
+    const text = friendName
+      ? `🏍️ Hey ${friendName}, join our Crew Radar "${squad}":\n👉 ${link}\nYour name is auto-configured—just tap and ride!`
+      : `🏍️ Join our Crew Radar "${squad}":\n👉 ${link}\nLogged in riders are automatically visible!`;
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank');
   };
 
-  const handleDeleteCrew = (crewId: string) => {
-    if (confirm('Delete this saved squad?')) {
-      const updated = deleteCrew(crewId);
-      setSavedCrews(updated);
-      triggerHaptic(40);
-    }
-  };
-
-  const handleShareWhatsAppCrew = (code: string, crewName?: string) => {
-    const leaderParam = riderName ? `&leader=${encodeURIComponent(riderName)}` : '';
-    const url = `${window.location.origin}${window.location.pathname}?room=${code}${leaderParam}`;
-    const nameLabel = crewName ? `"${crewName}"` : code;
-    
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const lat = pos.coords.latitude.toFixed(6);
-          const lon = pos.coords.longitude.toFixed(6);
-          const gmapsPin = `https://maps.google.com/?q=${lat},${lon}`;
-          const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*\n\n📍 Google Maps Pin:\n${gmapsPin}`;
-          const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-          window.open(waUrl, '_blank');
-        },
-        () => {
-          const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*`;
-          const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-          window.open(waUrl, '_blank');
-        },
-        { enableHighAccuracy: true, timeout: 3000 }
-      );
-    } else {
-      const text = `🏍️ Join our ${nameLabel} crew ride:\n👉 ${url}\nRoom Code: *${code}*`;
-      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-      window.open(waUrl, '_blank');
-    }
-  };
-
-  const handleCopyInviteLink = (code: string) => {
-    const leaderParam = riderName ? `&leader=${encodeURIComponent(riderName)}` : '';
-    const url = `${window.location.origin}${window.location.pathname}?room=${code}${leaderParam}`;
-    navigator.clipboard.writeText(url).then(() => {
+  const handleCopyLink = (customUrl?: string) => {
+    const link = customUrl || window.location.href;
+    navigator.clipboard.writeText(link).then(() => {
       setCopiedLink(true);
-      triggerHaptic(30);
+      triggerHaptic(20);
       setTimeout(() => setCopiedLink(false), 2000);
     });
   };
 
+  const handleAddFriendSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newFriendName.trim()) return;
+    const name = newFriendName.trim();
+    const bike = newFriendBike.trim() || undefined;
+    if (onAddSquadFriend) {
+      onAddSquadFriend(name, bike);
+    }
+    const inviteUrl = getFriendInviteUrl 
+      ? getFriendInviteUrl(name) 
+      : `${window.location.origin}${window.location.pathname}?rider=${encodeURIComponent(name)}`;
+    setJustAddedFriend({ name, bike, url: inviteUrl });
+    setNewFriendName('');
+    setNewFriendBike('');
+    triggerHaptic(40);
+  };
+
+  const onlineCount = members.filter(m => m.isOnline !== false).length + 1;
+  const totalRiders = members.length + 1;
+
   return (
-    <div className="relative w-full h-[calc(100dvh-108px)] md:h-[calc(100dvh-64px)] min-h-[420px] overflow-hidden rounded-xl sm:rounded-2xl">
+    <div className="relative w-full h-[calc(100dvh-108px)] md:h-[calc(100dvh-64px)] landscape:h-[calc(100dvh-38px)] min-h-[340px] overflow-hidden rounded-xl sm:rounded-2xl">
       
       {/* ─────────────────────────────────────────────────────────────
-          PRIMARY LIVE MAP (Always Active - Previews GPS Even Before Joining)
+          HERO LIVE RADAR MAP
       ───────────────────────────────────────────────────────────── */}
-      {connectedViewMode === 'map' ? (
-        <CrewLiveMap
-          myLocation={myLocation}
-          myRiderName={riderName}
-          myColor={myColor}
-          isHost={isHost}
-          isConnected={isConnected}
-          members={members}
-          sosAlert={sosAlert}
-          roomCode={roomCode}
-          lastRoomCode={lastRoomCode}
-          theme={theme}
-          unitSystem={unitSystem}
-          onTriggerSos={onTriggerSos}
-          onDismissSos={onDismissSos}
-          onLeaveRoom={onLeaveRoom}
-          onRejoinRoom={onRejoinRoom}
-          crewNotification={crewNotification}
-          onDismissCrewNotification={onDismissCrewNotification}
-          onShareWhatsApp={() => handleShareWhatsAppCrew(roomCode)}
-          onCopyInviteLink={() => handleCopyInviteLink(roomCode)}
-          copiedLink={copiedLink}
-          onGoToCockpit={onGoToCockpit}
-          onUpdateRiderName={onUpdateRiderName}
-          isRecording={isRecording}
-          onStartRecording={onStartRecording}
-          onStopRecording={onStopRecording}
-          pointsCount={pointsCount}
-          totalDistanceMeters={totalDistanceMeters}
-          onToggleCrewList={() => setConnectedViewMode(prev => prev === 'map' ? 'list' : 'map')}
-          onOpenCrewManage={handleOpenCrewManage}
-          focusedRiderId={focusedRiderId}
-        />
-      ) : (
-        /* Detailed Squad Formation List View */
-        <div className="w-full h-full p-3 sm:p-4 bg-[#080c10] overflow-y-auto space-y-3 font-mono">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setConnectedViewMode('map')}
-              className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span>Back to Live Map</span>
-            </button>
-            <span className="text-xs text-slate-400">
-              {members.length + 1} Riders Online
-            </span>
-          </div>
-
-          {/* Members List */}
-          <div className="space-y-2 max-w-xl mx-auto pt-2">
-            {/* You */}
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2.5">
-                <div 
-                  className="w-7 h-7 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs"
-                  style={{ backgroundColor: myColor || '#00f0ff' }}
-                >
-                  {riderName.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <div className="font-bold text-white flex items-center gap-1.5">
-                    <span>{riderName}</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold">YOU</span>
-                    {isHost && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                        👑 LEADER
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-emerald-400">GPS Transmitting Live</div>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setFocusedRiderId('me');
-                  setConnectedViewMode('map');
-                }}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                title="Center map on your location"
-              >
-                <Crosshair className="w-3 h-3 text-cyan-400" />
-                <span>My Map</span>
-              </button>
-            </div>
-
-            {/* Friends */}
-            {members.map(m => {
-              const distFormatted = m.distanceFromMeMeters !== undefined
-                ? m.distanceFromMeMeters < 1000
-                  ? `${Math.round(m.distanceFromMeMeters)} m away`
-                  : `${(m.distanceFromMeMeters / 1000).toFixed(1)} km away`
-                : 'Locating...';
-              const gmapsUrl = m.location
-                ? `https://www.google.com/maps/dir/?api=1&destination=${m.location.lat.toFixed(6)},${m.location.lon.toFixed(6)}`
-                : null;
-
-              return (
-                <div key={m.riderId} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div 
-                      className="w-7 h-7 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs"
-                      style={{ backgroundColor: m.color || '#ffe600' }}
-                    >
-                      {m.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-bold text-white flex items-center gap-1.5">
-                        <span>{m.name}</span>
-                        {m.isHost && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                            👑 LEADER
-                          </span>
-                        )}
-                        {m.location && <span className="text-[10px] text-amber-400">{m.location.speedKmh.toFixed(0)} km/h</span>}
-                      </div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                        <span className="text-cyan-400">{distFormatted}</span>
-                        <span>•</span>
-                        <span className="text-emerald-400">Connected</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        setFocusedRiderId(m.riderId);
-                        setConnectedViewMode('map');
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                      title={`Show ${m.name} on Live Map`}
-                    >
-                      <Crosshair className="w-3 h-3 text-cyan-400" />
-                      <span>Map</span>
-                    </button>
-
-                    {gmapsUrl && (
-                      <a
-                        href={gmapsUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
-                        title={`Open Google Maps turn-by-turn navigation to ${m.name}`}
-                      >
-                        <Navigation className="w-3 h-3" />
-                        <span>Directions</span>
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          DISCONNECTED: COMPACT FLOATING ACTION SHEET (Docks above mobile nav)
-      ───────────────────────────────────────────────────────────── */}
-      {!isConnected && (
-        <div className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-96 z-20 pointer-events-auto">
-          <div className="p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-slate-700/80 shadow-2xl space-y-2.5 text-xs font-mono">
-            
-            {/* Header: Callsign Tag & Inline Quick Edit */}
-            <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span className="font-heading font-black text-white text-xs uppercase tracking-wider">
-                  Crew Radar
-                </span>
-              </div>
-              {isEditingPreflightHandle ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    maxLength={15}
-                    value={preflightHandle}
-                    onChange={e => setPreflightHandle(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        if (preflightHandle.trim()) onUpdateRiderName(preflightHandle.trim());
-                        setIsEditingPreflightHandle(false);
-                      }
-                      if (e.key === 'Escape') setIsEditingPreflightHandle(false);
-                    }}
-                    className="bg-slate-900 border border-cyan-400 px-1.5 py-0.5 rounded text-[11px] text-white font-mono w-24 focus:outline-none"
-                    autoFocus
-                  />
-                  <button
-                    onClick={() => {
-                      if (preflightHandle.trim()) onUpdateRiderName(preflightHandle.trim());
-                      setIsEditingPreflightHandle(false);
-                    }}
-                    className="px-1.5 py-0.5 rounded bg-cyan-500 text-slate-950 font-bold text-[9px] cursor-pointer"
-                  >
-                    OK
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    setPreflightHandle(riderName);
-                    setIsEditingPreflightHandle(true);
-                  }}
-                  className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
-                  title="Click to customize your rider handle before joining"
-                >
-                  <span>Callsign: <strong className="text-cyan-300 underline">{riderName}</strong></span>
-                  <Edit3 className="w-2.5 h-2.5 text-slate-500" />
-                </button>
-              )}
-            </div>
-
-            {/* 1-Tap Quick Rejoin Last Squad */}
-            {lastRoomCode && (
-              <button
-                onClick={() => {
-                  if (onStartRecording && !isRecording) onStartRecording();
-                  if (onRejoinRoom) onRejoinRoom();
-                  else onJoinRoom(lastRoomCode, riderName);
-                }}
-                disabled={connectionStatus === 'connecting'}
-                className="w-full py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-mono font-bold text-xs flex items-center justify-between cursor-pointer transition-all active:scale-98 disabled:opacity-50 shadow-sm"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Rejoin Squad</span>
-                </span>
-                <span className="font-heading font-black text-amber-200 uppercase tracking-wider">{lastRoomCode}</span>
-              </button>
-            )}
-
-            {/* Live Progress Banner when connecting with Cancel button */}
-            {connectionStatus === 'connecting' && (
-              <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 text-[11px] flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 truncate">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0 animate-ping" />
-                  <span className="truncate">{statusMessage || 'Connecting to crew...'}</span>
-                </div>
-                <button
-                  onClick={() => onLeaveRoom()}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold cursor-pointer shrink-0"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            {/* Error banner if connecting failed with Retry & Host options */}
-            {statusMessage && connectionStatus === 'error' && (
-              <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] space-y-1.5">
-                <div className="text-center">{statusMessage}</div>
-                <div className="flex items-center gap-1.5 pt-0.5">
-                  <button
-                    onClick={() => {
-                      const codeToRetry = quickCodeInput.trim() || lastRoomCode;
-                      if (codeToRetry) onJoinRoom(codeToRetry, riderName);
-                    }}
-                    className="flex-1 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <RotateCw className="w-2.5 h-2.5" />
-                    <span>Retry</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      onCreateRoom(riderName, quickCodeInput.trim() || undefined);
-                    }}
-                    className="flex-1 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <span>Host this Room</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Instant 1-Tap Host & Inline Code Join */}
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  if (onStartRecording && !isRecording) onStartRecording();
-                  if (quickCodeInput.trim()) {
-                    onCreateRoom(riderName, quickCodeInput.trim());
-                  } else {
-                    onCreateRoom(riderName);
-                  }
-                }}
-                disabled={connectionStatus === 'connecting'}
-                className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all disabled:opacity-50 active:scale-98"
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>
-                  {connectionStatus === 'connecting'
-                    ? 'Connecting...'
-                    : quickCodeInput.trim()
-                    ? `Start "${quickCodeInput.trim()}" Squad`
-                    : 'Start Crew Ride'}
-                </span>
-              </button>
-
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  maxLength={10}
-                  value={quickCodeInput}
-                  onChange={e => setQuickCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && quickCodeInput.trim() && connectionStatus !== 'connecting') {
-                      if (onStartRecording && !isRecording) onStartRecording();
-                      onJoinRoom(quickCodeInput, riderName);
-                    }
-                  }}
-                  placeholder="Enter Squad Code (e.g. SUNDAY)"
-                  className="flex-1 py-1.5 px-2.5 rounded-xl border bg-slate-900 border-slate-700 text-white font-mono font-bold text-xs uppercase tracking-wider focus:outline-none focus:border-cyan-400"
-                />
-                <button
-                  onClick={() => {
-                    if (onStartRecording && !isRecording) onStartRecording();
-                    onJoinRoom(quickCodeInput, riderName);
-                  }}
-                  disabled={!quickCodeInput.trim() || connectionStatus === 'connecting'}
-                  className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs cursor-pointer shadow-xs transition-all disabled:opacity-40 shrink-0"
-                >
-                  Join
-                </button>
-              </div>
-            </div>
-
-            {/* Saved Squads Quick Chips (if any exist) */}
-            {savedCrews.length > 0 && (
-              <div className="pt-1 border-t border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                <span className="text-[10px] text-slate-500 shrink-0 font-bold">SAVED:</span>
-                {savedCrews.map(c => (
-                  <div key={c.id} className="inline-flex items-center rounded-full bg-slate-900 border border-slate-700 hover:border-slate-600 shrink-0 overflow-hidden">
-                    <button
-                      onClick={() => {
-                        if (onStartRecording && !isRecording) onStartRecording();
-                        onCreateRoom(riderName, c.code);
-                      }}
-                      className="pl-2 pr-1 py-0.5 hover:bg-slate-800 text-[10px] text-slate-300 hover:text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                      title={`Launch ${c.name} (${c.code})`}
-                    >
-                      <span>{c.name}</span>
-                      <span className="text-[8px] text-cyan-400 font-mono">({c.code})</span>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteCrew(c.id);
-                      }}
-                      className="px-1.5 py-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
-                      title="Delete squad"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Direct Crew Management Actions */}
-            <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/80">
-              <button
-                onClick={() => handleOpenCrewManage('saved')}
-                className="flex-1 py-1.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-              >
-                <Users className="w-3 h-3 text-cyan-400" />
-                <span>Saved Squads ({savedCrews.length})</span>
-              </button>
-              <button
-                onClick={() => handleOpenCrewManage('create')}
-                className="py-1.5 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Make Crew</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Floating Formation List Toggle (When connected with multiple members) */}
-      {isConnected && members.length > 0 && connectedViewMode === 'map' && (
-        <div className="absolute top-12 left-2 z-10 pointer-events-auto">
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              setConnectedViewMode('list');
-            }}
-            className="h-7 px-2 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-400 hover:text-white text-[10px] font-mono font-bold flex items-center gap-1 shadow-md cursor-pointer transition-colors"
-            title="View formation list"
-          >
-            <Compass className="w-3 h-3 text-cyan-400" />
-            <span>List ({members.length + 1})</span>
-          </button>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          CREW MANAGEMENT MODAL (Make Crew, Join Crew, Delete Crew, Saved Squads)
-      ───────────────────────────────────────────────────────────── */}
-      <CrewManageModal
-        isOpen={isCrewManageOpen}
-        onClose={() => setIsCrewManageOpen(false)}
-        roomCode={roomCode}
-        lastRoomCode={lastRoomCode}
-        riderName={riderName}
+      <CrewLiveMap
+        myLocation={myLocation}
+        myRiderName={riderName}
         myColor={myColor}
         isHost={isHost}
         isConnected={isConnected}
         members={members}
-        onCreateRoom={(name, code) => {
-          if (onStartRecording && !isRecording) onStartRecording();
-          onCreateRoom(name, code);
-        }}
-        onJoinRoom={(code, name) => {
-          if (onStartRecording && !isRecording) onStartRecording();
-          onJoinRoom(code, name);
-        }}
-        onLeaveRoom={onLeaveRoom}
-        onUpdateRiderName={onUpdateRiderName}
-        onFocusRider={(id) => {
-          setFocusedRiderId(id);
-          setConnectedViewMode('map');
-        }}
+        sosAlert={sosAlert}
+        roomCode={roomCode || 'Sunday Morning Crew'}
+        lastRoomCode={lastRoomCode}
         theme={theme}
-        initialTab={crewManageInitialTab}
+        unitSystem={unitSystem}
+        onTriggerSos={onTriggerSos}
+        onDismissSos={onDismissSos}
+        onLeaveRoom={() => setIsLoginModalOpen(true)}
+        crewNotification={crewNotification}
+        onDismissCrewNotification={onDismissCrewNotification}
+        onShareWhatsApp={handleShareWhatsApp}
+        onCopyInviteLink={handleCopyLink}
+        copiedLink={copiedLink}
+        onGoToCockpit={onGoToCockpit}
+        onUpdateRiderName={onUpdateRiderName}
+        isRecording={isRecording}
+        onStartRecording={onStartRecording}
+        onStopRecording={onStopRecording}
+        pointsCount={pointsCount}
+        totalDistanceMeters={totalDistanceMeters}
+        onOpenCrewManage={() => setIsLoginModalOpen(true)}
+        focusedRiderId={focusedRiderId}
+        activeRoute={activeRoute}
       />
+
+      {/* ─────────────────────────────────────────────────────────────
+          TOP SQUAD BANNER & ACTIVE PROFILE PILL (Portrait only, in landscape handled by map HUD)
+      ───────────────────────────────────────────────────────────── */}
+      <div className="landscape:hidden absolute top-12 left-2 z-20 pointer-events-auto flex items-center gap-2">
+        <button
+          onClick={() => setIsLoginModalOpen(true)}
+          className="h-8 px-3 rounded-full bg-slate-950/90 hover:bg-slate-900 border border-cyan-500/60 hover:border-cyan-400 text-white font-mono text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md cursor-pointer transition-all active:scale-95"
+          title="Switch Rider Account or Squad"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-slate-400 font-normal">Riding as:</span>
+          <strong className="text-cyan-300 font-black">{riderName}</strong>
+          <span className="text-[10px] text-slate-500 underline">Switch</span>
+        </button>
+
+        <div className="hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-full bg-slate-950/80 border border-slate-700/80 text-slate-300 font-mono text-xs backdrop-blur-md">
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span className="font-bold text-white">{onlineCount}</span>
+          <span className="text-slate-400">/ {totalRiders} Online</span>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          BOTTOM FLOATING CONVOY ROSTER HUD
+      ───────────────────────────────────────────────────────────── */}
+      <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-4 sm:right-4 z-20 pointer-events-none">
+        <div className="max-w-4xl mx-auto pointer-events-auto">
+          <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-slate-700/80 shadow-2xl space-y-2">
+            
+            {/* Roster Header */}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 ring-2 ring-cyan-400/40" />
+                <span className="font-heading font-black text-white text-xs uppercase tracking-wider">
+                  {roomCode || 'Sunday Morning Crew'}
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                  {onlineCount} ACTIVE
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAddFriendOpen(true)}
+                  className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Add friend to this crew"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Friend</span>
+                </button>
+
+                <button
+                  onClick={() => setIsConvoyDrawerExpanded(prev => !prev)}
+                  className="text-slate-400 hover:text-white font-mono text-[10px] cursor-pointer"
+                >
+                  {isConvoyDrawerExpanded ? 'Hide' : 'Show Roster'}
+                </button>
+              </div>
+            </div>
+
+            {/* Horizontal Scrollable Friend Cards */}
+            {isConvoyDrawerExpanded && (
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                {/* YOU CARD */}
+                <div 
+                  onClick={() => {
+                    setFocusedRiderId('me');
+                    triggerHaptic(20);
+                  }}
+                  className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[170px] ${
+                    focusedRiderId === 'me'
+                      ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50'
+                      : 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
+                  }`}
+                >
+                  <div 
+                    className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
+                    style={{ backgroundColor: myColor || '#00f0ff' }}
+                  >
+                    {riderName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="truncate">
+                    <div className="flex items-center gap-1 font-mono text-xs font-bold text-white truncate">
+                      <span className="truncate">{riderName}</span>
+                      <span className="text-[9px] px-1 rounded bg-cyan-500/20 text-cyan-300 font-bold">YOU</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{myLocation ? `${Math.round(myLocation.speedKmh)} km/h` : 'Online'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CREW FRIENDS CARDS */}
+                {members.map(m => {
+                  const isOnline = m.isOnline !== false;
+                  const isStopped = m.location?.status === 'stopped' || (m.location?.speedKmh || 0) < 2.5;
+                  const speedText = m.location ? `${Math.round(m.location.speedKmh)} km/h` : 'Active';
+                  const distText = m.distanceFromMeMeters !== undefined
+                    ? m.distanceFromMeMeters < 1000
+                      ? `${Math.round(m.distanceFromMeMeters)}m`
+                      : `${(m.distanceFromMeMeters / 1000).toFixed(1)}km`
+                    : null;
+
+                  return (
+                    <div
+                      key={m.riderId}
+                      onClick={() => {
+                        if (m.location) {
+                          setFocusedRiderId(m.riderId);
+                        } else {
+                          setOfflinePingModal(m);
+                        }
+                        triggerHaptic(20);
+                      }}
+                      className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[170px] ${
+                        focusedRiderId === m.riderId
+                          ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50'
+                          : isOnline
+                          ? 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
+                          : 'bg-slate-950/70 border-slate-800/60 opacity-60'
+                      }`}
+                    >
+                      <div 
+                        className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
+                        style={{ backgroundColor: m.color || '#ffe600' }}
+                      >
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="truncate">
+                        <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-white truncate">
+                          <span className="truncate">{m.name}</span>
+                          {distText && (
+                            <span className="text-[9px] text-cyan-400 font-normal">({distText})</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono flex items-center gap-1">
+                          {isOnline ? (
+                            <>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isStopped ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+                              <span className={isStopped ? 'text-amber-300' : 'text-emerald-300'}>
+                                {isStopped ? 'Stopped' : speedText}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                              <span className="text-slate-400">Offline • Tap to nudge</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          RIDER LOGIN & ACCOUNT SWITCH MODAL (Cookie-Backed Persistent Identity)
+      ───────────────────────────────────────────────────────────── */}
+      {isLoginModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-cyan-400" />
+                <span className="font-heading font-black text-sm text-white uppercase tracking-wider">
+                  Rider Identity
+                </span>
+              </div>
+              <button
+                onClick={() => setIsLoginModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Seamless Cookie Auto-Save Notice */}
+            <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-[11px] text-cyan-200 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-cyan-300">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span>Cookies & Device Storage Active</span>
+              </div>
+              <p className="text-[10px] text-slate-300 leading-relaxed">
+                Your profile is saved permanently. Next time you open ThrottleLog on this phone, you will automatically connect with zero room codes or signups!
+              </p>
+            </div>
+
+            {/* Quick Select Crew Buddies */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Select Rider Profile:</span>
+              <div className="grid grid-cols-2 gap-2">
+                {DEFAULT_FRIENDS.map(f => (
+                  <button
+                    key={f.name}
+                    onClick={() => handleQuickLogin(f.name, f.bike, f.color)}
+                    className={`p-2 rounded-xl border flex items-center gap-2 text-left cursor-pointer transition-all active:scale-95 ${
+                      riderName.toLowerCase() === f.name.toLowerCase()
+                        ? 'bg-cyan-950 border-cyan-400 text-white shadow-sm shadow-cyan-900/40'
+                        : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <span 
+                      className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black text-slate-950 shrink-0"
+                      style={{ backgroundColor: f.color }}
+                    >
+                      {f.name[0]}
+                    </span>
+                    <div className="truncate">
+                      <div className="font-bold text-xs truncate">{f.name}</div>
+                      <div className="text-[9px] text-slate-400 truncate">{f.bike}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Name Input */}
+            <div className="space-y-2 pt-1 border-t border-slate-800">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Or Enter Custom Callsign:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={18}
+                  value={loginNameInput}
+                  onChange={e => setLoginNameInput(e.target.value)}
+                  placeholder="Your Name (e.g. GhostRider)"
+                  className="flex-1 py-2 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  onClick={() => {
+                    if (loginNameInput.trim()) {
+                      handleQuickLogin(loginNameInput.trim(), loginBikeInput.trim() || undefined);
+                    }
+                  }}
+                  disabled={!loginNameInput.trim()}
+                  className="py-2 px-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsLoginModalOpen(false)}
+              className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          ADD FRIEND TO CREW MODAL (With 1-Tap WhatsApp Invite)
+      ───────────────────────────────────────────────────────────── */}
+      {isAddFriendOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-cyan-400" />
+                <span className="font-heading font-black text-sm text-white uppercase tracking-wider">
+                  Add Friend to Squad
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAddFriendOpen(false);
+                  setJustAddedFriend(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {justAddedFriend ? (
+              <div className="space-y-3 animate-in fade-in">
+                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-400">
+                    <Check className="w-4 h-4" />
+                    <span>{justAddedFriend.name} added to Squad!</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Share this 1-tap link with <strong>{justAddedFriend.name}</strong>. When they tap it, their phone saves their identity in cookies and joins your radar automatically!
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleShareWhatsApp(justAddedFriend.url, justAddedFriend.name)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>Send Invite on WhatsApp</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleCopyLink(justAddedFriend.url)}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedLink ? '✓ Link Copied to Clipboard!' : 'Copy 1-Tap Invite Link'}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => setJustAddedFriend(null)}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+                  >
+                    Add Another
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsAddFriendOpen(false);
+                      setJustAddedFriend(null);
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleAddFriendSubmit} className="space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Enter your friend's name. They will be added to your squad roster and automatically show up on your live map when they ride!
+                </p>
+
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    maxLength={18}
+                    value={newFriendName}
+                    onChange={e => setNewFriendName(e.target.value)}
+                    placeholder="Friend's Name (e.g. Vikram)"
+                    className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-cyan-400"
+                  />
+                  <input
+                    type="text"
+                    maxLength={25}
+                    value={newFriendBike}
+                    onChange={e => setNewFriendBike(e.target.value)}
+                    placeholder="Bike Model (optional, e.g. Royal Enfield 350)"
+                    className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddFriendOpen(false)}
+                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!newFriendName.trim()}
+                    className="flex-1 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer disabled:opacity-40 transition-colors shadow-sm"
+                  >
+                    Add to Squad
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          OFFLINE FRIEND PING MODAL (1-Tap WhatsApp Nudge)
+      ───────────────────────────────────────────────────────────── */}
+      {offlinePingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+                <span className="font-heading font-black text-sm text-white uppercase tracking-wider">
+                  {offlinePingModal.name} is Offline
+                </span>
+              </div>
+              <button 
+                onClick={() => setOfflinePingModal(null)} 
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-1.5">
+              <p>
+                <strong className="text-white">{offlinePingModal.name}</strong> ({offlinePingModal.bikeModel || 'Motorcycle'}) is in your squad roster but hasn't opened ThrottleLog yet today.
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Send a 1-tap WhatsApp nudge. Once they open the link on their phone, their name is auto-loaded from cookies and they will pop up live on your radar!
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                onClick={() => setOfflinePingModal(null)}
+                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  handleShareWhatsApp(undefined, offlinePingModal.name);
+                  setOfflinePingModal(null);
+                }}
+                className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>WhatsApp Nudge</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

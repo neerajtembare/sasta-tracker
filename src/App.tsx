@@ -118,29 +118,25 @@ export default function App() {
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
-  // Check URL query for room invite link (e.g. ?room=SUNDAY or ?crew=SUNDAY&leader=GhostRider)
-  // Zero-friction 1-tap auto-join: joins immediately, arms recording, and switches to crew view!
+  // Check URL query for room invite link (e.g. ?rider=Rahul or ?crew=SUNDAY)
+  // Zero-friction 1-tap auto-join: joins immediately and switches to crew radar!
   const hasProcessedInviteRef = useRef(false);
   useEffect(() => {
     if (hasProcessedInviteRef.current) return;
     const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room') || params.get('crew');
-    if (roomParam) {
+    const roomParam = params.get('room') || params.get('crew') || params.get('squad');
+    const riderParam = params.get('rider') || params.get('name') || params.get('who');
+    if (riderParam || roomParam) {
       hasProcessedInviteRef.current = true;
-      const cleanCode = roomParam.trim().toUpperCase();
-      const leaderParam = params.get('leader') || params.get('host');
-      controls.startNewRecording();
-      setIsRecordingLive(true);
-      groupRide.joinRoom(cleanCode);
       setCurrentTab('crew');
-      const leaderNotice = leaderParam ? ` (${leaderParam}'s Crew)` : '';
-      setSessionNotice(`🏍️ Joined Squad "${cleanCode}"${leaderNotice} & route logging active! Callsign: ${groupRide.riderName}`);
+      const activeName = riderParam?.trim() || groupRide.riderName;
+      setSessionNotice(`🏍️ Welcome ${activeName}! Live on Crew Radar — auto-connected with squad friends.`);
       setTimeout(() => setSessionNotice(null), 6000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
       } catch {}
     }
-  }, [controls, groupRide.joinRoom, groupRide.riderName]);
+  }, [groupRide.riderName]);
 
   // Synchronize GPS coordinates directly from unified hook into groupRide and myLocation
   useEffect(() => {
@@ -500,7 +496,7 @@ export default function App() {
   })();
 
   return (
-    <div className={`min-h-screen transition-colors ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'} pb-16`}>
+    <div className={`min-h-screen transition-colors ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'} pb-16 landscape:pb-1`}>
       {/* Hidden Global File Input for Navbar Upload Action */}
       <input
         type="file"
@@ -566,8 +562,8 @@ export default function App() {
       {/* Main Container */}
       <main className={`w-full transition-all ${
         currentTab === 'crew'
-          ? 'p-1 sm:p-2 max-w-none'
-          : 'max-w-7xl mx-auto px-3 sm:px-6 pt-2 sm:pt-4 pb-28 sm:pb-8 space-y-4 sm:space-y-6'
+          ? 'p-0.5 sm:p-2 landscape:p-0 max-w-none'
+          : 'max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
       }`}>
         {/* Global Interrupted Session Recovery Banner (Surfaced across all views) */}
         {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && (
@@ -926,6 +922,8 @@ export default function App() {
               onTriggerSos={groupRide.triggerSos}
               onDismissSos={groupRide.dismissSos}
               onUpdateRiderName={groupRide.updateRiderName}
+              onAddSquadFriend={groupRide.addSquadFriend}
+              getFriendInviteUrl={groupRide.getFriendInviteUrl}
               onGoToCockpit={() => setCurrentTab('cockpit')}
               theme={theme}
               unitSystem={unitSystem}
@@ -934,6 +932,8 @@ export default function App() {
               onStopRecording={handleStopAndSaveRecording}
               pointsCount={gps.pointsCount}
               totalDistanceMeters={gps.totalDistanceMeters}
+              activeRoute={analysis}
+              onLoadSampleRide={() => handleLoadSample()}
             />
           </div>
         )}
@@ -949,7 +949,7 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar (Streamlined 3-Tab Rider Layout: Crew, Ride, My Rides) */}
       <nav 
         style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
-        className={`md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-1.5 flex items-center justify-around font-mono shadow-2xl transition-colors ${
+        className={`md:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-1.5 flex items-center justify-around font-mono shadow-2xl transition-colors ${
           theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
         }`}
         aria-label="Mobile Bottom Navigation"

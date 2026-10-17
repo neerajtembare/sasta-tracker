@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppTheme, UnitSystem } from '../types';
 import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
 import { useGPS, GPSState, GPSControls } from '../hooks/useGPS';
-import { exportPointsToGPX } from '../utils/gpxExporter';
+import { exportPointsToGPX, downloadFile } from '../utils/gpxExporter';
 import { 
   Play, 
   Pause, 
@@ -12,30 +12,36 @@ import {
   Mountain, 
   Coffee, 
   Fuel, 
-  Camera,
-  Utensils,
-  AlertCircle,
-  HelpCircle,
-  Smartphone,
-  UploadCloud,
-  CheckCircle2,
-  Crosshair,
-  RotateCcw,
-  Zap,
-  ChevronDown,
-  ChevronUp,
-  Volume2,
-  VolumeX,
-  Clock,
-  Sun,
-  Hand,
-  Users,
-  Share2
+  Camera, 
+  Utensils, 
+  AlertCircle, 
+  HelpCircle, 
+  Smartphone, 
+  UploadCloud, 
+  CheckCircle2, 
+  Crosshair, 
+  RotateCcw, 
+  Zap, 
+  ChevronDown, 
+  ChevronUp, 
+  Volume2, 
+  VolumeX, 
+  Clock, 
+  Sun, 
+  Hand, 
+  Users, 
+  Share2,
+  Download,
+  Eye,
+  EyeOff,
+  X,
+  Check
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { GroupRideHud } from './GroupRideHud';
 import { ShareLocationModal } from './ShareLocationModal';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
+import { Gyro3DVisualizer } from './Gyro3DVisualizer';
 
 interface LiveCockpitLoggerProps {
   onRideRecorded: (gpxString: string) => void;
@@ -74,6 +80,17 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [shortRideWarning, setShortRideWarning] = useState<string | null>(null);
   const [isShareLocModalOpen, setIsShareLocModalOpen] = useState(false);
+  const [showWaypoints, setShowWaypoints] = useState(false);
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [isCleanHud, setIsCleanHud] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sasta_clean_hud') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const [isGloveMode, setIsGloveMode] = useState<boolean>(() => {
     try {
@@ -90,6 +107,20 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
       return false;
     }
   });
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const toggleCleanHud = () => {
+    triggerHaptic(40);
+    setIsCleanHud(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sasta_clean_hud', String(next)); } catch {}
+      return next;
+    });
+  };
 
   const toggleGloveMode = () => {
     triggerHaptic(60);
@@ -113,8 +144,6 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const gps = externalGps || internalGps;
   const controls = externalControls || internalControls;
 
-  // Sync external recording state with hook
-  // The hook manages its own isRecording; we bridge to the parent via controls
   const isRecording = gps.isRecording;
   const isPaused = gps.isPaused;
 
@@ -138,7 +167,41 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     gps.currentHeading
   ]);
 
-  const stopAndSaveRecording = () => {
+  const handleExportCurrentGpx = () => {
+    triggerHaptic(40);
+    const pts = controls.getCurrentPoints ? controls.getCurrentPoints() : [];
+    if (pts.length < 2) {
+      showToast('⚠️ Need at least 2 GPS points to export GPX.');
+      return;
+    }
+    const gpxString = exportPointsToGPX(
+      `Motorcycle Ride — ${new Date().toLocaleDateString()}`,
+      pts,
+      gps.markedWaypoints
+    );
+    downloadFile(
+      gpxString,
+      `ThrottleLog_Ride_${new Date().toISOString().slice(0, 10)}_${Date.now().toString().slice(-4)}.gpx`
+    );
+    showToast('💾 GPX file downloaded to device!');
+  };
+
+  const handleDownloadRecoveredGpx = () => {
+    if (!controls.recoverableData?.points || controls.recoverableData.points.length < 2) return;
+    triggerHaptic(40);
+    const pts = controls.recoverableData.points;
+    const wpts = controls.recoverableData.waypoints || [];
+    const gpxString = exportPointsToGPX(
+      `Recovered Ride — ${new Date().toLocaleDateString()}`,
+      pts,
+      wpts
+    );
+    downloadFile(gpxString, `ThrottleLog_Recovered_${Date.now()}.gpx`);
+    showToast('💾 Recovered GPX backup downloaded!');
+  };
+
+  const handleFinishAndSave = (downloadAlso: boolean = false) => {
+    setShowFinishModal(false);
     triggerHaptic(50);
     if (gps.pointsCount < 2) {
       setShortRideWarning(
@@ -162,6 +225,12 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
       pts,
       gps.markedWaypoints
     );
+
+    if (downloadAlso) {
+      downloadFile(gpxString, `ThrottleLog_Ride_${Date.now()}.gpx`);
+      showToast('💾 GPX downloaded & saved to Garage!');
+    }
+
     onRideRecorded(gpxString);
   };
 
@@ -218,39 +287,53 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     ? 'text-slate-900'
     : 'text-white';
 
-  const barTrackBg = isLight ? 'bg-slate-200 border-slate-300' : 'bg-[#0d131a] border-[#223140]';
-
   const currentSpeedConverted = convertSpeed(gps.currentSpeedKmh, unitSystem);
   const maxSpeedConverted = convertSpeed(gps.maxRecordedSpeed, unitSystem);
   const distanceConverted = convertDistance(gps.totalDistanceMeters / 1000, unitSystem);
   const altitudeConverted = convertElevation(gps.currentAltitude, unitSystem);
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-4">
-      {/* Interrupted Session Recovery Banner */}
+    <div className="w-full max-w-4xl mx-auto space-y-3">
+      {/* Toast Alert Banner */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-emerald-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 border border-emerald-400">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Interrupted Session Recovery Banner (Safe against browser refresh or crash) */}
       {controls.hasRecoverableRide && controls.recoverableData && (
-        <div className={`p-4 rounded-xl border flex items-center justify-between flex-wrap gap-3 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
+        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
           isLight ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
         }`}>
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
-              <div className="font-bold text-sm">⚠️ Interrupted Ride Session Detected!</div>
+              <div className="font-bold text-sm">⚠️ Interrupted Ride Detected!</div>
               <div className="text-[11px] opacity-80 mt-0.5">
-                Found {controls.recoverableData.points?.length || 0} unsaved GPS points ({convertDistance((controls.recoverableData.totalDistanceMeters || 0) / 1000, unitSystem).value.toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}) from your previous ride.
+                Saved {controls.recoverableData.points?.length || 0} GPS points ({convertDistance((controls.recoverableData.totalDistanceMeters || 0) / 1000, unitSystem).value.toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}) from your previous ride.
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
             <button
               onClick={handleResumeSession}
-              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer shadow-sm"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer shadow-sm flex items-center gap-1"
             >
-              Resume Ride
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Resume</span>
+            </button>
+            <button
+              onClick={handleDownloadRecoveredGpx}
+              className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer shadow-sm flex items-center gap-1"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download GPX</span>
             </button>
             <button
               onClick={controls.handleDiscardSession}
-              className={`px-3 py-1.5 border rounded-lg transition-colors cursor-pointer ${
+              className={`px-2.5 py-1.5 border rounded-lg transition-colors cursor-pointer text-[11px] ${
                 isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
               }`}
             >
@@ -262,551 +345,477 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
       {/* Short Ride Warning Alert */}
       {shortRideWarning && (
-        <div className={`p-4 rounded-xl border flex items-center justify-between flex-wrap gap-3 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
+        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
           isLight ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
         }`}>
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-            <div>
-              <div className="font-bold text-sm">⚠️ Insufficient GPS Coordinates</div>
-              <div className="text-[11px] opacity-90 mt-0.5 max-w-xl">
-                {shortRideWarning}
-              </div>
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="text-[11px] opacity-90 max-w-xl">
+              {shortRideWarning}
             </div>
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={() => setShortRideWarning(null)}
-              className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer"
+              className="px-3 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded-lg transition-colors cursor-pointer text-xs"
             >
               Keep Tracking
             </button>
             <button
               onClick={handleForceDiscard}
-              className={`px-3 py-1.5 border rounded-lg transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 border rounded-lg transition-colors cursor-pointer text-xs ${
                 isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
               }`}
             >
-              Discard & Reset
+              Discard
             </button>
           </div>
         </div>
       )}
 
-      {/* Cockpit HUD Main Cluster */}
-      <div className={`border rounded-2xl p-3.5 sm:p-6 relative overflow-hidden shadow-2xl space-y-4 sm:space-y-5 ${cardBg}`}>
-        {/* Status Bar */}
-        <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${isLight ? 'border-slate-200' : 'border-[#1e2a38]'}`}>
+      {/* ─────────────────────────────────────────────────────────────
+          COCKPIT HUD MAIN CLUSTER (UNCLUTTERED, STREAMLINED INSTRUMENT PANEL)
+      ───────────────────────────────────────────────────────────── */}
+      <div className={`border rounded-2xl p-2.5 sm:p-4 landscape:p-2 relative overflow-hidden shadow-2xl space-y-2.5 landscape:space-y-1.5 ${cardBg}`}>
+        
+        {/* Streamlined Top Navigation & Status Bar */}
+        <div className={`flex flex-wrap items-center justify-between gap-1.5 border-b pb-2 landscape:pb-1 text-xs font-mono ${isLight ? 'border-slate-200' : 'border-[#1e2a38]'}`}>
           <div className="flex items-center gap-2">
-            <span className="relative flex h-3 w-3">
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${
-                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500 ring-2 ring-rose-500/30') : 'bg-slate-500'
+            <span className="relative flex h-2.5 w-2.5">
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500 ring-2 ring-rose-500/30 animate-pulse') : 'bg-slate-500'
               }`} />
             </span>
-            <span className="font-mono font-bold text-xs uppercase tracking-wider">
-              {isRecording ? (isPaused ? 'RECORDER PAUSED' : 'LIVE GPS ACTIVE') : 'GPS COCKPIT STANDBY'}
+            <span className="font-bold text-[11px] uppercase tracking-wider">
+              {isRecording ? (isPaused ? 'PAUSED' : 'LIVE GPS') : 'STANDBY'}
             </span>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3 font-mono text-xs">
-            {gps.wakeLockActive && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/30">
-                <Zap className="w-3 h-3" /> Screen On
-              </span>
-            )}
-            <span className={subTextColor}>GPS:</span>
-            <span className={`font-bold ${
-              gps.gpsAccuracy && gps.gpsAccuracy < 10 ? 'text-emerald-500' : 'text-amber-500'
-            }`}>
-              ±{gps.gpsAccuracy ? gps.gpsAccuracy.toFixed(1) : '—'}m
+            <span className={`text-[10px] font-bold ${gps.gpsAccuracy && gps.gpsAccuracy < 10 ? 'text-emerald-400' : 'text-amber-400'}`}>
+              ±{gps.gpsAccuracy ? gps.gpsAccuracy.toFixed(0) : '—'}m
             </span>
             {isRecording && (
-              gps.pointsCount < 2 ? (
-                <span className="text-[10px] text-amber-400 font-mono font-bold">
-                  🛰️ Acquiring Fix ({gps.pointsCount}/2 pts)
-                </span>
-              ) : (
-                <span className="text-[10px] text-sky-400 font-mono hidden sm:inline">
-                  📍 {gps.pointsCount} pts
-                </span>
-              )
+              <span className="text-[10px] text-sky-400 hidden xs:inline">
+                📍 {gps.pointsCount} pts
+              </span>
             )}
+          </div>
 
-            {/* Sunlight High-Contrast Button */}
+          <div className="flex items-center gap-1 sm:gap-1.5 font-mono text-xs">
+            {/* Clean HUD / Focus Mode Toggle (Eliminates all clutter for pure glanceability) */}
+            <button
+              onClick={toggleCleanHud}
+              title={isCleanHud ? 'Exit Clean HUD (Show all telemetry)' : 'Clean HUD: Streamlines UI, hides secondary numbers for distraction-free riding'}
+              className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                isCleanHud
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                  : isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                  : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-cyan-400/80'
+              }`}
+            >
+              {isCleanHud ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              <span>{isCleanHud ? 'Clean ON' : 'Clean HUD'}</span>
+            </button>
+
+            {/* Quick Export GPX Button (Available mid-ride or anytime) */}
+            <button
+              onClick={handleExportCurrentGpx}
+              title="Export & download current ride as GPX file to your device anytime"
+              className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                isLight
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                  : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-emerald-400/90'
+              }`}
+            >
+              <Download className="w-3 h-3 text-emerald-400" />
+              <span className="hidden xs:inline">Export</span>
+              <span>GPX</span>
+            </button>
+
+            {/* Sun / High Contrast */}
             <button
               onClick={toggleSunlightMode}
-              title={isSunlightMode ? 'Turn off Sunlight Mode' : 'Sunlight Mode: High-contrast OLED black & neon yellow for direct sun & tinted visors'}
-              className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                isSunlightMode
-                  ? 'bg-yellow-400 text-black border-yellow-300 font-black shadow-xs'
-                  : isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-yellow-400/80'
+              title="Sunlight Mode (High-contrast OLED black & neon yellow)"
+              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${
+                isSunlightMode ? 'bg-yellow-400 text-black border-yellow-300 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-yellow-400/80'
               }`}
             >
-              <Sun className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sun:</span>
-              <span>{isSunlightMode ? 'ON' : 'OFF'}</span>
+              <Sun className="w-3 h-3" />
+              <span className="hidden md:inline">{isSunlightMode ? 'Sun ON' : 'Sun'}</span>
             </button>
 
-            {/* Glove Mode Button */}
+            {/* Glove Mode */}
             <button
               onClick={toggleGloveMode}
-              title={isGloveMode ? 'Turn off Glove Mode' : 'Glove Mode: Extra-large touch targets (70px) and haptic vibration for riding gloves'}
-              className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                isGloveMode
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-xs'
-                  : isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-amber-400/80'
+              title="Glove Mode (Large touch targets for motorcycle gloves)"
+              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${
+                isGloveMode ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-amber-400/80'
               }`}
             >
-              <Hand className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Glove:</span>
-              <span>{isGloveMode ? 'ON' : 'OFF'}</span>
+              <Hand className="w-3 h-3" />
+              <span className="hidden md:inline">{isGloveMode ? 'Glove ON' : 'Glove'}</span>
             </button>
 
-            {/* Voice Announcements Button */}
-            {'speechSynthesis' in window && (
-              <button
-                onClick={() => {
-                  triggerHaptic(40);
-                  const next = !controls.voiceFeedbackEnabled;
-                  controls.setVoiceFeedbackEnabled(next);
-                  try {
-                    localStorage.setItem('sasta_voice_feedback', String(next));
-                  } catch {}
-                  if (next && 'speechSynthesis' in window) {
-                    const u = new SpeechSynthesisUtterance('Voice intercom announcements enabled');
-                    u.rate = 1.05;
-                    window.speechSynthesis.speak(u);
-                  }
-                }}
-                title={controls.voiceFeedbackEnabled ? 'Audio milestone announcements active' : 'Turn on audio milestone announcements for Bluetooth helmet intercom'}
-                className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                  controls.voiceFeedbackEnabled
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold'
-                    : isLight
-                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600'
-                    : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-slate-400'
-                }`}
-              >
-                {controls.voiceFeedbackEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5" />}
-                <span className="hidden xs:inline">Voice:</span>
-                <span>{controls.voiceFeedbackEnabled ? 'ON' : 'OFF'}</span>
-              </button>
-            )}
-
-            {/* Crew Group Ride Button */}
+            {/* Crew Live Button */}
             {onOpenGroupRideModal && (
               <button
-                id="btn-cockpit-crew"
                 onClick={() => {
                   triggerHaptic(40);
                   onOpenGroupRideModal();
                 }}
-                title="Motorcycle Group Ride: Live location sharing with crew"
-                className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                  groupRideConnected
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-xs'
-                    : isLight
-                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                    : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-cyan-400/80'
+                title="Crew Live Radar"
+                className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-1 cursor-pointer ${
+                  groupRideConnected ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-cyan-400/80'
                 }`}
               >
-                <Users className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Crew:</span>
-                <span>{groupRideConnected ? `${(groupMembers?.length || 0) + 1}` : 'OFF'}</span>
+                <Users className="w-3 h-3" />
+                <span className="font-bold">{groupRideConnected ? `${(groupMembers?.length || 0) + 1}` : 'Crew'}</span>
               </button>
             )}
 
-            {/* Share Live Location / WhatsApp Google Maps Pin */}
+            {/* Share Pin */}
             <button
-              id="btn-cockpit-share-loc"
               onClick={() => {
                 triggerHaptic(40);
                 setIsShareLocModalOpen(true);
               }}
-              title="Share live Google Maps pin with friends or family on WhatsApp"
-              className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                isLight
-                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
-                  : 'bg-emerald-950/30 hover:bg-emerald-900/40 border-emerald-500/40 text-emerald-300'
+              title="Share live location pin"
+              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${
+                isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
               }`}
             >
-              <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Share Pin</span>
-            </button>
-
-            {/* Collapsible Info Button */}
-            <button
-              onClick={() => setShowHowItWorks(!showHowItWorks)}
-              className={`px-2 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
-                showHowItWorks 
-                  ? 'bg-sky-500 text-slate-950 font-bold border-sky-400'
-                  : isLight 
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' 
-                  : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-sky-400'
-              }`}
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Tips & Guide</span>
-              {showHowItWorks ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              <Share2 className="w-3 h-3 text-emerald-400" />
             </button>
           </div>
         </div>
 
-        {/* Group Ride Live Crew HUD */}
-        {groupRideConnected && groupRoomCode && (
-          <GroupRideHud
-            roomCode={groupRoomCode}
-            members={groupMembers || []}
-            sosAlert={sosAlert || null}
-            onOpenModal={() => onOpenGroupRideModal?.()}
-            onTriggerSos={() => {
-              if (window.confirm('🚨 Broadcast EMERGENCY REGROUP alert to all crew riders?')) {
-                onTriggerSos?.();
-              }
-            }}
-          />
-        )}
-
-        {/* Collapsible Instructions Drawer */}
-        {showHowItWorks && (
-          <div className={`border rounded-xl p-3.5 sm:p-4 space-y-3 animate-in fade-in duration-200 ${innerCardBg}`}>
-            <div className="flex items-center justify-between">
-              <span className="font-heading font-bold text-xs uppercase tracking-wider text-sky-500">
-                Rider Guide: Two Ways to Log
-              </span>
-              <button 
-                onClick={() => setShowHowItWorks(false)}
-                className="text-[11px] font-mono text-slate-400 hover:text-white cursor-pointer underline"
-              >
-                Hide
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className={`p-3 rounded-lg border space-y-1.5 ${isLight ? 'bg-white border-slate-200' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
-                <div className="flex items-center gap-1.5 text-xs font-bold font-mono text-sky-400">
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>1. Handlebar Live Cockpit</span>
-                </div>
-                <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                  Mount phone on handlebar. Tap <strong>Start GPS Logging</strong>. Tap <strong>Zero Angle</strong> while upright to calibrate phone tilt.
-                </p>
-              </div>
-
-              <div className={`p-3 rounded-lg border space-y-1.5 ${isLight ? 'bg-white border-slate-200' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
-                <div className="flex items-center gap-1.5 text-xs font-bold font-mono text-amber-400">
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>2. Pocket Mode / External GPX</span>
-                </div>
-                <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                  Switch to <strong>Pocket Mode</strong> below or use GPSLogger/Strava with screen locked. Lean angles are calculated from GPS cornering speed.
-                </p>
-              </div>
-            </div>
+        {/* Group Ride Live Crew HUD (Portrait only) */}
+        {groupRideConnected && groupRoomCode && !isCleanHud && (
+          <div className="landscape:hidden">
+            <GroupRideHud
+              roomCode={groupRoomCode}
+              members={groupMembers || []}
+              sosAlert={sosAlert || null}
+              onOpenModal={() => onOpenGroupRideModal?.()}
+              onTriggerSos={() => {
+                if (window.confirm('🚨 Broadcast EMERGENCY REGROUP alert to all crew riders?')) {
+                  onTriggerSos?.();
+                }
+              }}
+            />
           </div>
         )}
 
-        {/* Big Speedometer Display */}
-        <div className="text-center py-2 sm:py-4 relative">
-          <div className={`text-[11px] sm:text-[12px] font-mono tracking-widest uppercase mb-1 ${subTextColor}`}>
-            SPEED
-          </div>
-          <div className={`font-mono font-black text-6xl sm:text-8xl lg:text-9xl tracking-tighter select-none ${speedTextColor}`}>
-            {currentSpeedConverted.value.toFixed(0)}
-          </div>
-          <div className="font-mono font-bold text-sm sm:text-lg text-sky-500 uppercase tracking-widest">
-            {currentSpeedConverted.unit.toUpperCase()}
-          </div>
-        </div>
-
-        {/* Lean Angle & Placement Calibration Gauge */}
-        <div className={`border rounded-xl p-3 sm:p-4 space-y-2.5 ${innerCardBg}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-mono font-bold uppercase ${subTextColor}`}>
-                LEAN ANGLE:
-              </span>
-              {/* Placement Mode Switcher */}
-              <div className={`flex border rounded-lg p-0.5 text-[10px] font-mono ${isLight ? 'bg-slate-200 border-slate-300' : 'bg-[#0d131a] border-[#223140]'}`}>
-                <button
-                  onClick={() => controls.setMountMode('handlebar')}
-                  className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                    gps.mountMode === 'handlebar' ? 'bg-sky-500 text-slate-950 font-bold' : subTextColor
-                  }`}
-                >
-                  🏍️ Handlebar
-                </button>
-                <button
-                  onClick={() => controls.setMountMode('pocket')}
-                  className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                    gps.mountMode === 'pocket' ? 'bg-sky-500 text-slate-950 font-bold' : subTextColor
-                  }`}
-                >
-                  👖 Pocket
-                </button>
+        {/* ─────────────────────────────────────────────────────────────
+            WIDESCREEN TFT COCKPIT POD (DUAL COLUMN IN LANDSCAPE, STACK IN PORTRAIT)
+        ───────────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 landscape:grid-cols-12 gap-2.5 landscape:gap-2 items-stretch">
+          
+          {/* LEFT POD (landscape:col-span-7) -> SPEEDOMETER + GLANCE TELEMETRY STRIP (NO UNWANTED BULKY BOXES!) */}
+          <div className="landscape:col-span-7 flex flex-col justify-between space-y-2 landscape:space-y-1">
+            
+            {/* Speedometer Display (Floating, Clean, Borderless Glanceability) */}
+            <div className={`text-center py-2 sm:py-3 landscape:py-1 relative rounded-xl flex flex-col justify-center ${innerCardBg}`}>
+              <div className={`text-[10px] font-mono tracking-widest uppercase ${subTextColor}`}>
+                SPEED
+              </div>
+              <div className={`font-mono font-black text-6xl sm:text-7xl landscape:text-6xl leading-none tracking-tighter select-none my-0.5 ${speedTextColor}`}>
+                {currentSpeedConverted.value.toFixed(0)}
+              </div>
+              <div className="font-mono font-bold text-xs landscape:text-[10px] text-cyan-400 uppercase tracking-widest">
+                {currentSpeedConverted.unit.toUpperCase()}
               </div>
             </div>
 
-            {/* Calibrate / Tare Angle Button */}
-            {gps.mountMode === 'handlebar' && (
-              <div className="flex items-center gap-1.5">
+            {/* Unified Glance Telemetry Ribbon (Single strip instead of 3 bulky boxes) */}
+            <div className={`p-2 sm:p-2.5 landscape:p-1.5 rounded-xl border flex items-center justify-around font-mono text-center ${innerCardBg}`}>
+              {/* Distance */}
+              <div className="flex-1">
+                <div className={`text-[9px] uppercase font-semibold ${subTextColor}`}>DISTANCE</div>
+                <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 ${speedTextColor}`}>
+                  {distanceConverted.value.toFixed(2)}
+                  <span className="text-[9px] text-cyan-400 font-bold ml-1 uppercase">{distanceConverted.unit === 'mi' ? 'MI' : 'KM'}</span>
+                </div>
+              </div>
+
+              <div className="w-px h-7 bg-slate-700/60" />
+
+              {/* Ride Time */}
+              <div className="flex-1">
+                <div className={`text-[9px] uppercase font-semibold ${subTextColor}`}>TIME</div>
+                <div className="font-black text-base sm:text-xl landscape:text-base text-emerald-400 mt-0.5 flex items-center justify-center gap-1">
+                  <span>{formatSec(gps.elapsedSeconds)}</span>
+                  {gps.stoppedSeconds > 0 && <span title="Stopped Time" className="text-[10px] text-amber-400">⏸️</span>}
+                </div>
+              </div>
+
+              <div className="w-px h-7 bg-slate-700/60" />
+
+              {/* Top Speed */}
+              <div className="flex-1">
+                <div className={`text-[9px] uppercase font-semibold ${subTextColor}`}>TOP SPD</div>
+                <div className="font-black text-base sm:text-xl landscape:text-base text-rose-400 mt-0.5">
+                  {maxSpeedConverted.value.toFixed(1)}
+                  <span className="text-[9px] text-rose-400/80 font-bold ml-1 uppercase">{maxSpeedConverted.unit}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Optional Altitude & Heading Pill (Only shown when NOT in Clean HUD mode) */}
+            {!isCleanHud && (
+              <div className={`p-1.5 landscape:p-1 rounded-lg border flex items-center justify-between text-[11px] font-mono px-3 ${innerCardBg}`}>
+                <span className="flex items-center gap-1 text-slate-400">
+                  <Mountain className="w-3 h-3 text-cyan-400" />
+                  <span>Alt:</span>
+                  <strong className={speedTextColor}>{gps.currentAltitude !== null ? `${altitudeConverted.value.toFixed(0)} ${altitudeConverted.unit}` : '—'}</strong>
+                </span>
+                <span className="w-px h-3 bg-slate-700/60" />
+                <span className="flex items-center gap-1 text-slate-400">
+                  <Compass className="w-3 h-3 text-amber-400" />
+                  <span>Hdg:</span>
+                  <strong className={speedTextColor}>{gps.currentHeading !== null ? `${gps.currentHeading.toFixed(0)}°` : '—'}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT POD (landscape:col-span-5) -> 3D GYRO + EXPANDABLE WAYPOINTS + ACTION CONTROLS */}
+          <div className="landscape:col-span-5 flex flex-col justify-between space-y-2 landscape:space-y-1">
+            {/* 3D Gyroscope Horizon & Zero Setup Visualizer */}
+            <Gyro3DVisualizer
+              leanAngle={gps.leanAngle}
+              pitchAngle={gps.pitchAngle}
+              maxLeftLean={gps.maxLeftLean}
+              maxRightLean={gps.maxRightLean}
+              gForceLateral={gps.gForceLateral}
+              mountMode={gps.mountMode}
+              mountOrientation={gps.mountOrientation}
+              isCalibrated={gps.isGyroCalibrated}
+              onTareAngle={controls.handleTareAngle}
+              onResetTare={controls.handleResetTare}
+              onSetMountMode={controls.setMountMode}
+              onSetMountOrientation={controls.setMountOrientation}
+              isLight={isLight}
+            />
+
+            {/* Expandable Quick Waypoints Dropper (Takes zero space unless clicked!) */}
+            {isRecording && !isCleanHud && (
+              <div className="space-y-1">
                 <button
-                  onClick={controls.handleTareAngle}
-                  title="Reset upright angle to 0° based on your current phone mount tilt"
-                  className="px-2 py-1 bg-sky-500/15 hover:bg-sky-500 hover:text-slate-950 text-sky-400 border border-sky-500/30 rounded text-[11px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  onClick={() => setShowWaypoints(!showWaypoints)}
+                  className={`w-full py-1 px-2 border rounded-lg text-[10px] font-mono flex items-center justify-between cursor-pointer transition-colors ${
+                    showWaypoints
+                      ? 'bg-slate-800 border-slate-700 text-cyan-400'
+                      : isLight
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600'
+                      : 'bg-[#141d26] hover:bg-[#1a2533] border-[#223140] text-slate-400'
+                  }`}
                 >
-                  <Crosshair className="w-3 h-3" />
-                  <span>Zero Angle</span>
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-cyan-400" />
+                    <span>Mark Stop / Waypoint</span>
+                    {gps.markedWaypoints.length > 0 && (
+                      <span className="px-1 bg-cyan-500/20 text-cyan-300 rounded font-bold">
+                        {gps.markedWaypoints.length}
+                      </span>
+                    )}
+                  </span>
+                  {showWaypoints ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
-                {gps.tareOffset !== 0 && (
-                  <button
-                    onClick={controls.handleResetTare}
-                    title="Clear tare offset"
-                    className="p-1 hover:text-rose-400 text-slate-500 rounded transition-colors cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </button>
+
+                {showWaypoints && (
+                  <div className="grid grid-cols-4 gap-1.5 animate-in fade-in duration-150">
+                    <button
+                      onClick={() => {
+                        triggerHaptic(50);
+                        controls.markWaypoint('Rest Break');
+                        showToast('☕ Rest waypoint marked');
+                      }}
+                      className="bg-amber-500/10 hover:bg-amber-500 hover:text-black text-amber-500 border border-amber-500/30 rounded-lg font-mono font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                    >
+                      <Coffee className="w-3 h-3" /> Rest
+                    </button>
+                    <button
+                      onClick={() => {
+                        triggerHaptic(50);
+                        controls.markWaypoint('Fuel');
+                        showToast('⛽ Fuel stop marked');
+                      }}
+                      className="bg-sky-500/10 hover:bg-sky-500 hover:text-black text-sky-500 border border-sky-500/30 rounded-lg font-mono font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                    >
+                      <Fuel className="w-3 h-3" /> Fuel
+                    </button>
+                    <button
+                      onClick={() => {
+                        triggerHaptic(50);
+                        controls.markWaypoint('Photo');
+                        showToast('📷 Photo point marked');
+                      }}
+                      className="bg-emerald-500/10 hover:bg-emerald-500 hover:text-black text-emerald-500 border border-emerald-500/30 rounded-lg font-mono font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                    >
+                      <Camera className="w-3 h-3" /> Photo
+                    </button>
+                    <button
+                      onClick={() => {
+                        triggerHaptic(50);
+                        controls.markWaypoint('Food');
+                        showToast('🍔 Food stop marked');
+                      }}
+                      className="bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-500/30 rounded-lg font-mono font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                    >
+                      <Utensils className="w-3 h-3" /> Food
+                    </button>
+                  </div>
                 )}
               </div>
             )}
-          </div>
 
-          {gps.mountMode === 'handlebar' ? (
-            <div>
-              <div className="flex items-center justify-between text-xs font-mono mb-1.5">
-                <span className={subTextColor}>
-                  {gps.tareOffset !== 0 ? `Calibrated (${gps.tareOffset > 0 ? `+${gps.tareOffset}°` : `${gps.tareOffset}°`})` : 'Raw Gyro'}
-                </span>
-                <strong className={`font-bold ${
-                  Math.abs(gps.leanAngle) > 35 ? 'text-rose-500' : Math.abs(gps.leanAngle) > 20 ? 'text-amber-400' : isLight ? 'text-slate-900' : 'text-white'
-                }`}>
-                  {Math.abs(gps.leanAngle)}° {gps.leanAngle < 0 ? 'LEFT ◀' : gps.leanAngle > 0 ? '▶ RIGHT' : 'UPRIGHT'}
-                </strong>
-              </div>
-
-              <div className={`relative w-full h-4 border rounded flex items-center justify-center overflow-hidden ${barTrackBg}`}>
-                <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-sky-500/70 z-10" />
-                <div
-                  className={`h-full transition-all duration-100 ${
-                    Math.abs(gps.leanAngle) > 35 ? 'bg-rose-500' : Math.abs(gps.leanAngle) > 20 ? 'bg-amber-400' : 'bg-emerald-400'
+            {/* Primary Action Controls */}
+            <div className="pt-0.5">
+              {!isRecording ? (
+                <button
+                  onClick={handleStartNewRecording}
+                  className={`w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-black uppercase tracking-wider flex items-center justify-center gap-2 rounded-xl shadow-lg transition-all cursor-pointer hover:shadow-cyan-500/20 active:scale-98 ${
+                    isGloveMode ? 'py-3.5 landscape:py-2 text-base landscape:text-sm min-h-[50px] landscape:min-h-0' : 'py-2.5 landscape:py-1.5 text-sm landscape:text-xs'
                   }`}
-                  style={{
-                    width: `${(Math.abs(gps.leanAngle) / 50) * 50}%`,
-                    transformOrigin: gps.leanAngle >= 0 ? 'left' : 'right',
-                    transform: gps.leanAngle >= 0 ? 'translateX(50%)' : 'translateX(-50%)',
-                  }}
-                />
-              </div>
-              <div className={`flex justify-between text-[9px] font-mono mt-1 ${subTextColor}`}>
-                <span>50° L</span>
-                <span>0° UPRIGHT</span>
-                <span>50° R</span>
-              </div>
-            </div>
-          ) : (
-            <div className={`p-2.5 rounded-lg border text-[11px] font-mono leading-relaxed ${
-              isLight ? 'bg-sky-50/70 border-sky-200 text-sky-900' : 'bg-sky-950/20 border-sky-500/20 text-sky-300'
-            }`}>
-              <div className="font-bold flex items-center gap-1.5">
-                <span>👖 Pocket Mode Active</span>
-              </div>
-              <p className="mt-0.5 text-[10px] opacity-80">
-                Gyroscope tilt is muted to save battery and avoid body movement noise. Cornering lean angles will be computed automatically from GPS centrifugal velocity and turn radius after your ride.
-              </p>
-            </div>
-          )}
-        </div>
+                >
+                  <Play className={isGloveMode ? "w-5 h-5 fill-current" : "w-4 h-4 fill-current"} />
+                  <span>START RIDE</span>
+                </button>
+              ) : isGloveMode ? (
+                /* Glove Mode: Massive Touch Targets */
+                <div className="grid grid-cols-2 gap-2">
+                  {isPaused ? (
+                    <button
+                      onClick={controls.resumeRecording}
+                      className="w-full py-3 landscape:py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-black text-sm landscape:text-xs uppercase flex items-center justify-center gap-2 rounded-xl cursor-pointer shadow-lg active:scale-98 min-h-[50px] landscape:min-h-0"
+                    >
+                      <Play className="w-5 h-5 fill-current" />
+                      <span>RESUME</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={controls.pauseRecording}
+                      className="w-full py-3 landscape:py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-sm landscape:text-xs uppercase flex items-center justify-center gap-2 rounded-xl cursor-pointer shadow-lg active:scale-98 min-h-[50px] landscape:min-h-0"
+                    >
+                      <Pause className="w-5 h-5 fill-current" />
+                      <span>PAUSE</span>
+                    </button>
+                  )}
 
-        {/* Metric Triad: Distance, Ride Time, Top Speed */}
-        <div className="grid grid-cols-3 gap-2.5 text-center font-mono pt-1">
-          <div className={`p-3 border rounded-xl ${innerCardBg}`}>
-            <div className={`text-[10px] uppercase font-semibold ${subTextColor}`}>DISTANCE</div>
-            <div className={`font-black text-xl sm:text-2xl mt-0.5 ${speedTextColor}`}>
-              {distanceConverted.value.toFixed(2)}
-            </div>
-            <div className="text-[9px] text-sky-500 font-bold uppercase">{distanceConverted.unit === 'mi' ? 'MILES' : 'KM'}</div>
-          </div>
+                  <button
+                    onClick={() => setShowFinishModal(true)}
+                    className="w-full py-3 landscape:py-1.5 bg-rose-500 hover:bg-rose-400 text-white font-mono font-black text-sm landscape:text-xs uppercase flex items-center justify-center gap-2 rounded-xl shadow-lg cursor-pointer active:scale-98 min-h-[50px] landscape:min-h-0"
+                  >
+                    <Square className="w-5 h-5 fill-current" />
+                    <span>FINISH</span>
+                  </button>
+                </div>
+              ) : (
+                /* Standard Sleek Controls */
+                <div className="grid grid-cols-2 gap-2">
+                  {isPaused ? (
+                    <button
+                      onClick={controls.resumeRecording}
+                      className="py-2 landscape:py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-bold text-xs uppercase flex items-center justify-center gap-1.5 rounded-xl cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>RESUME</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={controls.pauseRecording}
+                      className="py-2 landscape:py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-xs uppercase flex items-center justify-center gap-1.5 rounded-xl cursor-pointer"
+                    >
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <span>PAUSE</span>
+                    </button>
+                  )}
 
-          <div className={`p-3 border rounded-xl ${innerCardBg}`}>
-            <div className={`text-[10px] uppercase font-semibold ${subTextColor}`}>RIDE TIME</div>
-            <div className="font-black text-xl sm:text-2xl text-emerald-500 mt-0.5">
-              {formatSec(gps.elapsedSeconds)}
+                  <button
+                    onClick={() => setShowFinishModal(true)}
+                    className="py-2 landscape:py-1.5 bg-rose-500 hover:bg-rose-400 text-white font-mono font-bold text-xs uppercase flex items-center justify-center gap-1.5 rounded-xl shadow-lg cursor-pointer hover:shadow-rose-500/20"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>FINISH</span>
+                  </button>
+                </div>
+              )}
             </div>
-            <div className={`text-[9px] ${subTextColor} flex items-center justify-center gap-1.5`}>
-              <span title="Moving Time">🟢 {formatSec(gps.movingSeconds)}</span>
-              {gps.stoppedSeconds > 0 && <span title="Stopped Time" className="text-amber-400">⏸️ {formatSec(gps.stoppedSeconds)}</span>}
-            </div>
-          </div>
 
-          <div className={`p-3 border rounded-xl ${innerCardBg}`}>
-            <div className={`text-[10px] uppercase font-semibold ${subTextColor}`}>TOP SPEED</div>
-            <div className="font-black text-xl sm:text-2xl text-rose-500 mt-0.5">
-              {maxSpeedConverted.value.toFixed(1)}
-            </div>
-            <div className="text-[9px] text-rose-500 font-bold uppercase">{maxSpeedConverted.unit.toUpperCase()}</div>
-          </div>
-        </div>
-
-        {/* Secondary Telemetry: Altitude & Heading */}
-        <div className="grid grid-cols-2 gap-2.5 text-center font-mono">
-          <div className={`p-2.5 border rounded-xl flex items-center justify-between text-xs px-3 ${innerCardBg}`}>
-            <span className={`flex items-center gap-1.5 ${subTextColor}`}>
-              <Mountain className="w-3.5 h-3.5 text-sky-500" /> Altitude
-            </span>
-            <strong className={speedTextColor}>{gps.currentAltitude !== null ? `${altitudeConverted.value.toFixed(0)} ${altitudeConverted.unit}` : 'Acquiring...'}</strong>
-          </div>
-          <div className={`p-2.5 border rounded-xl flex items-center justify-between text-xs px-3 ${innerCardBg}`}>
-            <span className={`flex items-center gap-1.5 ${subTextColor}`}>
-              <Compass className="w-3.5 h-3.5 text-amber-500" /> Heading
-            </span>
-            <strong className={speedTextColor}>{gps.currentHeading !== null ? `${gps.currentHeading.toFixed(0)}°` : '—'}</strong>
-          </div>
-        </div>
-
-        {/* Quick Waypoints Dropper */}
-        {isRecording && (
-          <div className={`pt-3 border-t space-y-2 ${isLight ? 'border-slate-200' : 'border-[#1e2a38]'}`}>
-            <div className={`text-[10px] font-mono uppercase tracking-wider ${subTextColor}`}>
-              QUICK WAYPOINTS {isGloveMode ? '• GLOVE FRIENDLY' : ''}
-            </div>
-            <div className={isGloveMode ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-4 gap-2"}>
-              <button
-                onClick={() => {
-                  triggerHaptic(50);
-                  controls.markWaypoint('Rest Break');
-                }}
-                className={`bg-amber-500/10 hover:bg-amber-500 hover:text-black text-amber-500 border border-amber-500/30 rounded-xl font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  isGloveMode ? 'py-4 text-sm font-black' : 'p-2.5 text-xs'
-                }`}
-              >
-                <Coffee className={isGloveMode ? "w-5 h-5" : "w-3.5 h-3.5"} /> Rest
-              </button>
-              <button
-                onClick={() => {
-                  triggerHaptic(50);
-                  controls.markWaypoint('Fuel');
-                }}
-                className={`bg-sky-500/10 hover:bg-sky-500 hover:text-black text-sky-500 border border-sky-500/30 rounded-xl font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  isGloveMode ? 'py-4 text-sm font-black' : 'p-2.5 text-xs'
-                }`}
-              >
-                <Fuel className={isGloveMode ? "w-5 h-5" : "w-3.5 h-3.5"} /> Fuel
-              </button>
-              <button
-                onClick={() => {
-                  triggerHaptic(50);
-                  controls.markWaypoint('Photo');
-                }}
-                className={`bg-emerald-500/10 hover:bg-emerald-500 hover:text-black text-emerald-500 border border-emerald-500/30 rounded-xl font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  isGloveMode ? 'py-4 text-sm font-black' : 'p-2.5 text-xs'
-                }`}
-              >
-                <Camera className={isGloveMode ? "w-5 h-5" : "w-3.5 h-3.5"} /> Photo
-              </button>
-              <button
-                onClick={() => {
-                  triggerHaptic(50);
-                  controls.markWaypoint('Food');
-                }}
-                className={`bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 border border-rose-500/30 rounded-xl font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  isGloveMode ? 'py-4 text-sm font-black' : 'p-2.5 text-xs'
-                }`}
-              >
-                <Utensils className={isGloveMode ? "w-5 h-5" : "w-3.5 h-3.5"} /> Food
-              </button>
-            </div>
-            {gps.markedWaypoints.length > 0 && (
-              <div className="text-[11px] font-mono text-emerald-500 text-center pt-1 font-bold">
-                {gps.markedWaypoints.length} waypoints saved
+            {gps.gpsError && (
+              <div className="p-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-lg font-mono text-[10px] flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{gps.gpsError}</span>
               </div>
             )}
           </div>
-        )}
-
-        {/* Primary Controls */}
-        <div className="pt-2">
-          {!isRecording ? (
-            <button
-              onClick={handleStartNewRecording}
-              className={`w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono font-black uppercase tracking-wider flex items-center justify-center gap-2.5 rounded-2xl shadow-lg transition-all cursor-pointer hover:shadow-sky-500/20 active:scale-98 ${
-                isGloveMode ? 'py-5 text-base sm:text-lg min-h-[70px]' : 'py-3.5 text-sm'
-              }`}
-            >
-              <Play className={isGloveMode ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} />
-              <span>START RIDE</span>
-            </button>
-          ) : isGloveMode ? (
-            /* Glove Mode: Massive Dual Touch Blocks */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {isPaused ? (
-                <button
-                  onClick={controls.resumeRecording}
-                  className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl cursor-pointer shadow-lg active:scale-98 min-h-[70px]"
-                >
-                  <Play className="w-6 h-6 fill-current" />
-                  <span>RESUME</span>
-                </button>
-              ) : (
-                <button
-                  onClick={controls.pauseRecording}
-                  className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl cursor-pointer shadow-lg active:scale-98 min-h-[70px]"
-                >
-                  <Pause className="w-6 h-6 fill-current" />
-                  <span>PAUSE</span>
-                </button>
-              )}
-
-              <button
-                onClick={stopAndSaveRecording}
-                className="w-full py-5 bg-rose-500 hover:bg-rose-400 text-white font-mono font-black text-base uppercase flex items-center justify-center gap-3 rounded-2xl shadow-lg cursor-pointer active:scale-98 min-h-[70px]"
-              >
-                <Square className="w-6 h-6 fill-current" />
-                <span>FINISH & SAVE</span>
-              </button>
-            </div>
-          ) : (
-            /* Standard Sleek Controls */
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              {isPaused ? (
-                <button
-                  onClick={controls.resumeRecording}
-                  className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-bold text-sm uppercase flex items-center gap-2 rounded-xl cursor-pointer"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>RESUME</span>
-                </button>
-              ) : (
-                <button
-                  onClick={controls.pauseRecording}
-                  className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-sm uppercase flex items-center gap-2 rounded-xl cursor-pointer"
-                >
-                  <Pause className="w-4 h-4 fill-current" />
-                  <span>PAUSE</span>
-                </button>
-              )}
-
-              <button
-                onClick={stopAndSaveRecording}
-                className="px-5 py-3 bg-rose-500 hover:bg-rose-400 text-white font-mono font-bold text-sm uppercase flex items-center gap-2 rounded-xl shadow-lg cursor-pointer hover:shadow-rose-500/20"
-              >
-                <Square className="w-4 h-4 fill-current" />
-                <span>FINISH & SAVE</span>
-              </button>
-            </div>
-          )}
         </div>
-
-        {gps.gpsError && (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl font-mono text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{gps.gpsError}</span>
-          </div>
-        )}
       </div>
+
+      {/* Finish Ride Modal with Instant Download GPX / Save to Garage Options */}
+      {showFinishModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className={`w-full max-w-md p-5 rounded-2xl border shadow-2xl space-y-4 font-mono ${innerCardBg}`}>
+            <div className="flex items-center justify-between border-b pb-3 border-slate-700">
+              <div className="flex items-center gap-2">
+                <Square className="w-5 h-5 text-rose-500 fill-current" />
+                <h3 className="font-bold text-base text-white">Finish Ride Recording</h3>
+              </div>
+              <button
+                onClick={() => setShowFinishModal(false)}
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Stats Summary */}
+            <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-center text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px]">DISTANCE</span>
+                <strong className="text-white text-base">{distanceConverted.value.toFixed(2)} {distanceConverted.unit.toUpperCase()}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">TIME</span>
+                <strong className="text-emerald-400 text-base">{formatSec(gps.elapsedSeconds)}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">GPS POINTS</span>
+                <strong className="text-cyan-400 text-base">{gps.pointsCount}</strong>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              {/* Option 1: Save to Garage & Open Analysis */}
+              <button
+                onClick={() => handleFinishAndSave(false)}
+                className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 text-sm"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Save to Garage & Review Analysis</span>
+              </button>
+
+              {/* Option 2: Download GPX File Directly */}
+              <button
+                onClick={() => handleFinishAndSave(true)}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 text-sm"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download GPX File Directly</span>
+              </button>
+
+              {/* Cancel */}
+              <button
+                onClick={() => setShowFinishModal(false)}
+                className="w-full py-2 text-slate-400 hover:text-white text-xs cursor-pointer"
+              >
+                Cancel & Continue Riding
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Share Location / Google Maps Pin Modal */}
       <ShareLocationModal

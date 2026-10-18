@@ -474,13 +474,18 @@ export function useGroupRide() {
 
         prev.forEach((info, id) => {
           const age = now - info.lastSeen;
-          // After 20 seconds without a packet, mark stale/stopped
-          if (info.isOnline && age > 20000 && !info.isStale) {
+          // After 25 seconds without a packet, mark stale/stopped
+          if (info.isOnline && age > 25000 && !info.isStale) {
             next.set(id, { ...info, isStale: true });
             changed = true;
           }
-          // After 90 seconds without packet, prune or mark offline
-          if (age > 90000) {
+          // After 75 seconds without a packet, mark offline but NEVER delete from convoy map
+          if (info.isOnline && age > 75000) {
+            next.set(id, { ...info, isOnline: false, isStale: true });
+            changed = true;
+          }
+          // Only prune ghosts after 4 hours of complete silence
+          if (age > 4 * 60 * 60 * 1000) {
             next.delete(id);
             changed = true;
           }

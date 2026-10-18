@@ -18,7 +18,8 @@ public class ThrottleLogNativePlugin extends Plugin {
             ContextCompat.startForegroundService(getContext(), serviceIntent);
             call.resolve();
         } catch (Exception e) {
-            call.reject("Failed to start foreground keep-alive service: " + e.getMessage(), e);
+            android.util.Log.w("ThrottleLogNative", "Could not start foreground keep-alive service (likely background restriction): " + e.getMessage());
+            call.resolve(); // Resolve gracefully to avoid breaking Web promise chain
         }
     }
 

@@ -32,6 +32,10 @@ export class SimpleMqttClient {
   private reconnectAttempts = 0;
   private isDestroyed = false;
 
+  private lastPingSent = 0;
+  private isAwaitingPong = false;
+  private boundOnlineHandler: any = null;
+
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
 
@@ -46,6 +50,16 @@ export class SimpleMqttClient {
     this.onMessage = options.onMessage || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
     this.keepAlive = options.keepAliveSeconds || 30;
+
+    if (typeof window !== 'undefined') {
+      this.boundOnlineHandler = () => {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          this.reconnectAttempts = 0;
+          this.connect();
+        }
+      };
+      window.addEventListener('online', this.boundOnlineHandler);
+    }
   }
 
   private encodeRemainingLength(length: number): number[] {
@@ -112,6 +126,12 @@ export class SimpleMqttClient {
         if (buf.length === 0) return;
 
         const packetType = buf[0] >> 4;
+        this.isAwaitingPong = false;
+
+        if (packetType === 13) {
+          // PINGRESP received from broker: socket is healthy & responsive
+          return;
+        }
 
         if (packetType === 2) {
           // CONNACK
@@ -236,12 +256,32 @@ export class SimpleMqttClient {
 
   private startPing(): void {
     this.stopPing();
+    this.isAwaitingPong = false;
     this.pingInterval = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        // MQTT PINGREQ
-        this.ws.send(new Uint8Array([0xc0, 0x00]));
+      const now = Date.now();
+
+      // Check if previous ping timed out (zombie socket in mountain dead zone)
+      if (this.isAwaitingPong && (now - this.lastPingSent) >= 8000) {
+        console.warn('MQTT ping watchdog timeout (8s) - forcing broker failover reconnect');
+        this.stopPing();
+        if (this.ws) {
+          try { this.ws.close(); } catch {}
+          this.ws = null;
+        }
+        this.currentBrokerIndex++;
+        this.connect();
+        return;
       }
-    }, Math.max(10, (this.keepAlive - 5)) * 1000);
+
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Send MQTT PINGREQ
+        this.lastPingSent = now;
+        this.isAwaitingPong = true;
+        try {
+          this.ws.send(new Uint8Array([0xc0, 0x00]));
+        } catch {}
+      }
+    }, 6000);
   }
 
   private stopPing(): void {
@@ -249,12 +289,16 @@ export class SimpleMqttClient {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
+    this.isAwaitingPong = false;
   }
 
   public destroy(): void {
     this.isDestroyed = true;
     this.stopPing();
     clearTimeout(this.reconnectTimeout);
+    if (typeof window !== 'undefined' && this.boundOnlineHandler) {
+      window.removeEventListener('online', this.boundOnlineHandler);
+    }
     if (this.ws) {
       try {
         this.ws.close();

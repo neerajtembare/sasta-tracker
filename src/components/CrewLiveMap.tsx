@@ -505,7 +505,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     // Centered 360° direction arrow
     const headingArrow = heading !== null 
-      ? `<div style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${arrowRotation}deg); pointer-events:none; transition:transform 0.25s ease;">
+      ? `<div class="live-rider-arrow-me" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${arrowRotation}deg); pointer-events:none; transition:transform 0.25s ease;">
            <div style="width:0; height:0; border-left:4.5px solid transparent; border-right:4.5px solid transparent; border-bottom:8px solid ${color}; transform:translateY(-4px); filter:drop-shadow(0 0 4px ${color});"></div>
          </div>`
       : '';
@@ -548,8 +548,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       // Always update position smoothly (zero DOM thrashing)
       myMarkerRef.current.setLatLng(pos);
 
-      // Only rebuild icon if heading or speed changed significantly to prevent mobile lag
-      if (isFirstTime || headingDelta > 2.5 || speedDelta > 1.5) {
+      // Zero-GC in-place rotation of the direction arrow without destroying DOM
+      const el = myMarkerRef.current.getElement();
+      if (el && heading !== null) {
+        const arrowEl = el.querySelector('.live-rider-arrow-me') as HTMLElement | null;
+        if (arrowEl) {
+          arrowEl.style.transform = `rotate(${arrowRotation}deg)`;
+        }
+      }
+
+      if (isFirstTime) {
         myMarkerRef.current.setIcon(icon);
         prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading };
       }
@@ -592,7 +600,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       // Centered 360° rotating direction arrow
       const bearingArrow = bearing !== null && bearing !== undefined
-        ? `<div style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${bearing}deg); pointer-events:none; transition:transform 0.25s ease;">
+        ? `<div class="live-rider-arrow" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${bearing}deg); pointer-events:none; transition:transform 0.25s ease;">
              <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid ${color}; transform:translateY(-3px); filter:drop-shadow(0 0 3px ${color});"></div>
            </div>`
         : '';
@@ -649,20 +657,31 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         // High-speed direct position update without DOM destruction
         marker.setLatLng(pos);
 
-        // Only rebuild DOM icon if visual delta occurred
-        if (needRebuild) {
-          marker.setIcon(icon);
-          memberCacheRef.current.set(m.riderId, {
-            lat: m.location.lat,
-            lon: m.location.lon,
-            speedText: statusTag,
-            bearing: bearing ?? null,
-            isOnline,
-            isStopped,
-            isHost: m.isHost,
-            color,
-          });
+        // Zero-GC in-place rotation of the direction arrow without destroying DOM
+        const el = marker.getElement();
+        if (el && bearing !== null && bearing !== undefined) {
+          const arrowEl = el.querySelector('.live-rider-arrow') as HTMLElement | null;
+          if (arrowEl) {
+            arrowEl.style.transform = `rotate(${bearing}deg)`;
+          }
         }
+
+        // Only rebuild DOM icon if identity, host status, or online state changed
+        const identityOrStateChanged = !prev || prev.isOnline !== isOnline || prev.isHost !== m.isHost || prev.color !== color;
+        if (identityOrStateChanged) {
+          marker.setIcon(icon);
+        }
+
+        memberCacheRef.current.set(m.riderId, {
+          lat: m.location.lat,
+          lon: m.location.lon,
+          speedText: statusTag,
+          bearing: bearing ?? null,
+          isOnline,
+          isStopped,
+          isHost: m.isHost,
+          color,
+        });
       }
     });
   }, [members, unitSystem]);
@@ -894,27 +913,27 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               onToggleRadar();
             }
           }}
-          className={`pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md shadow-xl text-white font-mono text-xs cursor-pointer transition-all active:scale-95 border ${
+          className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2 rounded-full backdrop-blur-md shadow-xl text-white font-mono text-xs cursor-pointer transition-all active:scale-95 border ${
             isOnRadar 
-              ? 'bg-slate-950/92 border-cyan-500/40 hover:border-cyan-400' 
-              : 'bg-slate-950/92 border-amber-500/40 hover:border-amber-400'
+              ? 'bg-slate-950/95 border-cyan-500/60 hover:border-cyan-400' 
+              : 'bg-slate-950/95 border-amber-500/60 hover:border-amber-400'
           }`}
           title={isOnRadar ? 'Live on Radar (100km). Tap to go off radar (Ghost mode)' : 'Off Radar (Ghost mode). Tap to go live on radar'}
         >
-          <span className={`w-2 h-2 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse' : 'bg-amber-400'}`} />
-          <span className="font-heading font-black tracking-wide text-white uppercase text-[11px]">
+          <span className={`w-2.5 h-2.5 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/50 animate-pulse' : 'bg-amber-400'}`} />
+          <span className="font-heading font-black tracking-wide text-white uppercase text-xs">
             {isOnRadar ? 'Crew Radar' : 'Off Radar'}
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
             100km
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
             {members.filter(m => m.location && m.isOnline !== false).length + (isOnRadar ? 1 : 0)} ACTIVE
           </span>
         </div>
 
         {/* Right Action: SOS Emergency Alert */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
+        <div className="pointer-events-auto flex items-center gap-2">
           {isConnected && onTriggerSos && (
             <button
               onClick={() => {
@@ -922,10 +941,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   onTriggerSos();
                 }
               }}
-              className="h-8 px-2.5 rounded-full bg-rose-600/95 hover:bg-rose-500 backdrop-blur-md border border-rose-400/80 text-white font-mono font-black text-[10px] flex items-center gap-1 shadow-lg shadow-rose-950/50 cursor-pointer transition-all active:scale-95"
+              className="h-10 px-3.5 rounded-full bg-rose-600 hover:bg-rose-500 backdrop-blur-md border border-rose-400 text-white font-mono font-black text-xs flex items-center gap-1.5 shadow-xl shadow-rose-950/60 cursor-pointer transition-all active:scale-95"
               title="Broadcast Emergency SOS / Regroup to Crew"
             >
-              <AlertTriangle className="w-3.5 h-3.5" />
+              <AlertTriangle className="w-4 h-4" />
               <span>SOS</span>
             </button>
           )}
@@ -1019,7 +1038,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           RIGHT FLOATING ACTION RAIL: Layers, Recenter, Compass, Fit Convoy, Flip
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute right-2 top-12 z-20 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute right-2.5 top-12 z-20 flex flex-col gap-2.5 pointer-events-auto">
         {/* Layer Switcher FAB */}
         <div className="relative">
           <button
@@ -1027,26 +1046,26 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               triggerHaptic(15);
               setIsLayerPopoverOpen(prev => !prev);
             }}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
               isLayerPopoverOpen
                 ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40'
-                : 'bg-slate-950/90 border-slate-700/80 text-slate-200 hover:text-white hover:border-cyan-400'
+                : 'bg-slate-950/95 border-slate-700 text-slate-200 hover:text-white hover:border-cyan-400'
             }`}
             title="Map Style: Dark, Street, Satellite"
           >
-            <Layers className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+            <Layers className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
           </button>
 
           {/* Layer Selection Popover */}
           {isLayerPopoverOpen && (
-            <div className="absolute right-11 top-0 z-30 p-1.5 rounded-xl bg-slate-950/95 backdrop-blur-md border border-slate-700 shadow-2xl flex flex-col gap-1 min-w-[110px] animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-13 top-0 z-30 p-2 rounded-xl bg-slate-950/98 backdrop-blur-md border border-slate-700 shadow-2xl flex flex-col gap-1.5 min-w-[120px] animate-in fade-in zoom-in-95 duration-150">
               <button
                 onClick={() => {
                   setMapLayer('dark');
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
-                className={`px-2.5 py-1.5 rounded-lg text-left font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-colors ${
+                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
                   mapLayer === 'dark' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
@@ -1059,7 +1078,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
-                className={`px-2.5 py-1.5 rounded-lg text-left font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-colors ${
+                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
                   mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
@@ -1072,7 +1091,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
-                className={`px-2.5 py-1.5 rounded-lg text-left font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-colors ${
+                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
                   mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
                 }`}
               >
@@ -1086,14 +1105,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         {/* Recenter on Me */}
         <button
           onClick={handleRecenterMe}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
             selectedRiderId === 'me'
               ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40 ring-2 ring-cyan-400/50'
-              : 'bg-slate-950/90 border-slate-700/80 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
+              : 'bg-slate-950/95 border-slate-700 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
           }`}
           title="Recenter on Me (GPS)"
         >
-          <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
+          <Crosshair className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
         </button>
 
         {/* Compass & Course-Up Navigation Toggle */}
@@ -1103,21 +1122,21 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             setOrientationMode(prev => prev === 'north' ? 'course' : 'north');
             setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
           }}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 ${
             orientationMode === 'course'
               ? 'bg-amber-500 border-amber-300 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-500/40'
-              : 'bg-slate-950/90 border-slate-700/80 text-amber-400 hover:border-amber-400'
+              : 'bg-slate-950/95 border-slate-700 text-amber-400 hover:border-amber-400'
           }`}
           title={`Orientation: ${orientationMode === 'course' ? 'Course-Up (Direction Ahead)' : 'North-Up'}. Tap to toggle.`}
         >
           <div 
             style={{ transform: `rotate(${-targetMapRotation}deg)`, transition: 'transform 0.35s ease-out' }}
-            className="flex flex-col items-center justify-center w-4 h-4 pointer-events-none"
+            className="flex flex-col items-center justify-center w-5 h-5 pointer-events-none"
           >
-            <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-b-[6px] border-b-rose-500" />
-            <div className="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[6px] border-t-slate-400" />
+            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[7px] border-b-rose-500" />
+            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-t-[7px] border-t-slate-400" />
           </div>
-          <span className="text-[7px] font-mono font-black -mt-0.5 tracking-tighter">
+          <span className="text-[8px] font-mono font-black -mt-0.5 tracking-tighter">
             {myHeading !== null ? `${Math.round(myHeading)}°` : 'N'}
           </span>
         </button>
@@ -1125,10 +1144,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         {/* Fit All Crew Riders (Convoy Bounds) */}
         <button
           onClick={handleFitAllRiders}
-          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-sky-400 text-sky-400 hover:text-sky-300 shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95"
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-950/95 backdrop-blur-md border border-slate-700 hover:border-sky-400 text-sky-400 hover:text-sky-300 shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
           title="Fit Convoy (Show all riders on map)"
         >
-          <Scan className="w-4 h-4 sm:w-5 sm:h-5" />
+          <Scan className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
         </button>
 
         {/* Flip Map 180° */}
@@ -1138,14 +1157,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             setIsFlipped180(prev => !prev);
             setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
           }}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
             isFlipped180
               ? 'bg-purple-600 border-purple-300 text-white shadow-purple-600/40 ring-2 ring-purple-400/50'
-              : 'bg-slate-950/90 border-slate-700/80 text-slate-300 hover:border-purple-400'
+              : 'bg-slate-950/95 border-slate-700 text-slate-300 hover:border-purple-400'
           }`}
           title="Flip Map 180° (Fix inverted phone mount)"
         >
-          <RotateCw className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+          <RotateCw className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
         </button>
 
         {/* Offline Map Pre-Cache Button (Save Route Map for Mountain Ghats) */}
@@ -1153,16 +1172,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <button
             onClick={handleCacheOfflineRoute}
             disabled={isCachingRoute}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
               isCachingRoute
                 ? 'bg-emerald-500 border-emerald-300 text-slate-950 animate-pulse ring-2 ring-emerald-400/50'
                 : cacheSuccessMsg
                 ? 'bg-emerald-500 border-emerald-300 text-slate-950'
-                : 'bg-slate-950/90 border-slate-700/80 text-emerald-400 hover:border-emerald-400'
+                : 'bg-slate-950/95 border-slate-700 text-emerald-400 hover:border-emerald-400'
             }`}
             title="Download Route Map Tiles for Offline Ghats / Zero Cellular Coverage"
           >
-            {cacheSuccessMsg ? <Check className="w-4 h-4 sm:w-4.5 sm:h-4.5" /> : <Download className="w-4 h-4 sm:w-4.5 sm:h-4.5" />}
+            {cacheSuccessMsg ? <Check className="w-5 h-5" /> : <Download className="w-5 h-5" />}
           </button>
         )}
       </div>

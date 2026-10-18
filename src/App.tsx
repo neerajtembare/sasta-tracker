@@ -1120,6 +1120,55 @@ export default function App() {
         )}
       </main>
 
+      {/* Mobile Landscape Left Thumb Rail (Motorcycle Handlebar Mount Mode) */}
+      <nav
+        aria-label="Mobile Landscape Navigation Dock"
+        className={`hidden mobile-landscape-dock fixed left-0 top-0 bottom-0 w-14 z-50 flex-col items-center justify-around py-4 backdrop-blur-lg border-r shadow-2xl transition-colors ${
+          theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
+        }`}
+        style={{
+          paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
+          paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+          paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
+        }}
+      >
+        {/* Tab 1: Crew */}
+        <button
+          onClick={() => setCurrentTab('crew')}
+          className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
+            currentTab === 'crew' ? 'text-cyan-400 bg-cyan-500/15 font-black' : 'hover:text-white'
+          }`}
+          title="Crew Radar"
+        >
+          <Users className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Crew</span>
+        </button>
+
+        {/* Tab 2: Cockpit */}
+        <button
+          onClick={() => setCurrentTab('cockpit')}
+          className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
+            currentTab === 'cockpit' ? 'text-emerald-400 bg-emerald-500/15 font-black' : 'hover:text-white'
+          }`}
+          title="Ride Cockpit"
+        >
+          <Radio className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Ride</span>
+        </button>
+
+        {/* Tab 3: Rides / Analysis */}
+        <button
+          onClick={() => setCurrentTab('analysis')}
+          className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
+            currentTab === 'analysis' || currentTab === 'home' ? 'text-sky-400 bg-sky-500/15 font-black' : 'hover:text-white'
+          }`}
+          title="My Rides"
+        >
+          <FolderArchive className="w-5 h-5" />
+          <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Rides</span>
+        </button>
+      </nav>
+
       {/* Mobile Bottom Navigation Bar (Streamlined 3-Tab Rider Layout: Crew, Ride, My Rides) */}
       <nav 
         style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}

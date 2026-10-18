@@ -213,6 +213,12 @@
   .mobile-bottom-nav {
     display: none !important;
   }
+  .mobile-landscape-dock {
+    display: flex !important;
+  }
+  main {
+    margin-left: 3.5rem !important;
+  }
   .mobile-landscape-hidden {
     display: none !important;
   }

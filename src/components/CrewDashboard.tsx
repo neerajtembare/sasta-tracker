@@ -262,7 +262,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => {
                     triggerHaptic(30);
@@ -271,10 +271,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
                     }
                   }}
-                  className="h-7 px-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                  className="h-9 px-3.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/25 cursor-pointer transition-all active:scale-95"
                   title="Launch Google Maps turn-by-turn voice navigation to destination"
                 >
-                  <Navigation className="w-3 h-3" />
+                  <Navigation className="w-3.5 h-3.5" />
                   <span>Google Maps</span>
                 </button>
               </div>
@@ -298,7 +298,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 {/* 1-Tap Quick Ride Recording Action */}
                 {isRecording ? (
                   <button
@@ -306,10 +306,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       triggerHaptic(50);
                       if (onStopRecording) onStopRecording();
                     }}
-                    className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-md shadow-rose-950 transition-all active:scale-95"
+                    className="h-8 px-2.5 sm:px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md shadow-rose-950 transition-all active:scale-95"
                     title="Stop and save active ride to Garage"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
                     <span>REC ({((totalDistanceMeters || 0) / 1000).toFixed(1)}km)</span>
                   </button>
                 ) : (
@@ -318,10 +318,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       triggerHaptic(50);
                       if (onStartRecording) onStartRecording();
                     }}
-                    className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-md shadow-emerald-950 transition-all active:scale-95"
+                    className="h-8 px-3 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950 transition-all active:scale-95"
                     title="Start recording GPS ride track"
                   >
-                    <Play className="w-2.5 h-2.5 fill-current" />
+                    <Play className="w-3 h-3 fill-current" />
                     <span>START</span>
                   </button>
                 )}
@@ -333,21 +333,21 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       triggerHaptic(30);
                       onToggleRadar();
                     }}
-                    className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 border ${
+                    className={`h-8 px-2.5 sm:px-3 rounded-xl font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 border ${
                       isOnRadar
-                        ? 'bg-emerald-500/15 hover:bg-emerald-500/30 border-emerald-500/40 text-emerald-300'
-                        : 'bg-amber-500/15 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                        ? 'bg-emerald-500/20 hover:bg-emerald-500/35 border-emerald-400/50 text-emerald-300'
+                        : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/50 text-amber-300'
                     }`}
                     title={isOnRadar ? 'You are live on radar. Tap to go Off Radar (Ghost mode)' : 'You are currently hidden. Tap to go Live on radar'}
                   >
                     {isOnRadar ? (
                       <>
-                        <Eye className="w-2.5 h-2.5" />
+                        <Eye className="w-3.5 h-3.5" />
                         <span>Live</span>
                       </>
                     ) : (
                       <>
-                        <EyeOff className="w-2.5 h-2.5" />
+                        <EyeOff className="w-3.5 h-3.5" />
                         <span>Ghost</span>
                       </>
                     )}
@@ -356,7 +356,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
 
                 <button
                   onClick={() => setIsConvoyDrawerExpanded(prev => !prev)}
-                  className="text-slate-400 hover:text-white font-mono text-[10px] cursor-pointer"
+                  className="h-8 px-2 text-slate-400 hover:text-white font-mono text-xs font-bold cursor-pointer"
                 >
                   {isConvoyDrawerExpanded ? 'Hide' : 'Roster'}
                 </button>
@@ -483,7 +483,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                               ) : (
                                 <>
                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0" />
-                                  <span className="text-slate-400 truncate">Offline</span>
+                                  <span className="text-amber-400/90 font-bold truncate">
+                                    {`Last seen ${Math.max(1, Math.round((Date.now() - m.lastSeen) / 60000))}m ago`}
+                                  </span>
                                 </>
                               )}
                             </div>
@@ -508,9 +510,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
 
                       {/* 1-Tap JOIN ROUTE Banner if friend is sharing a route */}
                       {m.sharedRoute && (
-                        <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1 text-[10px] text-cyan-300 font-mono font-bold truncate">
-                            <Route className="w-3 h-3 text-cyan-400 shrink-0" />
+                        <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs text-cyan-300 font-mono font-bold truncate">
+                            <Route className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                             <span className="truncate">{m.sharedRoute.routeName}</span>
                           </div>
                           <button
@@ -522,10 +524,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                                 onJoinSharedRoute(m.sharedRoute);
                               }
                             }}
-                            className="px-2 py-0.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-sm shrink-0"
+                            className="h-8 px-3 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md shrink-0"
                             title={`Join ${m.name}'s route: ${m.sharedRoute.routeName}`}
                           >
-                            <Route className="w-2.5 h-2.5" />
+                            <Route className="w-3 h-3" />
                             <span>Join</span>
                           </button>
                         </div>

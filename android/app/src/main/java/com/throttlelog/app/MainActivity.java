@@ -9,4 +9,14 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ThrottleLogNativePlugin.class);
         super.onCreate(savedInstanceState);
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                getBridge().getWebView().resumeTimers();
+            }
+        } catch (Exception ignored) {}
+    }
 }

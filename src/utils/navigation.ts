@@ -15,13 +15,36 @@ export function openGoogleMapsNavigation(lat: number, lon: number, label?: strin
     const intentUrl = `google.navigation:q=${cleanLat},${cleanLon}&mode=d`;
     const webFallback = `https://www.google.com/maps/dir/?api=1&destination=${cleanLat},${cleanLon}&travelmode=driving`;
 
+    let fallbackTimer: any = null;
+    const cleanup = () => {
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', cleanup);
+    };
+
+    const onVisibilityChange = () => {
+      // If the app is hidden, native Google Maps successfully launched — cancel web tab
+      if (document.hidden) {
+        cleanup();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', cleanup, { once: true });
+
     // Attempt native intent
     window.location.href = intentUrl;
 
-    // Safety timeout fallback: if intent didn't launch native app within 600ms, open web Google Maps
-    setTimeout(() => {
-      window.open(webFallback, '_blank', 'noopener,noreferrer');
-    }, 600);
+    // Safety fallback: only if the app remains in the foreground after 1000ms
+    fallbackTimer = setTimeout(() => {
+      cleanup();
+      if (!document.hidden) {
+        window.open(webFallback, '_blank', 'noopener,noreferrer');
+      }
+    }, 1000);
   } else if (isIOS) {
     // Apple Maps turn-by-turn driving directions
     const appleUrl = `https://maps.apple.com/?daddr=${cleanLat},${cleanLon}&dirflg=d`;
@@ -39,11 +62,31 @@ export function openGoogleMapsRoute(originLat: number, originLon: number, destLa
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 
   if (isAndroid) {
+    let fallbackTimer: any = null;
+    const cleanup = () => {
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', cleanup);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) cleanup();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', cleanup, { once: true });
+
     // Direct voice turn-by-turn to destination
     window.location.href = `google.navigation:q=${cleanDest}&mode=d`;
-    setTimeout(() => {
-      window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
-    }, 600);
+    fallbackTimer = setTimeout(() => {
+      cleanup();
+      if (!document.hidden) {
+        window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
+      }
+    }, 1000);
   } else {
     window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
   }

@@ -248,7 +248,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           BOTTOM FLOATING CONVOY ROSTER HUD & ACTIVE ROUTE
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-4 sm:right-4 z-20 pointer-events-none flex flex-col gap-2">
+      <div className="absolute bottom-[calc(4.2rem+env(safe-area-inset-bottom))] sm:bottom-3 left-2 right-2 sm:left-4 sm:right-4 z-20 pointer-events-none flex flex-col gap-2">
         <div className="max-w-4xl mx-auto w-full space-y-2 pointer-events-auto">
           
           {/* Active Planned Route & Google Maps Voice Navigation Bar */}

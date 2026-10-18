@@ -771,37 +771,29 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     }
   }, [activeRoute]);
 
-  // Dynamic Auto-fit Bounds: auto-encompass all active riders within 100km
-  const lastFittedSignatureRef = useRef<string>('');
+  // Dynamic Initial Bounds: auto-encompass active riders on cold-start ONLY (never hijacks camera mid-ride)
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
+    if (!mapInstanceRef.current || hasInitialFit) return;
     const activeMembers = members.filter(m => m.location && m.isOnline !== false);
-    const signature = activeMembers.map(m => m.riderId).sort().join(',');
 
-    // When the roster of active members changes or on initial fix:
-    if (signature !== lastFittedSignatureRef.current) {
-      lastFittedSignatureRef.current = signature;
+    const points: L.LatLngTuple[] = [];
+    if (myLocation) points.push([myLocation.lat, myLocation.lon]);
 
-      const points: L.LatLngTuple[] = [];
-      if (myLocation) points.push([myLocation.lat, myLocation.lon]);
-
-      activeMembers.forEach(m => {
-        if (m.location) {
-          // Auto-include all riders within 100km
-          if (m.distanceFromMeMeters === undefined || m.distanceFromMeMeters <= 100000) {
-            points.push([m.location.lat, m.location.lon]);
-          }
+    activeMembers.forEach(m => {
+      if (m.location) {
+        if (m.distanceFromMeMeters === undefined || m.distanceFromMeMeters <= 100000) {
+          points.push([m.location.lat, m.location.lon]);
         }
-      });
-
-      if (points.length > 1) {
-        const bounds = L.latLngBounds(points);
-        mapInstanceRef.current.fitBounds(bounds, { padding: [55, 55], maxZoom: 15, animate: true });
-        setHasInitialFit(true);
-      } else if (points.length === 1 && !hasInitialFit) {
-        mapInstanceRef.current.setView(points[0], 15);
-        setHasInitialFit(true);
       }
+    });
+
+    if (points.length > 1) {
+      const bounds = L.latLngBounds(points);
+      mapInstanceRef.current.fitBounds(bounds, { padding: [55, 55], maxZoom: 15, animate: true });
+      setHasInitialFit(true);
+    } else if (points.length === 1) {
+      mapInstanceRef.current.setView(points[0], 15);
+      setHasInitialFit(true);
     }
   }, [myLocation, members, hasInitialFit]);
 
@@ -1155,7 +1147,43 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         >
           <RotateCw className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
         </button>
+
+        {/* Offline Map Pre-Cache Button (Save Route Map for Mountain Ghats) */}
+        {activeRoute && (
+          <button
+            onClick={handleCacheOfflineRoute}
+            disabled={isCachingRoute}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full backdrop-blur-md border shadow-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+              isCachingRoute
+                ? 'bg-emerald-500 border-emerald-300 text-slate-950 animate-pulse ring-2 ring-emerald-400/50'
+                : cacheSuccessMsg
+                ? 'bg-emerald-500 border-emerald-300 text-slate-950'
+                : 'bg-slate-950/90 border-slate-700/80 text-emerald-400 hover:border-emerald-400'
+            }`}
+            title="Download Route Map Tiles for Offline Ghats / Zero Cellular Coverage"
+          >
+            {cacheSuccessMsg ? <Check className="w-4 h-4 sm:w-4.5 sm:h-4.5" /> : <Download className="w-4 h-4 sm:w-4.5 sm:h-4.5" />}
+          </button>
+        )}
       </div>
+
+      {/* Offline Caching Progress / Success Pill */}
+      {(cacheProgress || cacheSuccessMsg) && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1 rounded-full bg-slate-950/95 backdrop-blur-md border border-emerald-500/60 text-emerald-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-2 whitespace-nowrap animate-in fade-in">
+          {cacheProgress && !cacheSuccessMsg && (
+            <>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>Caching Offline Map: {cacheProgress.percentage}% ({cacheProgress.cached}/{cacheProgress.total})</span>
+            </>
+          )}
+          {cacheSuccessMsg && (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{cacheSuccessMsg}</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)

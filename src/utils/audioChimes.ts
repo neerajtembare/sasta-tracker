@@ -122,20 +122,19 @@ export function enableBackgroundKeepAlive() {
       silentAudioEl.loop = true;
       silentAudioEl.volume = 0.001;
     }
+    keepAliveStarted = true;
     const playPromise = silentAudioEl.play();
     if (playPromise) {
-      playPromise.then(() => {
-        keepAliveStarted = true;
-      }).catch(() => {});
+      playPromise.catch(() => {});
     }
   } catch {}
 }
 
 export function disableBackgroundKeepAlive() {
   try {
+    keepAliveStarted = false;
     if (silentAudioEl) {
       silentAudioEl.pause();
-      keepAliveStarted = false;
     }
   } catch {}
 }
@@ -149,4 +148,28 @@ if (typeof window !== 'undefined') {
   };
   window.addEventListener('touchstart', handleFirstUserGesture, { passive: true, once: true });
   window.addEventListener('click', handleFirstUserGesture, { once: true });
+
+  const resumeAudioKeepAlive = () => {
+    if (keepAliveStarted && silentAudioEl && silentAudioEl.paused) {
+      silentAudioEl.play().catch(() => {});
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+  };
+
+  // Re-engage silent keep-alive stream when switching back from Spotify, Calls, or Google Maps
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      resumeAudioKeepAlive();
+    }
+  });
+  window.addEventListener('focus', resumeAudioKeepAlive);
+
+  // Periodic watchdog: revives keep-alive audio if interrupted by an incoming phone call or GPS voice prompt
+  setInterval(() => {
+    if (keepAliveStarted && silentAudioEl && silentAudioEl.paused) {
+      silentAudioEl.play().catch(() => {});
+    }
+  }, 10000);
 }

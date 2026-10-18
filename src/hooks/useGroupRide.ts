@@ -220,6 +220,7 @@ export function useGroupRide() {
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<any>(null);
   const notificationTimeoutRef = useRef<any>(null);
+  const lastLocationBroadcastTimeRef = useRef<number>(0);
 
   const postCrewNotification = useCallback((text: string, type: 'join' | 'leave' | 'info' | 'alert' = 'info') => {
     if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
@@ -280,6 +281,7 @@ export function useGroupRide() {
           distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
           isStale: false,
           isOnline: true,
+          sharedRoute: existing?.sharedRoute,
         });
 
         membersRef.current = next;
@@ -295,9 +297,21 @@ export function useGroupRide() {
             next.set(share.riderId, {
               ...current,
               sharedRoute: share,
+              lastSeen: Date.now(),
+              isOnline: true,
             });
-            membersRef.current = next;
+          } else {
+            next.set(share.riderId, {
+              riderId: share.riderId,
+              name: share.riderName || 'Rider',
+              color: getRiderColor(share.riderId),
+              isHost: false,
+              lastSeen: Date.now(),
+              isOnline: true,
+              sharedRoute: share,
+            });
           }
+          membersRef.current = next;
           return next;
         });
         playWaypointChime();
@@ -355,9 +369,9 @@ export function useGroupRide() {
       // Broadcast to universal global radar channel so all app users see each other
       mqttClientRef.current.publish('throttlelog/v1/radar/global', payload);
 
-      // Also publish to squad channel if in a custom squad
+      // Also publish to custom squad channel if explicitly joined a distinct squad
       const squadKey = sanitizeKey(profileRef.current.squadName);
-      if (squadKey && squadKey !== 'global') {
+      if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
         mqttClientRef.current.publish(`throttlelog/v1/squad/${squadKey}`, payload);
       }
     }
@@ -410,8 +424,8 @@ export function useGroupRide() {
     // Universal open radar topic: ensures ANYONE using the app is directly visible
     client.subscribe('throttlelog/v1/radar/global');
 
-    // Squad-specific topic
-    if (squadKey && squadKey !== 'global') {
+    // Custom squad-specific topic only if explicitly in a distinct squad
+    if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
       client.subscribe(`throttlelog/v1/squad/${squadKey}`);
     }
 
@@ -488,6 +502,13 @@ export function useGroupRide() {
     myLocationRef.current = { lat, lon, speedKmh, bearing, leanAngle };
 
     if (!isOnRadarRef.current) return;
+
+    // Rate-limit position broadcasts to 1500ms to preserve mobile battery and avoid public broker burst-disconnects
+    const now = Date.now();
+    if (now - lastLocationBroadcastTimeRef.current < 1500) {
+      return;
+    }
+    lastLocationBroadcastTimeRef.current = now;
 
     // Broadcast immediately upon GPS position fix
     broadcastPayload({

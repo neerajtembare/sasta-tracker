@@ -31,6 +31,7 @@ import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, exportPointsToGPX, downloadFile } from './utils/gpxExporter';
 import { triggerHaptic, playWaypointChime } from './utils/audioChimes';
+import { startNativeRadarKeepAlive, stopNativeRadarKeepAlive } from './utils/nativeKeepAlive';
 import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
 import { 
@@ -205,6 +206,15 @@ export default function App() {
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
+  // Native Android Foreground Service & Keep-Alive (guarantees GPS and WebSocket survive backgrounding to Google Maps/Spotify)
+  useEffect(() => {
+    if (isRecordingLive || groupRide.isOnRadar) {
+      startNativeRadarKeepAlive();
+    } else {
+      stopNativeRadarKeepAlive();
+    }
+  }, [isRecordingLive, groupRide.isOnRadar]);
+
   // Check URL query for room invite link (e.g. ?rider=Rahul or ?crew=SUNDAY)
   // Zero-friction 1-tap auto-join: joins immediately and switches to crew radar!
   const hasProcessedInviteRef = useRef(false);
@@ -254,8 +264,11 @@ export default function App() {
     groupRide.updateMyLocation(lat, lon, kmh, bearing);
   }, [groupRide.updateMyLocation]);
 
-  // Auto-broadcast active planned route to Crew Radar whenever loaded or updated
+  const isLocallyInitiatedRouteRef = useRef<boolean>(true);
+
+  // Auto-broadcast active planned route to Crew Radar only if locally initiated (prevents join loopback storm)
   useEffect(() => {
+    if (!isLocallyInitiatedRouteRef.current) return;
     if (analysis && analysis.points && analysis.points.length > 0) {
       const dest = analysis.points[analysis.points.length - 1];
       groupRide.broadcastActiveRoute({
@@ -269,6 +282,7 @@ export default function App() {
 
   // 1-Tap Join Friend's Shared Route on Crew Radar
   const handleJoinSharedRoute = useCallback((route: SharedRouteInfo) => {
+    isLocallyInitiatedRouteRef.current = false;
     const rawPts = route.points && route.points.length > 0 ? route.points : [route.destination];
     const pts: TrackPoint[] = rawPts.map((p, idx) => ({
       lat: p.lat,
@@ -381,6 +395,7 @@ export default function App() {
       const dataToParse = gpxData || SAMPLE_GPX_DATA;
       const parsed = parseGPX(dataToParse);
       parsed.name = name || SAMPLE_GPX_NAME;
+      isLocallyInitiatedRouteRef.current = true;
       setAnalysis(parsed);
       setCurrentRideId(null);
       setScrubIndex(null);
@@ -398,6 +413,7 @@ export default function App() {
     try {
       const parsed = parseGPX(xmlText);
       parsed.name = fileName || 'Uploaded Ride Track';
+      isLocallyInitiatedRouteRef.current = true;
       setAnalysis(parsed);
       setCurrentRideId(rideId || null);
       setScrubIndex(null);
@@ -420,6 +436,7 @@ export default function App() {
       const squadPrefix = groupRide.roomCode ? `[Crew ${groupRide.roomCode}] ` : '';
       const rideName = `${squadPrefix}Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
       parsed.name = rideName;
+      isLocallyInitiatedRouteRef.current = true;
       setAnalysis(parsed);
       setCurrentTab('analysis');
 

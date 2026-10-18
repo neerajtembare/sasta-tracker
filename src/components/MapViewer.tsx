@@ -4,8 +4,6 @@ import { RideAnalysis, TrackPoint, PitStop, AppTheme } from '../types';
 import { interpolateTrackPoints, snapToRoadsOSRM } from '../utils/pathSmoother';
 import { haversineDistance } from '../utils/gpxParser';
 import { 
-  Maximize2, 
-  Minimize2, 
   Layers, 
   MapPin, 
   Coffee, 
@@ -89,8 +87,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
   // Base Map Tile Style (100% free, zero API key dependencies)
   const [mapStyle, setMapStyle] = useState<'osm' | 'satellite' | 'dark'>('osm');
-
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLayersOpen, setIsLayersOpen] = useState(false);
   // Default pit stops to TRUE so riders immediately see and can click/edit stops
   const [showPitStops, setShowPitStops] = useState(true);
   const [showPointDots, setShowPointDots] = useState(false);
@@ -516,20 +513,24 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         }).addTo(map);
       } else if (mapStyle === 'satellite') {
         tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 18,
+          maxNativeZoom: 18,
+          maxZoom: 19,
           attribution: '&copy; Esri',
         }).addTo(map);
         overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 18,
+          maxNativeZoom: 18,
+          maxZoom: 19,
           opacity: 0.85,
         }).addTo(map);
       } else if (mapStyle === 'dark') {
         tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 16,
+          maxNativeZoom: 16,
+          maxZoom: 19,
           attribution: '&copy; Esri',
         }).addTo(map);
         overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-          maxZoom: 16,
+          maxNativeZoom: 16,
+          maxZoom: 19,
           opacity: 0.85,
         }).addTo(map);
       }
@@ -1079,16 +1080,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     }
   };
 
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
-    setIsFullscreen(prev => !prev);
-    setTimeout(() => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize();
-      }
-    }, 200);
-  };
-
   // OSRM Snap Roads
   const handleSnapRoads = async () => {
     if (snappedRoads) {
@@ -1133,14 +1124,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   const buttonBg = isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100' : 'bg-[#1c2633] border-[#2a3a4d] text-[#8f9ca8] hover:text-white';
 
   return (
-    <div
-      className={`rounded-2xl border transition-all overflow-hidden flex flex-col shadow-xl ${cardBg} ${
-        isFullscreen ? 'fixed inset-0 z-50 rounded-none h-[100dvh]' : ''
-      }`}
-    >
-      {/* Map Header Toolbar — Simplified: no duplicate ride name, specs, or badges */}
+    <div className={`rounded-2xl border transition-all overflow-hidden flex flex-col shadow-xl ${cardBg}`}>
+      {/* Map Header Toolbar — Streamlined & Glanceable */}
       <div className={`px-3 sm:px-4 py-2 border-b flex items-center justify-between gap-2 flex-wrap ${headerBg}`}>
-        {/* Map view & Route mode controls */}
+        {/* Route mode & Display toggles */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap max-w-full">
           {/* Out & Back Route Mode Selector (When out-and-back route detected) */}
           {turnaroundIndex > 0 && (
@@ -1194,41 +1181,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             </div>
           )}
 
-          {/* Map Layer Switcher */}
-          <div className={`flex border rounded-lg p-0.5 text-[11px] font-mono font-bold ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#1e2a38]'}`}>
-            <button
-              id="map-style-osm"
-              onClick={() => setMapStyle('osm')}
-              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                mapStyle === 'osm' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
-              }`}
-              title="OpenStreetMap Standard Global Map (Free, Detailed Roads)"
-            >
-              Street
-            </button>
-            <button
-              id="map-style-satellite"
-              onClick={() => setMapStyle('satellite')}
-              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                mapStyle === 'satellite' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
-              }`}
-              title="ESRI World Imagery Satellite"
-            >
-              <span className="hidden sm:inline">Satellite</span>
-              <span className="sm:hidden">Sat</span>
-            </button>
-            <button
-              id="map-style-dark"
-              onClick={() => setMapStyle('dark')}
-              className={`px-2.5 py-1 rounded cursor-pointer transition-colors ${
-                mapStyle === 'dark' ? 'bg-sky-500 text-slate-950 font-bold shadow-xs' : subText
-              }`}
-              title="Dark Contrast Map"
-            >
-              Dark
-            </button>
-          </div>
-
           {/* Milestones Toggle */}
           <button
             id="btn-toggle-milestones"
@@ -1275,23 +1227,13 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             <span className="sm:hidden">{analysis.pitStops.length}</span>
           </button>
 
-          {/* Recenter */}
-          <button
-            id="btn-map-recenter"
-            onClick={recenterMap}
-            title="Recenter track in view"
-            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
-          >
-            <Navigation className="w-3.5 h-3.5 text-sky-400" />
-          </button>
-
           {/* Pre-cache Map for Mountain Passes (No Cell Signal) */}
           <button
             id="btn-cache-offline-map"
             onClick={handleCacheOfflineMap}
             disabled={cachingProgress?.active}
             title={`Cache route map tiles for offline riding in mountain passes without cell signal (${offlineTileCount} tiles cached)`}
-            className={`px-2 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 text-[11px] font-mono ${
+            className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 text-[11px] font-mono ${
               cachingProgress?.done
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                 : cachingProgress?.active
@@ -1316,28 +1258,70 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               </>
             )}
           </button>
-
-          {/* Fullscreen */}
-          <button
-            id="btn-map-fullscreen"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${buttonBg}`}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
         </div>
       </div>
 
-      {/* Map DOM Element with Floating Speed Heatmap Legend */}
+      {/* Map DOM Element with Floating Controls (Google Maps Style) */}
       <div className="relative w-full flex-1 min-h-0">
         <div 
           ref={mapContainerRef} 
           id="leaflet-map-canvas"
-          className={`w-full transition-all ${
-            isFullscreen ? 'h-full min-h-[220px]' : 'h-[360px] sm:h-[460px]'
-          }`}
+          className="w-full h-[380px] sm:h-[480px] transition-all"
         />
+
+        {/* Floating Google Maps-style Map Layer FAB */}
+        <div className="absolute top-3 right-3 z-[400]">
+          <button
+            onClick={() => setIsLayersOpen(!isLayersOpen)}
+            title="Switch Map Style (Street / Satellite / Dark)"
+            className="w-9 h-9 rounded-full bg-slate-900/90 hover:bg-slate-800 text-cyan-400 border border-slate-700/80 shadow-xl flex items-center justify-center transition-all cursor-pointer active:scale-95"
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+
+          {isLayersOpen && (
+            <div className="absolute right-0 top-11 bg-slate-900/95 border border-slate-700 rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 w-32 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+              <button
+                onClick={() => { setMapStyle('osm'); setIsLayersOpen(false); }}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  mapStyle === 'osm' ? 'bg-sky-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Street</span>
+                {mapStyle === 'osm' && <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => { setMapStyle('satellite'); setIsLayersOpen(false); }}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  mapStyle === 'satellite' ? 'bg-sky-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Satellite</span>
+                {mapStyle === 'satellite' && <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => { setMapStyle('dark'); setIsLayersOpen(false); }}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  mapStyle === 'dark' ? 'bg-sky-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Dark</span>
+                {mapStyle === 'dark' && <Check className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Floating Recenter FAB on Bottom Right */}
+        <div className="absolute bottom-4 right-3 z-[400]">
+          <button
+            onClick={recenterMap}
+            title="Recenter track"
+            className="w-9 h-9 rounded-full bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 shadow-xl flex items-center justify-center transition-all cursor-pointer active:scale-95"
+          >
+            <Navigation className="w-4 h-4" />
+          </button>
+        </div>
 
         {/* Floating Speed Heatmap Legend */}
         {showHeatmapLegend && routeMode === 'all' && (

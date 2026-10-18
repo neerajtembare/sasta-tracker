@@ -25,6 +25,7 @@ import { RideReportModal } from './components/RideReportModal';
 import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
+import { DownloadAppModal } from './components/DownloadAppModal';
 import { useGroupRide } from './hooks/useGroupRide';
 import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
@@ -80,6 +81,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGarageOpen, setIsGarageOpen] = useState<boolean>(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
 
   // Global Unit System (Metric km/h <-> Imperial mph)
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
@@ -192,19 +194,18 @@ export default function App() {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
 
-  const handleInstallPwa = async () => {
+  const handleOpenDownloadApp = () => {
+    setIsDownloadModalOpen(true);
+    triggerHaptic(20);
+  };
+
+  const handleTriggerPwaInstall = async () => {
     if (deferredInstallPrompt) {
       deferredInstallPrompt.prompt();
       const { outcome } = await deferredInstallPrompt.userChoice;
       if (outcome === 'accepted') {
         setDeferredInstallPrompt(null);
       }
-    } else {
-      alert(
-        'To install ThrottleLog on your phone for full-screen offline logging:\n\n' +
-        '• iPhone / iPad (Safari): Tap the Share button (square with arrow) and tap "Add to Home Screen".\n' +
-        '• Android (Chrome / Brave / Edge): Tap the 3 dots menu and tap "Install app" (or "Add to Home screen").'
-      );
     }
   };
 
@@ -218,6 +219,7 @@ export default function App() {
       if (e.key === 'Escape') {
         setIsDiagnosticsOpen(false);
         setIsGarageOpen(false);
+        setIsDownloadModalOpen(false);
         setIsStopEditorOpen(false);
         setIsRideNameEditorOpen(false);
         setIsCalibrationOpen(false);
@@ -565,8 +567,8 @@ export default function App() {
         onToggleTheme={toggleTheme}
         unitSystem={unitSystem}
         onToggleUnitSystem={toggleUnitSystem}
-        onInstallPwa={handleInstallPwa}
-        canInstallPwa={Boolean(deferredInstallPrompt)}
+        onInstallPwa={handleOpenDownloadApp}
+        canInstallPwa={true}
       />
 
       {/* In-App Browser Helper Banner (e.g. WhatsApp / Instagram WebView) */}
@@ -660,6 +662,7 @@ export default function App() {
               onResumeRide={() => setCurrentTab('analysis')}
               onClearRide={handleCloseTrack}
               onOpenGarage={() => setIsGarageOpen(true)}
+              onOpenDownloadApp={handleOpenDownloadApp}
             />
           </div>
         )}
@@ -680,6 +683,7 @@ export default function App() {
               activeRideName={null}
               activeRideDistanceKm={null}
               onOpenGarage={() => setIsGarageOpen(true)}
+              onOpenDownloadApp={handleOpenDownloadApp}
             />
           </div>
         )}
@@ -1134,6 +1138,15 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Native Android APK & App Install Modal */}
+      <DownloadAppModal
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        theme={theme}
+        deferredInstallPrompt={deferredInstallPrompt}
+        onInstallPwaPrompt={handleTriggerPwaInstall}
+      />
     </div>
   );
 }

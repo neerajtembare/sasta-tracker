@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
@@ -56,3 +58,25 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Prepare APK for Release
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk throttlelog-debug.apk
+
+      - name: Publish or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: "ThrottleLog Android APK v1.0.0"
+          body: |
+            ### ThrottleLog Android Standalone APK
+            Direct download link for Android riders:
+            - Real-time 100km open crew radar
+            - Direct GPS telemetry & high-speed lean angle logger
+            - Zero server logins, no Google Play account required
+          files: throttlelog-debug.apk
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

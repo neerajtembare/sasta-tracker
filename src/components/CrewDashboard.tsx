@@ -148,9 +148,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const handleShareWhatsApp = (customUrl?: string, friendName?: string) => {
     const squad = roomCode || 'Sunday Morning Crew';
     const link = customUrl || (getFriendInviteUrl ? getFriendInviteUrl(friendName) : `${window.location.origin}${window.location.pathname}`);
+    const apkLink = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog-debug.apk';
     const text = friendName
-      ? `🏍️ Hey ${friendName}, join our Crew Radar "${squad}":\n👉 ${link}\nYour name is auto-configured—just tap and ride!`
-      : `🏍️ Join our Crew Radar "${squad}":\n👉 ${link}\nLogged in riders are automatically visible!`;
+      ? `🏍️ Hey ${friendName}, join our Crew Radar "${squad}":\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nYour name is auto-configured—just tap and ride!`
+      : `🏍️ Join our Crew Radar "${squad}":\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nLogged in riders are automatically visible!`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };

@@ -511,7 +511,11 @@ export default function App() {
   })();
 
   return (
-    <div className={`min-h-screen transition-colors ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'} pb-16 landscape:pb-1`}>
+    <div className={`transition-colors ${
+      currentTab === 'crew'
+        ? 'h-[100dvh] overflow-hidden flex flex-col'
+        : 'min-h-[100dvh] flex flex-col pb-16 landscape:pb-1'
+    } ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'}`}>
       {/* Hidden Global File Input for Navbar Upload Action */}
       <input
         type="file"
@@ -577,7 +581,7 @@ export default function App() {
       {/* Main Container */}
       <main className={`w-full transition-all ${
         currentTab === 'crew'
-          ? 'p-0.5 sm:p-2 landscape:p-0 max-w-none'
+          ? 'flex-1 overflow-hidden flex flex-col p-0 pb-[calc(56px+env(safe-area-inset-bottom,0px))] md:pb-0 max-w-none'
           : 'max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
       }`}>
         {/* Global Interrupted Session Recovery Banner (Surfaced across all views) */}
@@ -917,7 +921,7 @@ export default function App() {
 
         {/* Tab 3: Dedicated First-Class Crew Command Center */}
         {currentTab === 'crew' && (
-          <div className="animate-in fade-in duration-300">
+          <div className="w-full h-full flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
             <CrewDashboard
               roomCode={groupRide.roomCode}
               lastRoomCode={groupRide.lastRoomCode}

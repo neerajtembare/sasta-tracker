@@ -13,12 +13,9 @@ import {
   Smartphone,
   Zap,
   Users,
-  Cloud,
-  Maximize2,
-  Minimize2
+  Cloud
 } from 'lucide-react';
 import { AppTheme, UnitSystem } from '../types';
-import { toggleFullscreen, isFullscreen as checkFullscreen } from '../utils/screenHelper';
 
 interface NavbarProps {
   currentTab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
@@ -70,24 +67,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleUnitSystem,
 }) => {
   const isLight = theme === 'light';
-  const [isFullscreenActive, setIsFullscreenActive] = React.useState(checkFullscreen());
-
-  React.useEffect(() => {
-    const handleFsChange = () => setIsFullscreenActive(checkFullscreen());
-    document.addEventListener('fullscreenchange', handleFsChange);
-    document.addEventListener('webkitfullscreenchange', handleFsChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFsChange);
-      document.removeEventListener('webkitfullscreenchange', handleFsChange);
-    };
-  }, []);
-
-  const handleToggleFs = () => {
-    toggleFullscreen().then(setIsFullscreenActive).catch(() => {});
-  };
 
   return (
     <header
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       className={`sticky top-0 z-50 backdrop-blur-md border-b transition-colors ${
         isLight
           ? 'bg-white/95 border-slate-200 shadow-sm'
@@ -228,21 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Fullscreen Button (Crucial for Handlebar Motorcycle Cluster) */}
-          <button
-            id="btn-toggle-fullscreen"
-            onClick={handleToggleFs}
-            title={isFullscreenActive ? 'Exit Fullscreen' : 'Enter Fullscreen (Hide browser bars for handlebar mount)'}
-            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
-              isFullscreenActive
-                ? 'bg-sky-500/20 text-sky-400 border-sky-400/50'
-                : isLight
-                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
-            }`}
-          >
-            {isFullscreenActive ? <Minimize2 className="w-3.5 h-3.5 text-sky-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
+
 
           {/* Global Light/Dark Theme Switcher */}
           <button

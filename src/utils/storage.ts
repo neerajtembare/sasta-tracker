@@ -352,20 +352,7 @@ const SAVED_CREWS_STORAGE_KEY = 'throttlelog_saved_crews';
 export function getSavedCrews(): SavedCrew[] {
   try {
     const raw = localStorage.getItem(SAVED_CREWS_STORAGE_KEY);
-    if (!raw) {
-      // Seed with a friendly starter group so riders immediately see the feature
-      const initial: SavedCrew[] = [
-        {
-          id: 'crew_default_sunday',
-          name: 'Sunday Morning Crew',
-          code: 'SUNDAY',
-          members: ['Neeraj', 'Rahul', 'Sam'],
-          createdAt: Date.now(),
-        }
-      ];
-      localStorage.setItem(SAVED_CREWS_STORAGE_KEY, JSON.stringify(initial));
-      return initial;
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {

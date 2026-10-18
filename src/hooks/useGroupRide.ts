@@ -62,10 +62,7 @@ export interface FriendEntry {
   color: string;
 }
 
-export const MOTORCYCLE_CALLSIGNS = [
-  'Neeraj', 'Rahul', 'Sam', 'Sid', 'Aryan',
-  'GhostRider', 'ThunderRider', 'ApexRider', 'NightHawk', 'Maverick'
-];
+
 
 export const RIDER_COLORS = [
   '#00f0ff', // Electric Cyan
@@ -95,11 +92,7 @@ const STORAGE_KEYS = {
   CUSTOM_FRIENDS: 'sasta_custom_friends_v4',
 };
 
-export const DEFAULT_KNOWN_MEMBERS: FriendEntry[] = [
-  { id: 'neeraj', name: 'Neeraj', bikeModel: 'KTM Duke 390', color: '#00f0ff' },
-  { id: 'rahul', name: 'Rahul', bikeModel: 'Continental GT 650', color: '#ffe600' },
-  { id: 'sam', name: 'Sam', bikeModel: 'Triumph Speed 400', color: '#ff3366' },
-];
+export const DEFAULT_KNOWN_MEMBERS: FriendEntry[] = [];
 
 function sanitizeKey(str: string): string {
   return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24);
@@ -124,12 +117,11 @@ export function useGroupRide() {
         if (riderParam && riderParam.trim()) {
           const cleanName = riderParam.trim();
           const cleanId = generateUniqueRiderId(cleanName);
-          const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
           const newProfile: RiderProfile = {
             id: cleanId,
             name: cleanName,
-            bikeModel: matched?.bikeModel || 'Motorcycle',
-            color: matched?.color || getRiderColor(cleanId),
+            bikeModel: 'Motorcycle',
+            color: getRiderColor(cleanId),
             squadName: squadParam?.trim() || DEFAULT_SQUAD_NAME,
             isLoggedIn: true,
           };
@@ -145,26 +137,25 @@ export function useGroupRide() {
         if (parsed.name && parsed.id) return parsed;
       }
 
-      // Legacy name or default
-      const legacyName = getSavedIdentity('sasta_rider_name') || 'Neeraj';
+      // Default name or clean generic Rider identity
+      const legacyName = getSavedIdentity('sasta_rider_name') || 'Rider';
       const cleanId = generateUniqueRiderId(legacyName);
-      const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === legacyName.toLowerCase());
       const fallback: RiderProfile = {
         id: cleanId,
         name: legacyName,
-        bikeModel: matched?.bikeModel || 'KTM Duke 390',
-        color: matched?.color || getRiderColor(cleanId),
+        bikeModel: 'Motorcycle',
+        color: getRiderColor(cleanId),
         squadName: DEFAULT_SQUAD_NAME,
         isLoggedIn: true,
       };
       saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(fallback));
       return fallback;
     } catch {
-      const fallbackId = generateUniqueRiderId('neeraj');
+      const fallbackId = generateUniqueRiderId('rider');
       return {
         id: fallbackId,
-        name: 'Neeraj',
-        bikeModel: 'KTM Duke 390',
+        name: 'Rider',
+        bikeModel: 'Motorcycle',
         color: '#00f0ff',
         squadName: DEFAULT_SQUAD_NAME,
         isLoggedIn: true,
@@ -182,13 +173,7 @@ export function useGroupRide() {
   });
 
   const getAllSquadFriends = useCallback((): FriendEntry[] => {
-    const list = [...DEFAULT_KNOWN_MEMBERS];
-    customFriends.forEach(cf => {
-      if (!list.some(m => m.id === cf.id)) {
-        list.push(cf);
-      }
-    });
-    return list;
+    return [...customFriends];
   }, [customFriends]);
 
   const [connectionStatus, setConnectionStatus] = useState<MqttConnectionStatus>('connecting');
@@ -485,13 +470,11 @@ export function useGroupRide() {
   const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {
     const cleanName = (name && name.trim()) || 'Rider';
     const cleanId = generateUniqueRiderId(cleanName);
-    const matched = DEFAULT_KNOWN_MEMBERS.find(m => m.name.toLowerCase() === cleanName.toLowerCase());
-
     const newProfile: RiderProfile = {
       id: cleanId,
       name: cleanName,
-      bikeModel: bikeModel || matched?.bikeModel || 'Motorcycle',
-      color: color || matched?.color || getRiderColor(cleanId),
+      bikeModel: bikeModel || 'Motorcycle',
+      color: color || getRiderColor(cleanId),
       squadName: squadName || DEFAULT_SQUAD_NAME,
       isLoggedIn: true,
     };

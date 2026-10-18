@@ -13,8 +13,6 @@ import {
   Navigation, 
   Copy, 
   Check, 
-  Maximize2, 
-  Minimize2,
   Edit3,
   Coffee,
   Radio,
@@ -131,7 +129,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
   // Default to Dark map for eye comfort and stealth motorcycle cockpit look
   const [mapLayer, setMapLayer] = useState<MapLayerType>('dark');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
@@ -222,28 +219,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(1)} km`;
   };
-
-  const toggleFullscreen = () => {
-    triggerHaptic(20);
-    setIsFullscreen(prev => {
-      const next = !prev;
-      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 50);
-      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
-      return next;
-    });
-  };
-
-  // Keyboard shortcut: Esc to exit fullscreen
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 150);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen]);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -804,11 +779,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const totalRiders = members.length + 1;
 
   return (
-    <div className={`relative flex flex-col overflow-hidden transition-all duration-300 ${
-      isFullscreen 
-        ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-none shadow-none' 
-        : 'h-[calc(100dvh-108px)] md:h-[calc(100dvh-64px)] min-h-[420px] w-full rounded-xl sm:rounded-2xl border shadow-xl'
-    } ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#080c10] border-[#1e2a38]'}`}>
+    <div className={`relative flex flex-col w-full h-full flex-1 overflow-hidden select-none ${isLight ? 'bg-slate-100' : 'bg-[#080c10]'}`}>
 
       {/* ─────────────────────────────────────────────────────────────
           LEAFLET MAP CANVAS
@@ -932,19 +903,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </button>
           </div>
 
-          {/* Maximize Button */}
-          <button
-            onClick={toggleFullscreen}
-            className={`h-8 w-8 sm:w-auto sm:px-2.5 rounded-full backdrop-blur-md border font-mono font-bold text-[11px] flex items-center justify-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0 ${
-              isFullscreen
-                ? 'bg-amber-500 hover:bg-amber-400 border-amber-400 text-slate-950'
-                : 'bg-slate-950/85 hover:bg-slate-900 border-cyan-500/50 text-cyan-300'
-            }`}
-            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Maximize Map (Esc)'}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span className="hidden md:inline">{isFullscreen ? 'Exit' : 'Max'}</span>
-          </button>
+
 
           {/* Leave Button (Desktop) */}
           {isConnected && onLeaveRoom && (

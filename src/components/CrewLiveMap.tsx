@@ -3,7 +3,7 @@ import L from 'leaflet';
 import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis, PitStop, TrackPoint } from '../types';
 import { openGoogleMapsNavigation, openGoogleMapsRoute } from '../utils/navigation';
-import { preCacheRouteTiles, CacheProgress, LatLngBounds } from '../utils/mapCache';
+import { preCacheRouteTiles, preCacheRegionalArea, CacheProgress, LatLngBounds } from '../utils/mapCache';
 import { 
   Crosshair, 
   Users, 
@@ -546,6 +546,36 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         setCacheProgress(progress);
       });
       setCacheSuccessMsg(`Saved ${result.cached} tiles offline!`);
+      triggerHaptic(40);
+      setTimeout(() => {
+        setIsCachingRoute(false);
+        setCacheProgress(null);
+        setCacheSuccessMsg(null);
+      }, 3500);
+    } catch {
+      setIsCachingRoute(false);
+      setCacheProgress(null);
+    }
+  };
+
+  // ─── Offline Regional 25km Map Area Pre-Caching (For Unmapped Mountain Ghats) ───
+  const handleCacheRegionalMap = async () => {
+    if (!myLocation) return;
+    triggerHaptic(30);
+    setIsCachingRoute(true);
+    setCacheSuccessMsg(null);
+
+    try {
+      const result = await preCacheRegionalArea(
+        myLocation.lat,
+        myLocation.lon,
+        25,
+        mapLayer === 'sunlight' ? 'street' : 'dark',
+        (progress) => {
+          setCacheProgress(progress);
+        }
+      );
+      setCacheSuccessMsg(`Saved 25km Region (${result.cached} tiles) offline!`);
       triggerHaptic(40);
       setTimeout(() => {
         setIsCachingRoute(false);
@@ -1267,6 +1297,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 border border-emerald-400 shrink-0" />
                 <span>Satellite</span>
               </button>
+
+              <div className="h-px bg-slate-800 my-0.5" />
+              <button
+                onClick={() => {
+                  setIsLayerPopoverOpen(false);
+                  handleCacheRegionalMap();
+                }}
+                disabled={isCachingRoute || !myLocation}
+                className="px-3 py-2 rounded-lg text-left font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-colors text-emerald-400 hover:bg-slate-800 disabled:opacity-50"
+                title="Download 25km surrounding area tiles for offline riding in mountain ghats"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>Save 25km Area</span>
+              </button>
             </div>
           )}
         </div>
@@ -1373,8 +1417,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <RotateCw className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
         </button>
 
-        {/* Offline Map Pre-Cache Button (Save Route Map for Mountain Ghats) */}
-        {activeRoute && (
+        {/* Offline Map Pre-Cache Button (Save Route Map or 25km Region for Mountain Ghats) */}
+        {activeRoute ? (
           <button
             onClick={handleCacheOfflineRoute}
             disabled={isCachingRoute}
@@ -1389,7 +1433,22 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           >
             {cacheSuccessMsg ? <Check className="w-5 h-5" /> : <Download className="w-5 h-5" />}
           </button>
-        )}
+        ) : myLocation ? (
+          <button
+            onClick={handleCacheRegionalMap}
+            disabled={isCachingRoute}
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+              isCachingRoute
+                ? 'bg-emerald-500 border-emerald-300 text-slate-950 animate-pulse ring-2 ring-emerald-400/50'
+                : cacheSuccessMsg
+                ? 'bg-emerald-500 border-emerald-300 text-slate-950'
+                : 'bg-slate-950/95 border-slate-700 text-emerald-400 hover:border-emerald-400'
+            }`}
+            title="Download 25km Surrounding Area Map for Offline Ghats / Zero Cellular Coverage"
+          >
+            {cacheSuccessMsg ? <Check className="w-5 h-5" /> : <Download className="w-5 h-5" />}
+          </button>
+        ) : null}
       </div>
 
       {/* Offline Caching Progress / Success Pill */}

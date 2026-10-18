@@ -70,6 +70,18 @@ export function getTileUrlsForBounds(
   return Array.from(new Set(urls)).slice(0, 250);
 }
 
+// Calculate LatLngBounds for a given center coordinate and radius in kilometers
+export function getBoundsForRadius(lat: number, lon: number, radiusKm: number = 25): LatLngBounds {
+  const latDelta = radiusKm / 111;
+  const lonDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+  return {
+    minLat: lat - latDelta,
+    maxLat: lat + latDelta,
+    minLng: lon - lonDelta,
+    maxLng: lon + lonDelta,
+  };
+}
+
 // Pre-cache tiles with progress callback and concurrency limiting
 export async function preCacheRouteTiles(
   bounds: LatLngBounds,
@@ -84,6 +96,13 @@ export async function preCacheRouteTiles(
     return { cached: 0, total: 0 };
   }
 
+  let cache: Cache | null = null;
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      cache = await caches.open(TILE_CACHE_NAME);
+    } catch {}
+  }
+
   let cached = 0;
   const concurrency = 4;
   const queue = [...urls];
@@ -94,8 +113,12 @@ export async function preCacheRouteTiles(
       if (!url) break;
 
       try {
-        // Fetching through the browser will trigger sw.js to put it in sasta-map-tiles-v1
-        await fetch(url, { mode: 'no-cors' });
+        const resp = await fetch(url, { mode: 'no-cors' });
+        if (cache && resp) {
+          try {
+            await cache.put(url, resp);
+          } catch {}
+        }
         cached++;
         const percentage = Math.round((cached / total) * 100);
         onProgress?.({
@@ -121,6 +144,18 @@ export async function preCacheRouteTiles(
   });
 
   return { cached, total };
+}
+
+// Pre-cache regional area for spontaneous unmapped rides into mountain valleys
+export async function preCacheRegionalArea(
+  centerLat: number,
+  centerLng: number,
+  radiusKm: number = 25,
+  style: 'dark' | 'street' | 'osm' = 'dark',
+  onProgress?: (progress: CacheProgress) => void
+): Promise<{ cached: number; total: number }> {
+  const bounds = getBoundsForRadius(centerLat, centerLng, radiusKm);
+  return preCacheRouteTiles(bounds, style, onProgress);
 }
 
 // Get the count of offline cached map tiles

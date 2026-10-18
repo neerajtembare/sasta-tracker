@@ -450,11 +450,14 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           >
             {isConnected && onlineRiders.length > 0 ? (
               <div className="flex items-center gap-2 truncate text-xs font-bold">
-                {onlineRiders.slice(0, 2).map((r, idx) => (
+                {[...onlineRiders].sort((a, b) => (a.distanceFromMeMeters ?? 999999) - (b.distanceFromMeMeters ?? 999999)).slice(0, 2).map((r, idx) => (
                   <span key={r.riderId} className="flex items-center gap-1 truncate">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color || '#00f0ff' }} />
                     <span className="truncate">{r.name}:</span>
                     <span className="text-cyan-400 font-mono font-black shrink-0">{formatDistance(r.distanceFromMeMeters)}</span>
+                    {r.distanceFromMeMeters !== undefined && r.distanceFromMeMeters > 1500 && (
+                      <span className="text-[9px] text-amber-400 font-bold ml-0.5">⚠️</span>
+                    )}
                     {idx < Math.min(onlineRiders.length - 1, 1) && <span className="opacity-40">•</span>}
                   </span>
                 ))}
@@ -465,14 +468,18 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             ) : isConnected ? (
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span className="truncate">Live Radar • Waiting for friends to join</span>
+                <span className="truncate">
+                  {isRecording 
+                    ? `REC • ${(recordedDistanceMeters / 1000).toFixed(1)} km • Solo (Radar Live)`
+                    : 'Live Radar • Waiting for friends to join'}
+                </span>
               </div>
             ) : (
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
                 <span className="truncate">
                   {isRecording 
-                    ? `Recording • ${(recordedDistanceMeters / 1000).toFixed(1)} km`
-                    : 'Solo Ride • Tap to expand'}
+                    ? `REC • ${(recordedDistanceMeters / 1000).toFixed(1)} km (Offline)`
+                    : 'Offline • Tap to view crew'}
                 </span>
               </div>
             )}

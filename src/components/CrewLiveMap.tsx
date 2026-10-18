@@ -621,40 +621,52 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const map = mapInstanceRef.current;
     const pos: L.LatLngTuple = [myLocation.lat, myLocation.lon];
-    const initial = myRiderName.charAt(0).toUpperCase() || 'Y';
+    const initial = myRiderName ? myRiderName.trim().charAt(0).toUpperCase() : 'N';
     const color = myColor || '#00f0ff';
     const speed = formatSpeed(myLocation.speedKmh);
     const heading = myLocation.heading !== null && myLocation.heading !== undefined ? myLocation.heading : null;
+
+    // Counter-rotation so text & initials stay 100% horizontal and upright at all times
+    const counterRotation = -targetMapRotation;
 
     // In Course-Up mode, the map rotates to heading so the forward indicator points straight UP (0deg).
     // In North-Up mode, the forward indicator rotates to heading.
     const arrowRotation = orientationMode === 'course' ? 0 : (heading !== null ? heading : 0);
 
-    const prev = prevMyPosRef.current;
-    const headingDelta = prev?.heading !== null && heading !== null ? Math.abs((prev?.heading || 0) - heading) : 999;
-    const speedDelta = prev ? Math.abs(prev.speedKmh - myLocation.speedKmh) : 999;
+    const prev = prevMyPosRef.current as any;
     const isFirstTime = !myMarkerRef.current || !prev;
+    const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode);
 
-    // Centered 360° direction arrow
-    const headingArrow = heading !== null 
-      ? `<div class="live-rider-arrow-me" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${arrowRotation}deg); pointer-events:none; transition:transform 0.25s ease;">
-           <div style="width:0; height:0; border-left:4.5px solid transparent; border-right:4.5px solid transparent; border-bottom:8px solid ${color}; transform:translateY(-4px); filter:drop-shadow(0 0 4px ${color});"></div>
+    // Google Maps-style forward headlight beam & navigation chevron
+    const forwardIndicator = heading !== null 
+      ? `<div class="live-rider-beam-me" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${arrowRotation}deg); transform-origin:center center; pointer-events:none; transition:transform 0.25s ease;">
+           <!-- Forward Illumination Light Cone -->
+           <div style="position:absolute; top:-36px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:18px solid transparent; border-right:18px solid transparent; border-bottom:40px solid ${color}; opacity:0.18; filter:blur(2px);"></div>
+           <!-- High-Visibility 3D Navigation Chevron -->
+           <div style="position:absolute; top:-14px; left:50%; transform:translateX(-50%); filter:drop-shadow(0 0 6px ${color});">
+             <svg viewBox="0 0 24 24" width="22" height="22">
+               <path d="M12 2 L22 20 L12 15 L2 20 Z" fill="${color}" stroke="#080c10" stroke-width="1.8" stroke-linejoin="round"/>
+             </svg>
+           </div>
          </div>`
       : '';
 
     const myLeaderCrown = isHost
-      ? `<div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+      ? `<div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
       : '';
 
     const html = `
-      <div style="position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Tap to customize your callsign & bike">
+      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Tap to customize your callsign & bike">
+        ${forwardIndicator}
         ${myLeaderCrown}
-        <div style="position:absolute; width:34px; height:34px; border-radius:50%; background:${color}; opacity:0.25; border:1.5px solid ${color};"></div>
-        ${headingArrow}
-        <div style="position:relative; width:26px; height:26px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 10px ${color}, 0 2px 5px rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px;">
+        <!-- Pulsing radar halo -->
+        <div style="position:absolute; width:40px; height:40px; border-radius:50%; background:${color}; opacity:0.2; border:1.5px solid ${color};"></div>
+        <!-- Center initial badge (Counter-rotated to always be upright) -->
+        <div style="position:relative; width:28px; height:28px; border-radius:50%; background:${color}; border:2.5px solid #080c10; box-shadow:0 0 12px ${color}, 0 2px 6px rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:12px; transform:rotate(${counterRotation}deg); transition:transform 0.3s ease;">
           ${initial}
         </div>
-        <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%); background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.8);">
+        <!-- Upright label below -->
+        <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:900; padding:1px 5px; border-radius:4px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.9); transition:transform 0.3s ease;">
           YOU
         </div>
       </div>
@@ -663,8 +675,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const icon = L.divIcon({
       className: 'live-rider-marker-me',
       html,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
     });
 
     if (!myMarkerRef.current) {
@@ -675,28 +687,37 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           onOpenCrewManage('active');
         }
       });
-      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading };
+      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode } as any;
     } else {
-      // Always update position smoothly (zero DOM thrashing)
       myMarkerRef.current.setLatLng(pos);
 
-      // Zero-GC in-place rotation of the direction arrow without destroying DOM
-      const el = myMarkerRef.current.getElement();
-      if (el && heading !== null) {
-        const arrowEl = el.querySelector('.live-rider-arrow-me') as HTMLElement | null;
-        if (arrowEl) {
-          arrowEl.style.transform = `rotate(${arrowRotation}deg)`;
-        }
-      }
-
-      if (isFirstTime) {
+      // In-place rotation or full re-render on profile/mode changes
+      if (isFirstTime || profileChanged) {
         myMarkerRef.current.setIcon(icon);
-        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading };
+        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode } as any;
+      } else {
+        const el = myMarkerRef.current.getElement();
+        if (el && heading !== null) {
+          const beamEl = el.querySelector('.live-rider-beam-me') as HTMLElement | null;
+          if (beamEl) {
+            beamEl.style.transform = `rotate(${arrowRotation}deg)`;
+          }
+        }
       }
     }
 
+    // Google Maps-style look-ahead horizon camera follow
     if (selectedRiderId === 'me') {
-      map.panTo(pos, { animate: true, duration: 0.5 });
+      if (orientationMode === 'course' && heading !== null && myLocation.speedKmh >= 5) {
+        // Forward look-ahead: offset camera ~100m ahead along heading
+        const offsetMeters = 100;
+        const rad = (heading * Math.PI) / 180;
+        const dLat = (offsetMeters / 111320) * Math.cos(rad);
+        const dLon = (offsetMeters / (111320 * Math.cos((myLocation.lat * Math.PI) / 180))) * Math.sin(rad);
+        map.panTo([myLocation.lat + dLat, myLocation.lon + dLon], { animate: true, duration: 0.5 });
+      } else {
+        map.panTo(pos, { animate: true, duration: 0.5 });
+      }
     }
   }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost, orientationMode]);
 
@@ -731,37 +752,46 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
       const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color || prev.isStarred !== isStarred;
 
-      // Centered 360° rotating direction arrow
+      const memberCounterRotation = -targetMapRotation;
+      const memberArrowRotation = orientationMode === 'course' 
+        ? ((bearing ?? 0) - (myHeading ?? 0))
+        : (bearing ?? 0);
+
+      // Centered Google Maps-style 3D navigation chevron
       const bearingArrow = bearing !== null && bearing !== undefined
-        ? `<div class="live-rider-arrow" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${bearing}deg); pointer-events:none; transition:transform 0.25s ease;">
-             <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:7px solid ${color}; transform:translateY(-3px); filter:drop-shadow(0 0 3px ${color});"></div>
+        ? `<div class="live-rider-arrow" style="position:absolute; inset:0; display:flex; justify-content:center; align-items:flex-start; transform:rotate(${memberArrowRotation}deg); transform-origin:center center; pointer-events:none; transition:transform 0.25s ease;">
+             <div style="position:absolute; top:-12px; left:50%; transform:translateX(-50%); filter:drop-shadow(0 0 5px ${color});">
+               <svg viewBox="0 0 24 24" width="18" height="18">
+                 <path d="M12 2 L22 20 L12 15 L2 20 Z" fill="${color}" stroke="#080c10" stroke-width="1.8" stroke-linejoin="round"/>
+               </svg>
+             </div>
            </div>`
         : '';
 
       const leaderCrown = m.isHost
-        ? `<div style="position:absolute; top:-16px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+        ? `<div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
         : '';
 
       const starBadge = isStarred
-        ? `<div style="position:absolute; top:-16px; right:-6px; font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10;">⭐</div>`
+        ? `<div style="position:absolute; top:-18px; right:-6px; transform:rotate(${memberCounterRotation}deg); font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10;">⭐</div>`
         : '';
 
       const haloRing = isStarred
-        ? `<div style="position:absolute; width:34px; height:34px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
+        ? `<div style="position:absolute; width:38px; height:38px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
         : '';
 
       const opacity = isOnline ? '1' : '0.65';
 
       const html = `
-        <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
+        <div style="position:relative; width:38px; height:38px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
           ${haloRing}
           ${leaderCrown}
           ${starBadge}
           ${bearingArrow}
-          <div style="width:24px; height:24px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:10px;">
+          <div style="width:26px; height:26px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transition:transform 0.3s ease;">
             ${initial}
           </div>
-          <div style="position:absolute; bottom:-15px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 3px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">
+          <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
             ${isStarred ? '⭐ ' : ''}${m.name}
           </div>
         </div>
@@ -770,8 +800,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const icon = L.divIcon({
         className: `live-rider-marker-${m.riderId}`,
         html,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
       });
 
       let marker = memberMarkersRef.current.get(m.riderId);
@@ -1153,7 +1183,42 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          GOOGLE MAPS-STYLE FLOATING RE-CENTER FAB (BOTTOM-RIGHT)
+          GOOGLE MAPS-STYLE FLOATING LIVE SPEEDOMETER HUD (BOTTOM-LEFT)
+      ───────────────────────────────────────────────────────────── */}
+      <div 
+        style={{ 
+          bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
+          left: 'max(0.75rem, env(safe-area-inset-left))',
+        }}
+        className="absolute z-20 pointer-events-auto animate-in fade-in duration-200"
+      >
+        <div className={`px-2.5 py-1.5 rounded-2xl backdrop-blur-xl border shadow-2xl flex flex-col items-center justify-center font-mono ${
+          isLight 
+            ? 'bg-white/95 border-slate-300 text-slate-800' 
+            : 'bg-[#0d131a]/95 border-[#1e2a38] text-white shadow-black/80'
+        }`}>
+          <div className="flex items-baseline gap-1">
+            <span className="font-heading font-black text-2xl tracking-tighter text-cyan-400">
+              {myLocation ? Math.round(myLocation.speedKmh) : '0'}
+            </span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">
+              {unitSystem === 'imperial' ? 'mph' : 'km/h'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-[8px] font-bold text-slate-400">
+            <span className={`w-1.5 h-1.5 rounded-full ${myLocation && myLocation.speedKmh > 2.5 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+            <span>{myLocation && myLocation.speedKmh > 2.5 ? 'CRUISING' : 'IDLE'}</span>
+          </div>
+          {isRecording && totalDistanceMeters !== undefined && totalDistanceMeters > 0 && (
+            <div className="text-[8px] font-bold text-rose-400 mt-0.5 border-t border-slate-800/80 pt-0.5 w-full text-center">
+              REC • {(totalDistanceMeters / 1000).toFixed(1)} km
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          GOOGLE MAPS-STYLE FLOATING MAP CONTROLS (BOTTOM-RIGHT)
       ───────────────────────────────────────────────────────────── */}
       <div 
         style={{ 
@@ -1162,6 +1227,34 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         }}
         className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto"
       >
+        {/* Glove-friendly Zoom In / Out Buttons */}
+        <div className="flex flex-col gap-1.5 mb-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(15);
+              mapInstanceRef.current?.zoomIn();
+            }}
+            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-lg font-black"
+            title="Zoom In (Map)"
+            aria-label="Zoom In"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(15);
+              mapInstanceRef.current?.zoomOut();
+            }}
+            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-lg font-black"
+            title="Zoom Out (Map)"
+            aria-label="Zoom Out"
+          >
+            −
+          </button>
+        </div>
+
         {/* Google Maps-style Compass / Heading Follow Mode Toggle */}
         <button
           type="button"

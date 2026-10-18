@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { GroupMemberInfo, SosAlert, CrewNotification, RiderProfile, RIDER_COLORS, getRiderColor } from '../hooks/useGroupRide';
 import { 
@@ -19,7 +19,8 @@ import {
   Check,
   AlertTriangle,
   Copy,
-  Route
+  Route,
+  Play
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { openGoogleMapsNavigation } from '../utils/navigation';
@@ -116,6 +117,56 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
   const [isConvoyDrawerExpanded, setIsConvoyDrawerExpanded] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  const isAnyLocalModalOpen = isLoginModalOpen || isAddFriendOpen;
+  const localModalHistoryPushedRef = useRef(false);
+
+  // Sync Escape key to dismiss local modals
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsLoginModalOpen(false);
+        setIsAddFriendOpen(false);
+        setJustAddedFriend(null);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Sync Android / browser Back button for local modals
+  useEffect(() => {
+    if (isAnyLocalModalOpen) {
+      if (!localModalHistoryPushedRef.current) {
+        localModalHistoryPushedRef.current = true;
+        try {
+          window.history.pushState({ crewLocalModal: true }, '');
+        } catch {}
+      }
+    } else {
+      if (localModalHistoryPushedRef.current) {
+        localModalHistoryPushedRef.current = false;
+        if (typeof window !== 'undefined' && window.history.state?.crewLocalModal) {
+          try {
+            window.history.back();
+          } catch {}
+        }
+      }
+    }
+  }, [isAnyLocalModalOpen]);
+
+  useEffect(() => {
+    const handlePop = () => {
+      if (localModalHistoryPushedRef.current) {
+        localModalHistoryPushedRef.current = false;
+        setIsLoginModalOpen(false);
+        setIsAddFriendOpen(false);
+        setJustAddedFriend(null);
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
 
   // Synchronize inputs when modal opens or profile changes
   useEffect(() => {
@@ -263,21 +314,48 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                {/* 1-Tap Quick Ride Recording Action */}
+                {isRecording ? (
+                  <button
+                    onClick={() => {
+                      triggerHaptic(50);
+                      if (onStopRecording) onStopRecording();
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-md shadow-rose-950 transition-all active:scale-95"
+                    title="Stop and save active ride to Garage"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    <span>REC ({((totalDistanceMeters || 0) / 1000).toFixed(1)}km)</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      triggerHaptic(50);
+                      if (onStartRecording) onStartRecording();
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-md shadow-emerald-950 transition-all active:scale-95"
+                    title="Start recording GPS ride track"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-current" />
+                    <span>START</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setIsAddFriendOpen(true)}
                   className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                   title="Add friend to this crew"
                 >
                   <Plus className="w-3 h-3" />
-                  <span>Add Friend</span>
+                  <span>Friend</span>
                 </button>
 
                 <button
                   onClick={() => setIsConvoyDrawerExpanded(prev => !prev)}
                   className="text-slate-400 hover:text-white font-mono text-[10px] cursor-pointer"
                 >
-                  {isConvoyDrawerExpanded ? 'Hide' : 'Show Roster'}
+                  {isConvoyDrawerExpanded ? 'Hide' : 'Roster'}
                 </button>
               </div>
             </div>
@@ -423,8 +501,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           RIDER CALLSIGN & RADAR PROFILE MODAL (Instant 1-Tap Broadcast)
       ───────────────────────────────────────────────────────────── */}
       {isLoginModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-3.5 pointer-events-auto max-h-[92vh] overflow-y-auto no-scrollbar">
+        <div 
+          onClick={e => { if (e.target === e.currentTarget) setIsLoginModalOpen(false); }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-3.5 pointer-events-auto max-h-[92vh] overflow-y-auto no-scrollbar cursor-default"
+          >
             
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <div className="flex items-center gap-2">
@@ -579,8 +663,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           ADD FRIEND TO CREW MODAL (With 1-Tap WhatsApp Invite)
       ───────────────────────────────────────────────────────────── */}
       {isAddFriendOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto">
+        <div 
+          onClick={e => { if (e.target === e.currentTarget) { setIsAddFriendOpen(false); setJustAddedFriend(null); } }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto cursor-default"
+          >
             
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <div className="flex items-center gap-2">

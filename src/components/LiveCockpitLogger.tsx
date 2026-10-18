@@ -112,6 +112,19 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Keyboard shortcut listener to close open modals on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showFinishModal) setShowFinishModal(false);
+        if (isShareLocModalOpen) setIsShareLocModalOpen(false);
+        if (showHowItWorks) setShowHowItWorks(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showFinishModal, isShareLocModalOpen, showHowItWorks]);
+
   const toggleCleanHud = () => {
     triggerHaptic(40);
     setIsCleanHud(prev => {
@@ -716,8 +729,14 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
       {/* Finish Ride Modal with Instant Download GPX / Save to Garage Options */}
       {showFinishModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className={`w-full max-w-md p-5 rounded-2xl border shadow-2xl space-y-4 font-mono ${innerCardBg}`}>
+        <div 
+          onClick={e => { if (e.target === e.currentTarget) setShowFinishModal(false); }}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-pointer"
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            className={`w-full max-w-md p-5 rounded-2xl border shadow-2xl space-y-4 font-mono cursor-default ${innerCardBg}`}
+          >
             <div className="flex items-center justify-between border-b pb-3 border-slate-700">
               <div className="flex items-center gap-2">
                 <Square className="w-5 h-5 text-rose-500 fill-current" />

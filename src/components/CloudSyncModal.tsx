@@ -204,8 +204,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const inputBg = isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#0a0f15] border-[#223142] text-white';
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className={`border rounded-2xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+      >
         
         {/* Header */}
         <div className="p-4 border-b flex items-center justify-between gap-3 bg-slate-950/40">

@@ -421,8 +421,14 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
   const previewBorder = isLight ? 'border-slate-300' : 'border-slate-700/60';
 
   return (
-    <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 ${isLight ? 'bg-black/50' : 'bg-black/85'}`}>
-      <div className={`border rounded-2xl w-full max-w-lg max-h-[92dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className={`fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 cursor-pointer ${isLight ? 'bg-black/50' : 'bg-black/85'}`}
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-lg max-h-[92dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+      >
         {/* Header */}
         <div className={`px-4 py-3 border-b flex items-center justify-between ${headerBg}`}>
           <div className="flex items-center gap-2">

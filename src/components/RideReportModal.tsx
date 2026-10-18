@@ -156,8 +156,14 @@ export const RideReportModal: React.FC<RideReportModalProps> = ({
   const cardSectionBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#111922] border-[#1e2a38]';
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn print-modal-overlay">
-      <div className={`border rounded-2xl w-full max-w-4xl max-h-[94dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden print-modal-card ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn print-modal-overlay cursor-pointer"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-4xl max-h-[94dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden print-modal-card cursor-default ${modalBg}`}
+      >
         {/* Modal Header & Quick Actions */}
         <div className={`px-4 sm:px-6 py-3.5 border-b flex items-center justify-between no-print ${cardSectionBg}`}>
           <div className="flex items-center gap-2.5">

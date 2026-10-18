@@ -171,8 +171,14 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   // If garage is locked, show quick numeric PIN screen
   if (isLocked) {
     return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-        <div className={`border rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center space-y-4 ${modalBg}`}>
+      <div 
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
+      >
+        <div 
+          onClick={e => e.stopPropagation()}
+          className={`border rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center space-y-4 cursor-default ${modalBg}`}
+        >
           <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
             <Lock className="w-6 h-6" />
           </div>
@@ -257,8 +263,14 @@ export const GarageModal: React.FC<GarageModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className={`border rounded-2xl w-full max-w-2xl max-h-[90dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-2xl max-h-[90dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+      >
         {/* Header */}
         <div className={`px-4 sm:px-5 py-3.5 border-b flex items-center justify-between ${headerBg}`}>
           <div className="flex items-center gap-2.5">

@@ -108,9 +108,12 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   const footerBg = isLight ? 'border-slate-200' : 'border-[#1e2a38]';
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
+    >
       <div 
-        className={`w-full max-w-lg border rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain ${modalBg}`}
+        className={`w-full max-w-lg border rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain cursor-default ${modalBg}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

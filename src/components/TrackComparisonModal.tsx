@@ -325,8 +325,14 @@ export const TrackComparisonModal: React.FC<TrackComparisonModalProps> = ({
   const cardBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]';
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className={`border rounded-2xl w-full max-w-5xl h-[92vh] max-h-[900px] flex flex-col shadow-2xl overflow-hidden ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-5xl h-[92vh] max-h-[900px] flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+      >
         
         {/* Header Bar */}
         <div className="p-4 border-b flex items-center justify-between gap-3 bg-slate-950/40">

@@ -100,9 +100,13 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
   const subText = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
+    >
       <div
-        className={`w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col max-h-[92dvh] overscroll-contain overflow-hidden ${modalBg} ${
+        onClick={e => e.stopPropagation()}
+        className={`w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col max-h-[92dvh] overscroll-contain overflow-hidden cursor-default ${modalBg} ${
           isLight ? 'border-slate-300' : 'border-[#1e2a38]'
         }`}
       >

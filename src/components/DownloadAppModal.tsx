@@ -45,9 +45,13 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
   const isLight = theme === 'light';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
+    >
       <div 
-        className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl font-mono space-y-4 max-h-[92vh] overflow-y-auto no-scrollbar pointer-events-auto transition-colors ${
+        onClick={e => e.stopPropagation()}
+        className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl font-mono space-y-4 max-h-[92vh] overflow-y-auto no-scrollbar pointer-events-auto transition-colors cursor-default ${
           isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-950 border-slate-700/80 text-white'
         }`}
       >

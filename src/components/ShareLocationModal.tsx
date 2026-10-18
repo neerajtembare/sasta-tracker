@@ -106,8 +106,14 @@ export const ShareLocationModal: React.FC<ShareLocationModalProps> = ({
   const subTextColor = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className={`border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[92vh] ${modalBg}`}>
+    <div 
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className={`border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[92vh] cursor-default ${modalBg}`}
+      >
         
         {/* Header */}
         <div className="p-4 border-b flex items-center justify-between gap-3 bg-slate-950/40">

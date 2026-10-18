@@ -64,12 +64,20 @@ export default function App() {
     return 'crew'; // Direct open app straight to live Crew Radar!
   });
 
-  const setCurrentTab = useCallback((action: AppTab | ((prev: AppTab) => AppTab)) => {
+  const setCurrentTab = useCallback((action: AppTab | ((prev: AppTab) => AppTab), pushHistory: boolean = true) => {
     setCurrentTabState(prev => {
       const next = typeof action === 'function' ? action(prev) : action;
       try {
         localStorage.setItem('sasta_active_tab', next);
       } catch {}
+
+      if (pushHistory && next !== prev && typeof window !== 'undefined') {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('tab', next);
+          window.history.pushState({ sastaTab: next }, '', url.toString());
+        } catch {}
+      }
       return next;
     });
   }, []);
@@ -121,6 +129,70 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
+
+  const isAnyModalOpen = isGarageOpen || isDiagnosticsOpen || isDownloadModalOpen || 
+    isStopEditorOpen || isRideNameEditorOpen || isCalibrationOpen || 
+    isShareModalOpen || isReportModalOpen || isCompareModalOpen || isCloudSyncOpen;
+
+  const modalHistoryPushedRef = useRef(false);
+
+  const closeAllModals = useCallback(() => {
+    setIsGarageOpen(false);
+    setIsDiagnosticsOpen(false);
+    setIsDownloadModalOpen(false);
+    setIsStopEditorOpen(false);
+    setIsRideNameEditorOpen(false);
+    setIsCalibrationOpen(false);
+    setIsShareModalOpen(false);
+    setIsReportModalOpen(false);
+    setIsCompareModalOpen(false);
+    setIsCloudSyncOpen(false);
+  }, []);
+
+  // Sync browser / Android back gesture with open modals
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      if (!modalHistoryPushedRef.current) {
+        modalHistoryPushedRef.current = true;
+        try {
+          window.history.pushState({ sastaModal: true }, '');
+        } catch {}
+      }
+    } else {
+      if (modalHistoryPushedRef.current) {
+        modalHistoryPushedRef.current = false;
+        if (typeof window !== 'undefined' && window.history.state?.sastaModal) {
+          try {
+            window.history.back();
+          } catch {}
+        }
+      }
+    }
+  }, [isAnyModalOpen]);
+
+  // Global popstate handler for back / forward navigation and modal dismissal
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      // 1. If any modal was open when user pressed back -> close all modals and consume pop
+      if (modalHistoryPushedRef.current) {
+        modalHistoryPushedRef.current = false;
+        closeAllModals();
+        return;
+      }
+
+      // 2. Otherwise navigate between tabs
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tab = (e.state?.sastaTab || params.get('tab')) as AppTab;
+        if (tab && ['home', 'analysis', 'cockpit', 'crew', 'faq'].includes(tab)) {
+          setCurrentTab(tab, false);
+        }
+      } catch {}
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [closeAllModals, setCurrentTab]);
   const groupRide = useGroupRide();
   const [myLocation, setMyLocation] = useState<{
     lat: number;
@@ -217,14 +289,7 @@ export default function App() {
       if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
 
       if (e.key === 'Escape') {
-        setIsDiagnosticsOpen(false);
-        setIsGarageOpen(false);
-        setIsDownloadModalOpen(false);
-        setIsStopEditorOpen(false);
-        setIsRideNameEditorOpen(false);
-        setIsCalibrationOpen(false);
-        setIsShareModalOpen(false);
-        setIsReportModalOpen(false);
+        closeAllModals();
         return;
       }
 

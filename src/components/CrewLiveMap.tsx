@@ -153,6 +153,18 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     };
   }, []);
 
+  // Keyboard shortcut listener to close open overlays on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isLeaveModalOpen) setIsLeaveModalOpen(false);
+        if (isLayerPopoverOpen) setIsLayerPopoverOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isLeaveModalOpen, isLayerPopoverOpen]);
+
   // Current heading from myLocation
   const myHeading = myLocation?.heading !== null && myLocation?.heading !== undefined ? myLocation.heading : null;
 
@@ -889,8 +901,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           SAFETY LEAVE CONFIRMATION MODAL
       ───────────────────────────────────────────────────────────── */}
       {isLeaveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-4 shadow-2xl font-mono space-y-3 pointer-events-auto">
+        <div 
+          onClick={e => { if (e.target === e.currentTarget) setIsLeaveModalOpen(false); }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-4 shadow-2xl font-mono space-y-3 pointer-events-auto cursor-default"
+          >
             <div className="flex items-center gap-2 text-rose-400 font-heading font-black text-sm uppercase tracking-wider">
               <LogOut className="w-4 h-4" />
               <span>{isHost ? 'End Crew Ride?' : 'Leave Crew Radar?'}</span>

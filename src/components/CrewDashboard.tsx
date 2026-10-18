@@ -22,6 +22,7 @@ import {
   Copy
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
+import { openGoogleMapsNavigation } from '../utils/navigation';
 import { CrewLiveMap } from './CrewLiveMap';
 
 interface CrewDashboardProps {
@@ -209,6 +210,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         totalDistanceMeters={totalDistanceMeters}
         onOpenCrewManage={() => setIsLoginModalOpen(true)}
         focusedRiderId={focusedRiderId}
+        onSelectRider={(id) => setFocusedRiderId(id)}
         activeRoute={activeRoute}
       />
 
@@ -309,7 +311,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 {members.map(m => {
                   const isOnline = m.isOnline !== false;
                   const isStopped = m.location?.status === 'stopped' || (m.location?.speedKmh || 0) < 2.5;
-                  const speedText = m.location ? `${Math.round(m.location.speedKmh)} km/h` : 'Active';
                   const distText = m.distanceFromMeMeters !== undefined
                     ? m.distanceFromMeMeters < 1000
                       ? `${Math.round(m.distanceFromMeMeters)}m`
@@ -325,9 +326,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                           triggerHaptic(20);
                         }
                       }}
-                      className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[170px] ${
+                      className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[190px] ${
                         focusedRiderId === m.riderId
-                          ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50'
+                          ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50 ring-1 ring-cyan-400/50'
                           : isOnline
                           ? 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
                           : 'bg-slate-950/70 border-slate-800/60 opacity-60'
@@ -339,26 +340,43 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       >
                         {m.name.charAt(0).toUpperCase()}
                       </div>
-                      <div className="truncate">
-                        <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-white truncate">
+                      <div className="truncate flex-1">
+                        <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
                           <span className="truncate">{m.name}</span>
                           {distText && (
-                            <span className="text-[9px] text-cyan-400 font-normal">({distText})</span>
+                            <span className="text-[10px] text-cyan-400 font-bold shrink-0">{distText}</span>
                           )}
                         </div>
-                        <div className="text-[10px] font-mono flex items-center gap-1">
-                          {isOnline ? (
-                            <>
-                              <span className={`w-1.5 h-1.5 rounded-full ${isStopped ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                              <span className={isStopped ? 'text-amber-300' : 'text-emerald-300'}>
-                                {isStopped ? 'Stopped' : speedText}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                              <span className="text-slate-400">Offline</span>
-                            </>
+                        <div className="text-[10px] font-mono flex items-center justify-between gap-1 mt-0.5">
+                          <div className="flex items-center gap-1">
+                            {isOnline ? (
+                              <>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isStopped ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+                                <span className={isStopped ? 'text-amber-300' : 'text-emerald-300'}>
+                                  {isStopped ? 'Stopped' : 'Cruising'}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                <span className="text-slate-400">Offline</span>
+                              </>
+                            )}
+                          </div>
+                          {m.location && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic(25);
+                                openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors"
+                              title={`Navigate to ${m.name} via Google Maps`}
+                            >
+                              <Navigation className="w-2.5 h-2.5" />
+                              <span>Nav</span>
+                            </button>
                           )}
                         </div>
                       </div>

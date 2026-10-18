@@ -5,7 +5,8 @@ import {
   SosAlert, 
   CrewNotification, 
   SharedRouteInfo, 
-  RIDER_COLORS 
+  RIDER_COLORS,
+  ActiveVoiceBlast
 } from '../hooks/useGroupRide';
 import { 
   Users, 
@@ -28,6 +29,7 @@ import {
 import { triggerHaptic } from '../utils/audioChimes';
 import { openGoogleMapsNavigation } from '../utils/navigation';
 import { CrewLiveMap } from './CrewLiveMap';
+import { VoiceBlastPttButton, VoiceBlastBanner } from './VoiceBlastPtt';
 
 interface CrewDashboardProps {
   roomCode?: string;
@@ -72,6 +74,9 @@ interface CrewDashboardProps {
   isOnRadar?: boolean;
   onToggleRadar?: (enable?: boolean) => void;
   onJoinSharedRoute?: (route: SharedRouteInfo) => void;
+  activeVoiceBlast?: ActiveVoiceBlast | null;
+  onDismissVoiceBlast?: () => void;
+  onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -108,6 +113,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   isOnRadar = true,
   onToggleRadar,
   onJoinSharedRoute,
+  activeVoiceBlast = null,
+  onDismissVoiceBlast,
+  onSendVoiceBlast,
 }) => {
   const isLight = theme === 'light';
 
@@ -301,6 +309,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       <div className="absolute bottom-[calc(4.2rem+env(safe-area-inset-bottom))] sm:bottom-3 left-2 right-2 sm:left-4 sm:right-4 z-20 pointer-events-none flex flex-col gap-2">
         <div className="max-w-4xl mx-auto w-full space-y-2 pointer-events-auto">
           
+          {/* Incoming Voice Intercom Audio Banner */}
+          {activeVoiceBlast && (
+            <VoiceBlastBanner 
+              activeBlast={activeVoiceBlast} 
+              onDismiss={onDismissVoiceBlast} 
+            />
+          )}
+
           {/* Active Planned Route & Google Maps Voice Navigation Bar */}
           {activeRoute && (
             <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/92 backdrop-blur-md border border-cyan-500/50 shadow-xl font-mono text-xs">
@@ -449,6 +465,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                       </>
                     )}
                   </button>
+                )}
+
+                {/* 1-Tap / Hold Walkie-Talkie Push-To-Talk Voice Blast Button */}
+                {onSendVoiceBlast && (
+                  <VoiceBlastPttButton
+                    onSendVoiceBlast={onSendVoiceBlast}
+                    compact={true}
+                  />
                 )}
 
                 <button

@@ -39,9 +39,10 @@ import {
 import { triggerHaptic } from '../utils/audioChimes';
 import { GroupRideHud } from './GroupRideHud';
 import { ShareLocationModal } from './ShareLocationModal';
-import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
+import { GroupMemberInfo, SosAlert, ActiveVoiceBlast } from '../hooks/useGroupRide';
 import { Gyro3DVisualizer } from './Gyro3DVisualizer';
 import { checkBatteryOptimizationStatus, requestBatteryOptimizationExemption } from '../utils/nativeKeepAlive';
+import { VoiceBlastBanner } from './VoiceBlastPtt';
 
 interface LiveCockpitLoggerProps {
   onRideRecorded: (gpxString: string) => void;
@@ -58,6 +59,9 @@ interface LiveCockpitLoggerProps {
   onOpenGroupRideModal?: () => void;
   onTriggerSos?: () => void;
   onUpdateMyLocation?: (lat: number, lon: number, speedKmh: number, bearing: number | null) => void;
+  activeVoiceBlast?: ActiveVoiceBlast | null;
+  onDismissVoiceBlast?: () => void;
+  onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
 }
 
 export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
@@ -75,6 +79,9 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   onOpenGroupRideModal,
   onTriggerSos,
   onUpdateMyLocation,
+  activeVoiceBlast = null,
+  onDismissVoiceBlast,
+  onSendVoiceBlast,
 }) => {
   const isLight = theme === 'light';
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -520,6 +527,13 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           </div>
         </div>
 
+        {/* Active Incoming Voice Blast Intercom Banner */}
+        {activeVoiceBlast && (
+          <div className="mb-1.5">
+            <VoiceBlastBanner activeBlast={activeVoiceBlast} onDismiss={onDismissVoiceBlast} />
+          </div>
+        )}
+
         {/* Group Ride Live Crew HUD (Portrait only) */}
         {groupRideConnected && groupRoomCode && !isCleanHud && (
           <div className="landscape:hidden">
@@ -528,6 +542,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               members={groupMembers || []}
               sosAlert={sosAlert || null}
               onOpenModal={() => onOpenGroupRideModal?.()}
+              onSendVoiceBlast={onSendVoiceBlast}
               onTriggerSos={() => {
                 if (window.confirm('🚨 Broadcast EMERGENCY REGROUP alert to all crew riders?')) {
                   onTriggerSos?.();

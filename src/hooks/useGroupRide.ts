@@ -9,6 +9,7 @@ import {
 } from '../utils/audioChimes';
 import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
+import { playVoiceBlastAudio } from '../utils/voiceBlast';
 
 export interface GroupRiderLocation {
   riderId: string;
@@ -60,6 +61,26 @@ export interface SosAlert {
   fromName: string;
   lat: number;
   lon: number;
+  timestamp: number;
+}
+
+export interface VoiceBlastPayload {
+  riderId: string;
+  riderName: string;
+  bikeModel?: string;
+  color?: string;
+  audioBase64: string;
+  durationMs: number;
+  mimeType?: string;
+  timestamp: number;
+}
+
+export interface ActiveVoiceBlast {
+  riderId: string;
+  riderName: string;
+  bikeModel?: string;
+  color?: string;
+  durationMs: number;
   timestamp: number;
 }
 
@@ -213,6 +234,8 @@ export function useGroupRide() {
   const [members, setMembers] = useState<Map<string, GroupMemberInfo>>(new Map());
   const [sosAlert, setSosAlert] = useState<SosAlert | null>(null);
   const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
+  const [activeVoiceBlast, setActiveVoiceBlast] = useState<ActiveVoiceBlast | null>(null);
+  const voiceBlastTimeoutRef = useRef<any>(null);
 
   // References
   const profileRef = useRef<RiderProfile>(profile);
@@ -357,6 +380,26 @@ export function useGroupRide() {
           membersRef.current = next;
           return next;
         });
+      }
+    } else if (data.type === 'VOICE_BLAST') {
+      const blast: VoiceBlastPayload = data.payload;
+      if (blast && blast.riderId && blast.riderId !== currentMyId && blast.audioBase64) {
+        // Automatically play voice blast through connected Bluetooth helmet intercom (Sena/Cardo/AirPods)
+        playVoiceBlastAudio(blast.audioBase64, blast.mimeType || 'audio/webm');
+
+        if (voiceBlastTimeoutRef.current) clearTimeout(voiceBlastTimeoutRef.current);
+        setActiveVoiceBlast({
+          riderId: blast.riderId,
+          riderName: blast.riderName || 'Rider',
+          bikeModel: blast.bikeModel,
+          color: blast.color || getRiderColor(blast.riderId),
+          durationMs: blast.durationMs || 3000,
+          timestamp: blast.timestamp || Date.now(),
+        });
+        postCrewNotification(`🗣️ Voice blast from ${blast.riderName || 'Rider'}`, 'info');
+        voiceBlastTimeoutRef.current = setTimeout(() => {
+          setActiveVoiceBlast(null);
+        }, (blast.durationMs || 3000) + 2500);
       }
     }
   }, [postCrewNotification]);
@@ -739,6 +782,25 @@ export function useGroupRide() {
     return base;
   }, []);
 
+  const sendVoiceBlast = useCallback((audioBase64: string, durationMs: number, mimeType: string = 'audio/webm') => {
+    if (!audioBase64) return;
+    const payload: VoiceBlastPayload = {
+      riderId: profileRef.current.id,
+      riderName: profileRef.current.name,
+      bikeModel: profileRef.current.bikeModel,
+      color: profileRef.current.color,
+      audioBase64,
+      durationMs,
+      mimeType,
+      timestamp: Date.now(),
+    };
+    broadcastPayload({
+      type: 'VOICE_BLAST',
+      payload,
+    });
+    postCrewNotification(`🎙️ Voice blast sent to crew radar!`, 'info');
+  }, [broadcastPayload, postCrewNotification]);
+
   const membersArray = useMemo(() => Array.from(members.values()), [members]);
   const squadFriendsArray = useMemo(() => getAllSquadFriends(), [getAllSquadFriends]);
 
@@ -763,6 +825,9 @@ export function useGroupRide() {
     sosAlert,
     crewNotification,
     dismissCrewNotification: () => setCrewNotification(null),
+    activeVoiceBlast,
+    dismissVoiceBlast: () => setActiveVoiceBlast(null),
+    sendVoiceBlast,
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),

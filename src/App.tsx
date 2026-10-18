@@ -1065,6 +1065,9 @@ export default function App() {
             onOpenGroupRideModal={() => setCurrentTab('crew')}
             onTriggerSos={groupRide.triggerSos}
             onUpdateMyLocation={handleUpdateMyLocation}
+            activeVoiceBlast={groupRide.activeVoiceBlast}
+            onDismissVoiceBlast={groupRide.dismissVoiceBlast}
+            onSendVoiceBlast={groupRide.sendVoiceBlast}
           />
         </div>
 
@@ -1109,6 +1112,9 @@ export default function App() {
               isOnRadar={groupRide.isOnRadar}
               onToggleRadar={groupRide.toggleOnRadar}
               onJoinSharedRoute={handleJoinSharedRoute}
+              activeVoiceBlast={groupRide.activeVoiceBlast}
+              onDismissVoiceBlast={groupRide.dismissVoiceBlast}
+              onSendVoiceBlast={groupRide.sendVoiceBlast}
             />
           </div>
         )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ShieldAlert, 
   Play, 
@@ -14,7 +14,7 @@ import {
   Route as RouteIcon,
   Radio
 } from 'lucide-react';
-import { triggerHaptic } from '../utils/audioChimes';
+import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
 import { GroupMemberInfo } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
@@ -62,6 +62,57 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   const isLight = theme === 'light';
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCalloutOpen, setIsCalloutOpen] = useState(false);
+  const [sosCountdown, setSosCountdown] = useState<number | null>(null);
+  const sosTimerRef = useRef<any>(null);
+  const [isConfirmStopOpen, setIsConfirmStopOpen] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (sosTimerRef.current) clearInterval(sosTimerRef.current);
+    };
+  }, []);
+
+  const handleStartSosCountdown = () => {
+    if (sosCountdown !== null) {
+      handleCancelSos();
+      return;
+    }
+    triggerHaptic(50);
+    playWarningChime();
+    setSosCountdown(3);
+
+    let remaining = 3;
+    sosTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(sosTimerRef.current);
+        sosTimerRef.current = null;
+        setSosCountdown(null);
+        onTriggerSos();
+      } else {
+        setSosCountdown(remaining);
+        triggerHaptic(40);
+      }
+    }, 1000);
+  };
+
+  const handleCancelSos = () => {
+    triggerHaptic(30);
+    if (sosTimerRef.current) {
+      clearInterval(sosTimerRef.current);
+      sosTimerRef.current = null;
+    }
+    setSosCountdown(null);
+  };
+
+  const handleRecordButtonClick = () => {
+    triggerHaptic(40);
+    if (isRecording) {
+      setIsConfirmStopOpen(true);
+    } else {
+      onToggleRecording?.();
+    }
+  };
 
   // Active online squad members (excluding self)
   const otherRiders = members;
@@ -285,6 +336,64 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           </div>
         )}
 
+        {/* Active Emergency SOS 3-Second Abort Countdown Banner */}
+        {sosCountdown !== null && (
+          <div className="p-3 rounded-2xl bg-rose-950/98 border-2 border-rose-500 text-white flex items-center justify-between shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-6 h-6 text-rose-400 fill-current animate-ping" />
+              <div>
+                <div className="font-heading font-black text-xs uppercase text-rose-300">
+                  Broadcasting SOS in {sosCountdown}s...
+                </div>
+                <div className="text-[10px] text-slate-300 font-sans">Accidental tap? Tap Cancel below</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelSos}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs border border-rose-400 cursor-pointer shadow-md active:scale-95 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Accidental Stop Recording Confirmation Sheet */}
+        {isConfirmStopOpen && (
+          <div className="p-3.5 rounded-2xl bg-[#0d131a]/98 border border-slate-700 text-white space-y-3 shadow-2xl animate-in slide-in-from-bottom-2 duration-150">
+            <div className="flex items-center gap-2.5">
+              <span className="text-2xl">🏁</span>
+              <div>
+                <div className="font-heading font-black text-xs uppercase text-white">
+                  Finish this ride session?
+                </div>
+                <div className="text-[11px] text-slate-400 font-sans">
+                  You have recorded {(recordedDistanceMeters / 1000).toFixed(1)} km so far.
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1 font-mono">
+              <button
+                type="button"
+                onClick={() => setIsConfirmStopOpen(false)}
+                className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+              >
+                Keep Riding
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmStopOpen(false);
+                  onToggleRecording?.();
+                }}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-900/30 transition-colors"
+              >
+                Finish & Save
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ─────────────────────────────────────────────────────────────
             MINIMALIST BOTTOM STRIP (DEFAULT 48px COLLAPSED VIEW)
         ───────────────────────────────────────────────────────────── */}
@@ -293,19 +402,20 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             ? 'bg-white/95 border-slate-300 text-slate-800'
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white'
         }`}>
-          {/* Left: Emergency SOS Button (Glove-Friendly & Direct) */}
+          {/* Left: Emergency SOS Button (Glove-Friendly & Direct with 3s abort) */}
           <button
             id="btn-emergency-sos"
             type="button"
-            onClick={() => {
-              triggerHaptic(50);
-              onTriggerSos();
-            }}
-            title="Broadcast emergency SOS to all squad riders"
-            className="h-10 px-3 min-w-[54px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg shadow-rose-950/60 cursor-pointer transition-all active:scale-95 shrink-0"
+            onClick={handleStartSosCountdown}
+            title={sosCountdown !== null ? 'Click to cancel SOS' : 'Hold to broadcast emergency SOS (3s countdown)'}
+            className={`h-10 px-3 min-w-[54px] rounded-xl text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0 ${
+              sosCountdown !== null
+                ? 'bg-rose-700 ring-2 ring-white animate-pulse'
+                : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/60'
+            }`}
           >
             <ShieldAlert className="w-4 h-4 fill-current animate-pulse" />
-            <span>SOS</span>
+            <span>{sosCountdown !== null ? `${sosCountdown}s` : 'SOS'}</span>
           </button>
 
           {/* Quick Callout Intent Button (Fuel, Chai, Regroup) */}
@@ -370,15 +480,12 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             <ChevronUp className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
           </div>
 
-          {/* Right: Glove-Friendly Ride Recording Button */}
+          {/* Right: Glove-Friendly Ride Recording Button with Confirmation */}
           {onToggleRecording && (
             <button
               id="btn-convoy-record-toggle"
               type="button"
-              onClick={() => {
-                triggerHaptic(40);
-                onToggleRecording();
-              }}
+              onClick={handleRecordButtonClick}
               title={isRecording ? 'Stop & save ride track' : 'Start tracking GPS ride'}
               className={`h-10 px-3.5 min-w-[64px] rounded-xl font-mono text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
                 isRecording

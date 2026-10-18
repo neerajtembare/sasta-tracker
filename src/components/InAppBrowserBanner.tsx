@@ -30,7 +30,7 @@ export const InAppBrowserBanner: React.FC = () => {
   if (!showBanner) return null;
 
   return (
-    <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 font-mono text-xs px-3 py-2 flex items-center justify-between gap-2 shadow-md shrink-0 border-b border-amber-600">
+    <div className="relative z-50 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 font-mono text-xs px-3 py-2 flex items-center justify-between gap-2 shadow-lg shrink-0 border-b border-amber-600">
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-base shrink-0">⚠️</span>
         <p className="truncate sm:whitespace-normal font-bold">

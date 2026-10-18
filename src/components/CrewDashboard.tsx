@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { 
   GroupMemberInfo, 
@@ -13,6 +13,7 @@ import { TopMapCapsule } from './TopMapCapsule';
 import { ConvoyBottomStrip } from './ConvoyBottomStrip';
 import { AppDrawer } from './AppDrawer';
 import { CalloutBanner } from './CalloutBanner';
+import { FirstLaunchNameModal } from './FirstLaunchNameModal';
 import { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface FinishedRideSummary {
@@ -75,6 +76,7 @@ interface CrewDashboardProps {
   activeCallout?: RiderCallout | null;
   onDismissCallout?: () => void;
   onSendCallout?: (preset: CalloutPreset) => void;
+  gpsError?: string | null;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -123,7 +125,33 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   activeCallout = null,
   onDismissCallout,
   onSendCallout,
+  gpsError = null,
 }) => {
+  // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
+  useEffect(() => {
+    let sentinel: any = null;
+    const requestLock = async () => {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+        try {
+          sentinel = await (navigator as any).wakeLock.request('screen');
+        } catch {}
+      }
+    };
+    requestLock();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') requestLock();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      try {
+        sentinel?.release();
+      } catch {}
+    };
+  }, []);
+
   // Navigation & Settings Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -216,6 +244,39 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onDismiss={onDismissCallout || (() => {})}
         theme={theme}
       />
+
+      {/* ─────────────────────────────────────────────────────────────
+          2C. GPS LOCATION PERMISSION / ERROR NOTICE
+      ───────────────────────────────────────────────────────────── */}
+      {gpsError && (
+        <div 
+          style={{
+            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-40 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
+        >
+          <div className="pointer-events-auto w-full max-w-md p-3 sm:p-3.5 rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-white font-mono text-xs shadow-2xl backdrop-blur-md flex items-start gap-2.5">
+            <span className="text-xl shrink-0">📍</span>
+            <div className="min-w-0 flex-1">
+              <div className="font-heading font-black text-xs uppercase tracking-wider text-rose-300">
+                GPS Location Notice
+              </div>
+              <p className="text-[11px] text-slate-200 font-sans mt-0.5 leading-relaxed">
+                {gpsError}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md active:scale-95 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           3. SLIM GOOGLE MAPS-STYLE BOTTOM CONVOY STRIP
@@ -343,6 +404,17 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           onOpenDownloadApp?.();
         }}
         onOpenFaq={onOpenFaq}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          6. FIRST-LAUNCH 1-STEP CALLSIGN / NAME ONBOARDING MODAL
+      ───────────────────────────────────────────────────────────── */}
+      <FirstLaunchNameModal
+        currentName={riderName}
+        currentBike={bikeModel}
+        currentColor={myColor}
+        onSaveProfile={(name, bike, color) => onUpdateRiderName(name, bike, color)}
+        theme={theme}
       />
     </div>
   );

@@ -759,8 +759,8 @@ export default function App() {
         />
       )}
 
-      {/* In-App Browser Helper Banner (only on secondary views) */}
-      {currentTab !== 'crew' && <InAppBrowserBanner />}
+      {/* In-App Browser Helper Banner (surfaced across all views including live map) */}
+      <InAppBrowserBanner />
 
       {/* Global Callout Flash Banner for secondary tabs */}
       {currentTab !== 'crew' && (
@@ -1201,6 +1201,7 @@ export default function App() {
               activeCallout={groupRide.activeCallout}
               onDismissCallout={groupRide.dismissCallout}
               onSendCallout={groupRide.sendCallout}
+              gpsError={gps.gpsError}
             />
           </div>
         )}

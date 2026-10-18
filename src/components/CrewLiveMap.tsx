@@ -136,9 +136,26 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const routeGlowPolylineRef = useRef<L.Polyline | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
 
-  // Orientation & Compass state (Solves "map is inverted" on motorcycle mounts)
-  const [orientationMode, setOrientationMode] = useState<'north' | 'course'>('north');
+  // Orientation & Compass state (Course-Up direction follow vs North-Up)
+  const [orientationMode, setOrientationMode] = useState<'north' | 'course'>(() => {
+    try {
+      const saved = localStorage.getItem('sasta_map_orientation');
+      if (saved === 'north' || saved === 'course') return saved;
+    } catch {}
+    return 'course'; // Default to course-up (direction follow) for live motorcycle navigation
+  });
   const [isFlipped180, setIsFlipped180] = useState<boolean>(false);
+
+  const handleToggleOrientation = () => {
+    triggerHaptic(25);
+    setOrientationMode(prev => {
+      const next = prev === 'course' ? 'north' : 'course';
+      try {
+        localStorage.setItem('sasta_map_orientation', next);
+      } catch {}
+      return next;
+    });
+  };
 
   // Offline route tile caching state
   const [isCachingRoute, setIsCachingRoute] = useState(false);
@@ -1143,8 +1160,38 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
           right: 'max(0.75rem, env(safe-area-inset-right))',
         }}
-        className="absolute z-20 flex flex-col gap-2 pointer-events-auto"
+        className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto"
       >
+        {/* Google Maps-style Compass / Heading Follow Mode Toggle */}
+        <button
+          type="button"
+          onClick={handleToggleOrientation}
+          className={`w-11 h-11 rounded-full backdrop-blur-md border shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-90 ${
+            orientationMode === 'course'
+              ? 'bg-slate-950/95 border-cyan-400 text-cyan-300 ring-2 ring-cyan-400/30'
+              : 'bg-slate-950/90 border-slate-700 text-slate-400 hover:border-slate-500'
+          }`}
+          title={orientationMode === 'course' ? 'Course-Up (Map rotates with bike) • Tap for North-Up' : 'North-Up • Tap for Course-Up (Direction Follow)'}
+          aria-label="Toggle Map Orientation"
+        >
+          <div 
+            style={{ 
+              transform: `rotate(${orientationMode === 'course' && myHeading !== null ? -myHeading : 0}deg)`,
+              transition: 'transform 0.25s ease'
+            }}
+            className="flex flex-col items-center justify-center pointer-events-none"
+          >
+            {/* Red North Needle */}
+            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[8px] border-b-rose-500" />
+            {/* Silver South Needle */}
+            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-t-[8px] border-t-slate-300" />
+          </div>
+          <span className="text-[7.5px] font-black tracking-tighter mt-0.5 leading-none text-slate-400">
+            {orientationMode === 'course' ? 'HDG' : 'N'}
+          </span>
+        </button>
+
+        {/* Recenter FAB */}
         <button
           onClick={handleRecenterMe}
           className={`w-12 h-12 rounded-full backdrop-blur-md border shadow-2xl flex items-center justify-center cursor-pointer transition-all active:scale-90 ${

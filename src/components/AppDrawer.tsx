@@ -19,7 +19,9 @@ import {
   Bike,
   Sparkles,
   Gauge,
-  BatteryCharging
+  BatteryCharging,
+  Power,
+  Compass
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
@@ -43,6 +45,10 @@ interface AppDrawerProps {
   onOpenCockpit: () => void;
   onOpenDownloadApp: () => void;
   onOpenFaq?: () => void;
+  isOnRadar?: boolean;
+  onToggleRadar?: () => void;
+  orientationMode?: 'north' | 'course';
+  onToggleOrientation?: () => void;
 }
 
 const COLOR_OPTIONS = [
@@ -74,6 +80,10 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   onOpenCockpit,
   onOpenDownloadApp,
   onOpenFaq,
+  isOnRadar = true,
+  onToggleRadar,
+  orientationMode = 'course',
+  onToggleOrientation,
 }) => {
   const isLight = theme === 'light';
 
@@ -88,11 +98,14 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setNameInput(riderName);
+      setBikeInput(bikeModel);
+      setSelectedColor(myColor);
       checkBatteryOptimizationStatus().then(ignored => {
         setIsBatteryIgnored(ignored);
       });
     }
-  }, [isOpen]);
+  }, [isOpen, riderName, bikeModel, myColor]);
 
   if (!isOpen) return null;
 
@@ -139,7 +152,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             </div>
             <div>
               <div className="font-heading font-black text-sm tracking-wider uppercase text-white">
-                Sasta Tracker
+                ThrottleLog
               </div>
               <div className="text-[10px] text-slate-400">
                 Motorcycle Crew & Ride Radar
@@ -159,7 +172,54 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         <div className="flex-1 px-4 py-3 space-y-4 text-xs">
           
           {/* ─────────────────────────────────────────────────────────────
-              1. RIDER PROFILE CARD
+              1. RADAR TRACKING & BATTERY SAVER MODE
+          ───────────────────────────────────────────────────────────── */}
+          <div className={`p-3 rounded-2xl border transition-all ${
+            isOnRadar 
+              ? 'bg-emerald-950/20 border-emerald-500/30' 
+              : 'bg-rose-950/20 border-rose-500/30'
+          }`}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                Radar Status & Battery
+              </span>
+              <span className={`flex items-center gap-1 text-[10px] font-bold ${
+                isOnRadar ? 'text-emerald-400' : 'text-rose-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  isOnRadar ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                }`} />
+                <span>{isOnRadar ? 'LIVE' : 'OFFLINE'}</span>
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed font-sans mb-2.5">
+              {isOnRadar 
+                ? 'Your location is broadcasting to your squad on the live map.'
+                : 'Offline mode disables GPS broadcast and background processes to conserve phone battery.'}
+            </p>
+
+            {onToggleRadar && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(30);
+                  onToggleRadar();
+                }}
+                className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md ${
+                  isOnRadar
+                    ? 'bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                <Power className="w-4 h-4" />
+                <span>{isOnRadar ? 'Go Offline (Battery Saver)' : 'Go Live on Crew Radar'}</span>
+              </button>
+            )}
+          </div>
+
+          {/* ─────────────────────────────────────────────────────────────
+              2. RIDER PROFILE CARD
           ───────────────────────────────────────────────────────────── */}
           <div className={`p-3 rounded-2xl border transition-all ${
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
@@ -188,7 +248,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                     type="text"
                     value={nameInput}
                     onChange={(e) => setNameInput(e.target.value)}
-                    maxLength={16}
+                    maxLength={18}
                     placeholder="e.g. Neeraj"
                     className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-slate-700 text-white font-bold text-xs focus:outline-hidden focus:border-cyan-400"
                   />
@@ -200,7 +260,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                     type="text"
                     value={bikeInput}
                     onChange={(e) => setBikeInput(e.target.value)}
-                    maxLength={20}
+                    maxLength={22}
                     placeholder="e.g. Hunter 350 / Duke 390"
                     className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-slate-700 text-white text-xs focus:outline-hidden focus:border-cyan-400"
                   />
@@ -240,7 +300,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                     color: isLight ? '#0f172a' : '#ffffff',
                   }}
                 >
-                  {riderName.slice(0, 1).toUpperCase()}
+                  {riderName ? riderName.slice(0, 1).toUpperCase() : 'R'}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-bold text-white text-sm truncate flex items-center gap-1.5">
@@ -257,98 +317,107 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              2. GLOBAL CREW RADAR & WHATSAPP INVITE
+              3. MAP STYLE & ORIENTATION
           ───────────────────────────────────────────────────────────── */}
-          <div className={`p-3 rounded-2xl border transition-all space-y-2.5 ${
+          <div className={`p-3 rounded-2xl border transition-all space-y-3 ${
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
           }`}>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                Live Crew Radar
+            <div>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1.5">
+                Map Style
               </span>
-              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>ACTIVE</span>
-              </span>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onChangeMapLayer('dark');
+                  }}
+                  className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
+                    mapLayer === 'dark'
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Dark
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onChangeMapLayer('streets');
+                  }}
+                  className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
+                    mapLayer === 'streets'
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Street
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onChangeMapLayer('satellite');
+                  }}
+                  className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
+                    mapLayer === 'satellite'
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Satellite
+                </button>
+              </div>
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-              All riders on Sasta Tracker are automatically connected together on the live radar. Zero room codes, zero typing.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic(25);
-                onShareWhatsApp();
-              }}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-            >
-              <Share2 className="w-4 h-4" />
-              <span>Invite Friends to Ride via WhatsApp</span>
-            </button>
+            {/* Map Orientation Mode */}
+            {onToggleOrientation && (
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block">
+                    Map Orientation
+                  </span>
+                  <span className="text-[11px] text-slate-300 font-sans">
+                    {orientationMode === 'course' ? 'Heading-Up (Follows bike)' : 'North-Up (Static)'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(20);
+                    onToggleOrientation();
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Toggle</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              3. MAP STYLE / LAYER PICKER (MOVED FROM MAIN MAP TO DRAWER)
+              4. WHATSAPP SQUAD INVITE
           ───────────────────────────────────────────────────────────── */}
-          <div className={`p-3 rounded-2xl border transition-all ${
-            isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
-          }`}>
-            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-2">
-              Map Style
-            </span>
-
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(20);
-                  onChangeMapLayer('dark');
-                }}
-                className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
-                  mapLayer === 'dark'
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
-                    : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                Dark
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(20);
-                  onChangeMapLayer('streets');
-                }}
-                className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
-                  mapLayer === 'streets'
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
-                    : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                Street
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(20);
-                  onChangeMapLayer('satellite');
-                }}
-                className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
-                  mapLayer === 'satellite'
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
-                    : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                Satellite
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(25);
+              onShareWhatsApp();
+            }}
+            className="w-full py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-95"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Invite Friends via WhatsApp</span>
+          </button>
 
           {/* ─────────────────────────────────────────────────────────────
-              4. APP NAVIGATION SHORTCUTS (MY RIDES, COCKPIT)
+              5. APP NAVIGATION SHORTCUTS (MY RIDES, COCKPIT)
           ───────────────────────────────────────────────────────────── */}
           <div className="space-y-1.5">
             {/* My Rides / Garage */}
@@ -397,7 +466,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              5. PREFERENCES & SETTINGS (UNITS, THEME, APK)
+              6. PREFERENCES & SETTINGS (UNITS, THEME)
           ───────────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-2 pt-1">
             {/* Unit Toggle */}
@@ -450,7 +519,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-              Lock your phone in your pocket or use Google Maps. Sasta Tracker runs in the background and broadcasts your live position to your riding crew.
+              Lock your phone in your pocket or use Google Maps. ThrottleLog runs in the background and broadcasts your live position to your riding crew.
             </p>
 
             {!isBatteryIgnored && (
@@ -480,13 +549,13 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
             <Smartphone className="w-4 h-4 text-emerald-400" />
-            <span>Download Android Standalone APK</span>
+            <span>Download ThrottleLog Android APK (v1.1.0)</span>
           </button>
         </div>
 
         {/* Footer */}
         <div className="px-4 py-2.5 border-t border-slate-800/80 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
-          <span>Sasta Tracker • v1.1</span>
+          <span>ThrottleLog • v1.1.0</span>
           {onOpenFaq && (
             <button
               type="button"

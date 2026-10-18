@@ -14,6 +14,7 @@ import { ConvoyBottomStrip } from './ConvoyBottomStrip';
 import { AppDrawer } from './AppDrawer';
 import { CalloutBanner } from './CalloutBanner';
 import { FirstLaunchNameModal } from './FirstLaunchNameModal';
+import { RiderProfileModal } from './RiderProfileModal';
 import { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface FinishedRideSummary {
@@ -128,19 +129,22 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   gpsError = null,
 }) => {
   // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
+  // When user goes Offline and is not recording, WakeLock is released to conserve battery
   useEffect(() => {
     let sentinel: any = null;
     const requestLock = async () => {
-      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (isOnRadar || isRecording)) {
         try {
           sentinel = await (navigator as any).wakeLock.request('screen');
         } catch {}
       }
     };
-    requestLock();
+    if (isOnRadar || isRecording) {
+      requestLock();
+    }
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible') requestLock();
+      if (document.visibilityState === 'visible' && (isOnRadar || isRecording)) requestLock();
     };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -150,10 +154,13 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         sentinel?.release();
       } catch {}
     };
-  }, []);
+  }, [isOnRadar, isRecording]);
 
   // Navigation & Settings Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Rider Profile Modal State (dedicated callsign & bike manager)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Map Tile Layer Style (Dark, Street, Satellite)
   const [mapLayer, setMapLayer] = useState<MapLayerType>(() => {
@@ -181,7 +188,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
 
   const handleShareWhatsApp = () => {
     const inviteUrl = getFriendInviteUrl ? getFriendInviteUrl() : window.location.href;
-    const text = `🏍️ Join our live motorcycle ride on Sasta Tracker! Real-time GPS radar across all phones (zero setup): ${inviteUrl}`;
+    const text = `🏍️ Join our live motorcycle ride on ThrottleLog! Real-time GPS radar across all phones (zero setup): ${inviteUrl}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -228,7 +235,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <TopMapCapsule
         onOpenDrawer={() => setIsDrawerOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
         isConnected={isConnected}
+        isOnRadar={isOnRadar}
+        onToggleRadar={onToggleRadar}
         onlineCount={onlineCount}
         riderName={riderName}
         myColor={myColor}
@@ -404,10 +414,27 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           onOpenDownloadApp?.();
         }}
         onOpenFaq={onOpenFaq}
+        isOnRadar={isOnRadar}
+        onToggleRadar={onToggleRadar}
       />
 
       {/* ─────────────────────────────────────────────────────────────
-          6. FIRST-LAUNCH 1-STEP CALLSIGN / NAME ONBOARDING MODAL
+          6. DEDICATED RIDER PROFILE & IDENTITY MODAL (TAP AVATAR)
+      ───────────────────────────────────────────────────────────── */}
+      <RiderProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        riderName={riderName}
+        bikeModel={bikeModel}
+        myColor={myColor}
+        isOnRadar={isOnRadar}
+        onToggleRadar={onToggleRadar || (() => {})}
+        onSaveProfile={(name, bike, color) => onUpdateRiderName(name, bike, color)}
+        theme={theme}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
+          7. FIRST-LAUNCH 1-STEP CALLSIGN / NAME ONBOARDING MODAL
       ───────────────────────────────────────────────────────────── */}
       <FirstLaunchNameModal
         currentName={riderName}

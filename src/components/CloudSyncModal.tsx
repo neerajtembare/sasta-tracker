@@ -301,7 +301,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
 
             <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-              Enter a GitHub Personal Access Token with <span className="text-sky-300">gist</span> scope. Sasta Tracker will store a private <code className="text-amber-300">sasta_tracker_garage.json</code> backup directly under your account.
+              Enter a GitHub Personal Access Token with <span className="text-sky-300">gist</span> scope. ThrottleLog will store a private <code className="text-amber-300">throttlelog_garage.json</code> backup directly under your account.
             </p>
 
             {/* Token Input */}

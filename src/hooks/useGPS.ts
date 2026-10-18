@@ -11,6 +11,7 @@ import {
   blendGpsCentrifugalLean,
   GyroCalibration,
 } from '../utils/gyro3d';
+import { calculateForwardBearing } from '../utils/gpxParser';
 
 export interface GPSState {
   // Position & motion
@@ -449,22 +450,43 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     });
     setCurrentSpeedKmh(kmh);
 
-    // 3. Compass stabilization & GPS centrifugal cornering fusion
-    if (kmh >= 2.5 && heading !== null && !isNaN(heading)) {
-      setCurrentHeading(heading);
-      if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
-        let dHeading = heading - lastGpsHeadingRef.current;
-        if (dHeading > 180) dHeading -= 360;
-        if (dHeading < -180) dHeading += 360;
-        const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
-        if (dtSec >= 0.2 && dtSec <= 3.0) {
-          const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
-          leanAngleRef.current = fused;
-          setLeanAngle(fused);
-        }
+    // 3. Multi-tier heading determination:
+    // Tier 1: Hardware GNSS reported heading (if moving >= 2.0 km/h)
+    let effectiveHeading: number | null = (heading !== null && !isNaN(heading)) ? heading : null;
+
+    // Tier 2: Calculated forward bearing from consecutive GPS points (if moving >= 2.0 km/h)
+    if (effectiveHeading === null && lastPositionRef.current && kmh >= 2.0) {
+      const dMeters = haversineMeters(lastPositionRef.current.lat, lastPositionRef.current.lon, latitude, longitude);
+      if (dMeters >= 2.0) {
+        effectiveHeading = calculateForwardBearing(lastPositionRef.current.lat, lastPositionRef.current.lon, latitude, longitude);
       }
-      lastGpsHeadingRef.current = heading;
-      lastGpsPointTimeRef.current = nowTs;
+    }
+
+    // Tier 3: Stationary compass orientation (alpha) from device magnetometer
+    if (effectiveHeading === null && kmh < 2.0 && lastOrientationEventRef.current) {
+      const alpha = lastOrientationEventRef.current.alpha;
+      if (alpha !== null && alpha !== undefined && !isNaN(alpha)) {
+        effectiveHeading = (360 - alpha + 360) % 360;
+      }
+    }
+
+    if (effectiveHeading !== null) {
+      setCurrentHeading(effectiveHeading);
+      if (kmh >= 2.5) {
+        if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
+          let dHeading = effectiveHeading - lastGpsHeadingRef.current;
+          if (dHeading > 180) dHeading -= 360;
+          if (dHeading < -180) dHeading += 360;
+          const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
+          if (dtSec >= 0.2 && dtSec <= 3.0) {
+            const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
+            leanAngleRef.current = fused;
+            setLeanAngle(fused);
+          }
+        }
+        lastGpsHeadingRef.current = effectiveHeading;
+        lastGpsPointTimeRef.current = nowTs;
+      }
     }
     if (altitude !== null) setCurrentAltitude(altitude);
     setGpsAccuracy(accuracy);

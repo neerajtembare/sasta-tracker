@@ -52,6 +52,7 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
     const cleanName = nameInput.trim() || 'Rider';
     const cleanBike = bikeInput.trim() || 'Motorcycle';
     try {
+      localStorage.setItem('sasta_rider_name', cleanName);
       localStorage.setItem('sasta_name_onboarded', 'true');
     } catch {}
     onSaveProfile(cleanName, cleanBike, selectedColor);

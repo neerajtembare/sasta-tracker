@@ -218,7 +218,7 @@ export const RideReportModal: React.FC<RideReportModalProps> = ({
           <div className="border-b pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-xs font-mono text-sky-500 font-bold uppercase tracking-wider">
-                <span>⚡ SASTA TRACKER TELEMETRY REPORT</span>
+                <span>⚡ THROTTLELOG TELEMETRY REPORT</span>
                 <span>•</span>
                 <span>100% PRIVATE & OFFLINE</span>
               </div>
@@ -373,7 +373,7 @@ export const RideReportModal: React.FC<RideReportModalProps> = ({
           <div className="pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-mono text-slate-400">
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Verified Motorcycle Telemetry Record • Sasta Tracker</span>
+              <span>Verified Motorcycle Telemetry Record • ThrottleLog</span>
             </div>
             <div className="text-[11px] text-slate-400">
               Generated: {new Date().toLocaleString()} • sasta-tracker.vercel.app

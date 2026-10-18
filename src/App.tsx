@@ -26,11 +26,11 @@ import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { DownloadAppModal } from './components/DownloadAppModal';
-import { useGroupRide } from './hooks/useGroupRide';
+import { useGroupRide, SharedRouteInfo } from './hooks/useGroupRide';
 import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, exportPointsToGPX, downloadFile } from './utils/gpxExporter';
-import { triggerHaptic } from './utils/audioChimes';
+import { triggerHaptic, playWaypointChime } from './utils/audioChimes';
 import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
 import { 
@@ -253,6 +253,73 @@ export default function App() {
     setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
     groupRide.updateMyLocation(lat, lon, kmh, bearing);
   }, [groupRide.updateMyLocation]);
+
+  // Auto-broadcast active planned route to Crew Radar whenever loaded or updated
+  useEffect(() => {
+    if (analysis && analysis.points && analysis.points.length > 0) {
+      const dest = analysis.points[analysis.points.length - 1];
+      groupRide.broadcastActiveRoute({
+        name: analysis.name || 'Weekend Ride',
+        distanceKm: analysis.totalDistanceKm,
+        destination: { lat: dest.lat, lon: dest.lon },
+        points: analysis.points.map(p => ({ lat: p.lat, lon: p.lon })),
+      });
+    }
+  }, [analysis?.name, analysis?.totalDistanceKm, groupRide.broadcastActiveRoute]);
+
+  // 1-Tap Join Friend's Shared Route on Crew Radar
+  const handleJoinSharedRoute = useCallback((route: SharedRouteInfo) => {
+    const rawPts = route.points && route.points.length > 0 ? route.points : [route.destination];
+    const pts: TrackPoint[] = rawPts.map((p, idx) => ({
+      lat: p.lat,
+      lon: p.lon,
+      ele: null,
+      time: new Date(Date.now() + idx * 1000).toISOString(),
+      speed: 0,
+      speedKmh: 0,
+      bearing: null,
+      sat: null,
+      hdop: null,
+      vdop: null,
+      pdop: null,
+      geoidheight: null,
+      segmentIndex: 0,
+      distanceFromStartKm: (route.distanceKm / Math.max(1, rawPts.length - 1)) * idx,
+    }));
+
+    const syntheticAnalysis: RideAnalysis = {
+      name: route.routeName,
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      totalDurationSeconds: 0,
+      movingTimeSeconds: 0,
+      stoppedTimeSeconds: 0,
+      totalDistanceKm: route.distanceKm,
+      maxSpeedKmh: 0,
+      overallAvgSpeedKmh: 0,
+      movingAvgSpeedKmh: 0,
+      elevGainM: 0,
+      elevLossM: 0,
+      elevMinM: null,
+      elevMaxM: null,
+      elevStartM: null,
+      elevEndM: null,
+      avgSatellites: null,
+      maxSatellites: null,
+      bestHdop: null,
+      maxEstimatedLean: 0,
+      points: pts,
+      pitStops: [],
+      speedTraps: [],
+      segments: [],
+    };
+
+    setAnalysis(syntheticAnalysis);
+    triggerHaptic(50);
+    playWaypointChime();
+    setSessionNotice(`🗺️ Joined ${route.riderName}'s route: "${route.routeName}"!`);
+    setTimeout(() => setSessionNotice(null), 5000);
+  }, []);
 
   const globalFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1021,6 +1088,9 @@ export default function App() {
               totalDistanceMeters={gps.totalDistanceMeters}
               activeRoute={analysis}
               onLoadSampleRide={() => handleLoadSample()}
+              isOnRadar={groupRide.isOnRadar}
+              onToggleRadar={groupRide.toggleOnRadar}
+              onJoinSharedRoute={handleJoinSharedRoute}
             />
           </div>
         )}

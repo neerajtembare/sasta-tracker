@@ -67,6 +67,9 @@ interface CrewLiveMapProps {
   focusedRiderId?: string | null;
   activeRoute?: RideAnalysis | null;
   onSelectRider?: (riderId: string) => void;
+  isOnRadar?: boolean;
+  onToggleRadar?: (enable?: boolean) => void;
+  onJoinSharedRoute?: (route: any) => void;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite';
@@ -104,6 +107,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   focusedRiderId = null,
   activeRoute = null,
   onSelectRider,
+  isOnRadar = true,
+  onToggleRadar,
+  onJoinSharedRoute,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -704,6 +710,67 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     map.flyTo(pos, 16, { animate: true, duration: 1.2 });
   }, [sosAlert]);
 
+  // Draw Active Planned / Shared Route on Leaflet Map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    // Clear previous route polylines and destination markers
+    if (routePolylineRef.current) {
+      routePolylineRef.current.remove();
+      routePolylineRef.current = null;
+    }
+    if (routeGlowPolylineRef.current) {
+      routeGlowPolylineRef.current.remove();
+      routeGlowPolylineRef.current = null;
+    }
+    routeMarkersRef.current.forEach(m => m.remove());
+    routeMarkersRef.current = [];
+
+    if (activeRoute && activeRoute.points && activeRoute.points.length > 0) {
+      const latLngs: L.LatLngTuple[] = activeRoute.points.map(p => [p.lat, p.lon]);
+
+      // Outer neon cyan glow
+      const glow = L.polyline(latLngs, {
+        color: '#00f0ff',
+        weight: 8,
+        opacity: 0.35,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routeGlowPolylineRef.current = glow;
+
+      // Inner crisp route line
+      const poly = L.polyline(latLngs, {
+        color: '#00f0ff',
+        weight: 4,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routePolylineRef.current = poly;
+
+      // Destination flag marker
+      const destPt = activeRoute.points[activeRoute.points.length - 1];
+      const destIcon = L.divIcon({
+        className: 'route-destination-flag',
+        html: `
+          <div style="display:flex; flex-direction:column; align-items:center; transform:translateY(-12px);">
+            <div style="background:#00f0ff; color:#080c10; font-family:monospace; font-size:9px; font-weight:900; padding:2px 6px; border-radius:4px; box-shadow:0 2px 6px rgba(0,0,0,0.8); white-space:nowrap; display:flex; align-items:center; gap:3px;">
+              <span>🏁</span>
+              <span>${activeRoute.name || 'Finish'}</span>
+            </div>
+            <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid #00f0ff;"></div>
+          </div>
+        `,
+        iconSize: [100, 30],
+        iconAnchor: [50, 30],
+      });
+      const destMarker = L.marker([destPt.lat, destPt.lon], { icon: destIcon, zIndexOffset: 850 }).addTo(map);
+      routeMarkersRef.current.push(destMarker);
+    }
+  }, [activeRoute]);
+
   // Dynamic Auto-fit Bounds: auto-encompass all active riders within 100km
   const lastFittedSignatureRef = useRef<string>('');
   useEffect(() => {
@@ -828,13 +895,29 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute top-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none">
         {/* Squad Status Pill */}
-        <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/92 backdrop-blur-md border border-cyan-500/40 shadow-xl text-white font-mono text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse" />
+        <div 
+          onClick={() => {
+            if (onToggleRadar) {
+              triggerHaptic(30);
+              onToggleRadar();
+            }
+          }}
+          className={`pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md shadow-xl text-white font-mono text-xs cursor-pointer transition-all active:scale-95 border ${
+            isOnRadar 
+              ? 'bg-slate-950/92 border-cyan-500/40 hover:border-cyan-400' 
+              : 'bg-slate-950/92 border-amber-500/40 hover:border-amber-400'
+          }`}
+          title={isOnRadar ? 'Live on Radar (100km). Tap to go off radar (Ghost mode)' : 'Off Radar (Ghost mode). Tap to go live on radar'}
+        >
+          <span className={`w-2 h-2 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse' : 'bg-amber-400'}`} />
           <span className="font-heading font-black tracking-wide text-white uppercase text-[11px]">
-            {roomCode || 'Crew Radar'}
+            {isOnRadar ? 'Crew Radar' : 'Off Radar'}
           </span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-            {members.filter(m => m.location && m.isOnline !== false).length + 1} ACTIVE
+            100km
+          </span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+            {members.filter(m => m.location && m.isOnline !== false).length + (isOnRadar ? 1 : 0)} ACTIVE
           </span>
         </div>
 

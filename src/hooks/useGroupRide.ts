@@ -19,6 +19,16 @@ export interface GroupRiderLocation {
   batteryPct?: number;
 }
 
+export interface SharedRouteInfo {
+  riderId: string;
+  riderName: string;
+  routeName: string;
+  distanceKm: number;
+  destination: { lat: number; lon: number };
+  points?: Array<{ lat: number; lon: number }>;
+  timestamp: number;
+}
+
 export interface GroupMemberInfo {
   riderId: string;
   name: string;
@@ -30,6 +40,7 @@ export interface GroupMemberInfo {
   distanceFromMeMeters?: number;
   isStale?: boolean;
   isOnline?: boolean;
+  sharedRoute?: SharedRouteInfo;
 }
 
 export interface CrewNotification {
@@ -176,6 +187,18 @@ export function useGroupRide() {
     return [...customFriends];
   }, [customFriends]);
 
+  const [isOnRadar, setIsOnRadar] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('sasta_on_radar');
+        return saved !== 'false';
+      }
+    } catch {}
+    return true;
+  });
+  const isOnRadarRef = useRef(isOnRadar);
+  isOnRadarRef.current = isOnRadar;
+
   const [connectionStatus, setConnectionStatus] = useState<MqttConnectionStatus>('connecting');
   const [statusMessage, setStatusMessage] = useState<string>('Connecting to Global Crew Radar...');
   const [isConnected, setIsConnected] = useState<boolean>(true);
@@ -262,6 +285,40 @@ export function useGroupRide() {
         membersRef.current = next;
         return next;
       });
+    } else if (data.type === 'ROUTE_SHARE') {
+      const share: SharedRouteInfo = data.payload;
+      if (share && share.riderId && share.riderId !== currentMyId) {
+        setMembers(prev => {
+          const next = new Map(prev);
+          const current = next.get(share.riderId);
+          if (current) {
+            next.set(share.riderId, {
+              ...current,
+              sharedRoute: share,
+            });
+            membersRef.current = next;
+          }
+          return next;
+        });
+        playWaypointChime();
+        postCrewNotification(`🗺️ ${share.riderName || 'Rider'} loaded route: "${share.routeName}" (${share.distanceKm.toFixed(1)} km)`, 'info');
+      }
+    } else if (data.type === 'ROUTE_CLEAR') {
+      const riderId = data.riderId;
+      if (riderId) {
+        setMembers(prev => {
+          const next = new Map(prev);
+          const current = next.get(riderId);
+          if (current) {
+            next.set(riderId, {
+              ...current,
+              sharedRoute: undefined,
+            });
+            membersRef.current = next;
+          }
+          return next;
+        });
+      }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
       if (alert && alert.fromName) {
@@ -369,7 +426,7 @@ export function useGroupRide() {
   // Periodic heartbeat / location broadcast every 2.5 seconds
   useEffect(() => {
     heartbeatIntervalRef.current = setInterval(() => {
-      if (!profile.isLoggedIn) return;
+      if (!profile.isLoggedIn || !isOnRadarRef.current) return;
       const payload: any = {
         riderId: profile.id,
         name: profile.name,
@@ -430,6 +487,8 @@ export function useGroupRide() {
   const updateMyLocation = useCallback((lat: number, lon: number, speedKmh: number, bearing: number | null, leanAngle?: number) => {
     myLocationRef.current = { lat, lon, speedKmh, bearing, leanAngle };
 
+    if (!isOnRadarRef.current) return;
+
     // Broadcast immediately upon GPS position fix
     broadcastPayload({
       type: 'LOCATION',
@@ -448,6 +507,91 @@ export function useGroupRide() {
       },
     });
   }, [broadcastPayload]);
+
+  const toggleOnRadar = useCallback((enable?: boolean) => {
+    setIsOnRadar(prev => {
+      const next = enable !== undefined ? enable : !prev;
+      isOnRadarRef.current = next;
+      try {
+        localStorage.setItem('sasta_on_radar', String(next));
+      } catch {}
+
+      if (!next) {
+        // Going off radar: send OFFLINE packet so friends see us disappear from live radar immediately
+        broadcastPayload({
+          type: 'OFFLINE',
+          riderId: profileRef.current.id,
+        });
+        postCrewNotification('👻 Off Radar (Ghost mode) enabled. You are hidden from friends.', 'info');
+      } else {
+        // Coming back on radar: send HEARTBEAT/LOCATION
+        postCrewNotification('🟢 Back on Crew Radar! You are visible to friends.', 'join');
+        const payload: any = {
+          riderId: profileRef.current.id,
+          name: profileRef.current.name,
+          color: profileRef.current.color,
+          bikeModel: profileRef.current.bikeModel,
+          timestamp: Date.now(),
+          status: 'stopped',
+        };
+        if (myLocationRef.current) {
+          Object.assign(payload, myLocationRef.current);
+          payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
+        }
+        broadcastPayload({
+          type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+          payload,
+        });
+      }
+      return next;
+    });
+  }, [broadcastPayload, postCrewNotification]);
+
+  const broadcastActiveRoute = useCallback((route: { name?: string; distanceKm?: number; destination?: { lat: number; lon: number }; points?: Array<{ lat: number; lon: number }> } | null) => {
+    if (!route) {
+      broadcastPayload({
+        type: 'ROUTE_CLEAR',
+        riderId: profileRef.current.id,
+      });
+      return;
+    }
+
+    // Downsample points to ~60 points max so MQTT payload stays compact (< 4KB)
+    let sampledPoints: Array<{ lat: number; lon: number }> | undefined = undefined;
+    if (route.points && route.points.length > 0) {
+      const pts = route.points;
+      const step = Math.max(1, Math.floor(pts.length / 60));
+      sampledPoints = [];
+      for (let i = 0; i < pts.length; i += step) {
+        sampledPoints.push({ lat: Number(pts[i].lat.toFixed(5)), lon: Number(pts[i].lon.toFixed(5)) });
+      }
+      const lastPt = pts[pts.length - 1];
+      const lastSampled = sampledPoints[sampledPoints.length - 1];
+      if (!lastSampled || lastSampled.lat !== Number(lastPt.lat.toFixed(5)) || lastSampled.lon !== Number(lastPt.lon.toFixed(5))) {
+        sampledPoints.push({ lat: Number(lastPt.lat.toFixed(5)), lon: Number(lastPt.lon.toFixed(5)) });
+      }
+    }
+
+    const dest = route.destination || (sampledPoints && sampledPoints.length > 0 ? sampledPoints[sampledPoints.length - 1] : undefined);
+    if (!dest) return;
+
+    const sharePayload: SharedRouteInfo = {
+      riderId: profileRef.current.id,
+      riderName: profileRef.current.name,
+      routeName: route.name || 'Weekend Ride',
+      distanceKm: route.distanceKm || 0,
+      destination: dest,
+      points: sampledPoints,
+      timestamp: Date.now(),
+    };
+
+    broadcastPayload({
+      type: 'ROUTE_SHARE',
+      payload: sharePayload,
+    });
+
+    postCrewNotification(`🗺️ Shared your route "${sharePayload.routeName}" with crew radar!`, 'info');
+  }, [broadcastPayload, postCrewNotification]);
 
   const triggerSos = useCallback(() => {
     const loc = myLocationRef.current;
@@ -590,6 +734,9 @@ export function useGroupRide() {
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),
+    isOnRadar,
+    toggleOnRadar,
+    broadcastActiveRoute,
     updateRiderName,
     updateProfile,
     createRoom: (name: string) => loginRider(name),

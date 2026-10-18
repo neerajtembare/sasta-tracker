@@ -106,3 +106,47 @@ export function playChime(type: ChimeType) {
 
 export const playWaypointChime = () => playChime('waypoint');
 export const playWarningChime = () => playChime('warning');
+
+// ── Inaudible Background Audio Keep-Alive ───────────────────────────
+// Mobile browsers (Android Chrome, iOS Safari) and Android WebViews prioritize
+// background processes and prevent WebSocket/GPS sleep when an audio track is active.
+const SILENT_AUDIO_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+let silentAudioEl: HTMLAudioElement | null = null;
+let keepAliveStarted = false;
+
+export function enableBackgroundKeepAlive() {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+  try {
+    if (!silentAudioEl) {
+      silentAudioEl = new Audio(SILENT_AUDIO_URI);
+      silentAudioEl.loop = true;
+      silentAudioEl.volume = 0.001;
+    }
+    const playPromise = silentAudioEl.play();
+    if (playPromise) {
+      playPromise.then(() => {
+        keepAliveStarted = true;
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+export function disableBackgroundKeepAlive() {
+  try {
+    if (silentAudioEl) {
+      silentAudioEl.pause();
+      keepAliveStarted = false;
+    }
+  } catch {}
+}
+
+// Automatically bind keep-alive on the first touch or click
+if (typeof window !== 'undefined') {
+  const handleFirstUserGesture = () => {
+    enableBackgroundKeepAlive();
+    window.removeEventListener('touchstart', handleFirstUserGesture);
+    window.removeEventListener('click', handleFirstUserGesture);
+  };
+  window.addEventListener('touchstart', handleFirstUserGesture, { passive: true, once: true });
+  window.addEventListener('click', handleFirstUserGesture, { once: true });
+}

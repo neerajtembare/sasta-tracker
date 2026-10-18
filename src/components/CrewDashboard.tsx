@@ -1,33 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
-import { GroupMemberInfo, SosAlert, CrewNotification, RiderProfile, RIDER_COLORS, getRiderColor } from '../hooks/useGroupRide';
+import { 
+  GroupMemberInfo, 
+  SosAlert, 
+  CrewNotification, 
+  SharedRouteInfo, 
+  RIDER_COLORS 
+} from '../hooks/useGroupRide';
 import { 
   Users, 
   Radio, 
   Share2, 
-  Plus, 
-  Trash2, 
   Edit3, 
   Navigation,
   Map as MapIcon,
-  Compass,
   X,
-  Crosshair,
   UserCheck,
-  Bike,
-  Shield,
   Check,
   AlertTriangle,
-  Copy,
   Route,
-  Play
+  Play,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { openGoogleMapsNavigation } from '../utils/navigation';
 import { CrewLiveMap } from './CrewLiveMap';
 
 interface CrewDashboardProps {
-  roomCode: string;
+  roomCode?: string;
   lastRoomCode?: string;
   riderName: string;
   myColor?: string;
@@ -38,7 +39,7 @@ interface CrewDashboardProps {
     speedKmh: number;
     heading: number | null;
   } | null;
-  isHost: boolean;
+  isHost?: boolean;
   isConnected: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   statusMessage: string;
@@ -46,10 +47,10 @@ interface CrewDashboardProps {
   sosAlert: SosAlert | null;
   crewNotification?: CrewNotification | null;
   onDismissCrewNotification?: () => void;
-  onCreateRoom: (name: string, customCode?: string) => void;
-  onJoinRoom: (code: string, name?: string) => void;
+  onCreateRoom?: (name: string, customCode?: string) => void;
+  onJoinRoom?: (code: string, name?: string) => void;
   onRejoinRoom?: () => void;
-  onLeaveRoom: () => void;
+  onLeaveRoom?: () => void;
   onTriggerSos: () => void;
   onDismissSos?: () => void;
   onUpdateRiderName: (newName: string, bikeModel?: string, color?: string) => void;
@@ -65,16 +66,19 @@ interface CrewDashboardProps {
   totalDistanceMeters?: number;
   activeRoute?: RideAnalysis | null;
   onLoadSampleRide?: () => void;
+  isOnRadar?: boolean;
+  onToggleRadar?: (enable?: boolean) => void;
+  onJoinSharedRoute?: (route: SharedRouteInfo) => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
-  roomCode,
+  roomCode = 'Crew Radar',
   lastRoomCode = '',
   riderName,
   myColor = '#00f0ff',
   bikeModel = '',
   myLocation = null,
-  isHost,
+  isHost = false,
   isConnected,
   connectionStatus,
   statusMessage,
@@ -86,7 +90,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   onTriggerSos,
   onDismissSos,
   onUpdateRiderName,
-  onAddSquadFriend,
   getFriendInviteUrl,
   onGoToCockpit,
   theme = 'dark',
@@ -98,6 +101,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   totalDistanceMeters = 0,
   activeRoute = null,
   onLoadSampleRide,
+  isOnRadar = true,
+  onToggleRadar,
+  onJoinSharedRoute,
 }) => {
   const isLight = theme === 'light';
 
@@ -107,18 +113,12 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [loginBikeInput, setLoginBikeInput] = useState(bikeModel || '');
   const [loginColorInput, setLoginColorInput] = useState(myColor || '#00f0ff');
 
-  // Add Friend to Squad Modal
-  const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
-  const [newFriendName, setNewFriendName] = useState('');
-  const [newFriendBike, setNewFriendBike] = useState('');
-  const [justAddedFriend, setJustAddedFriend] = useState<{ name: string; bike?: string; url: string } | null>(null);
-
   // Selected Rider for Map Focus
   const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
   const [isConvoyDrawerExpanded, setIsConvoyDrawerExpanded] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const isAnyLocalModalOpen = isLoginModalOpen || isAddFriendOpen;
+  const isAnyLocalModalOpen = isLoginModalOpen;
   const localModalHistoryPushedRef = useRef(false);
 
   // Sync Escape key to dismiss local modals
@@ -126,8 +126,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsLoginModalOpen(false);
-        setIsAddFriendOpen(false);
-        setJustAddedFriend(null);
       }
     };
     window.addEventListener('keydown', handleKey);
@@ -160,8 +158,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       if (localModalHistoryPushedRef.current) {
         localModalHistoryPushedRef.current = false;
         setIsLoginModalOpen(false);
-        setIsAddFriendOpen(false);
-        setJustAddedFriend(null);
       }
     };
     window.addEventListener('popstate', handlePop);
@@ -187,12 +183,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   const handleShareWhatsApp = (customUrl?: string, friendName?: string) => {
-    const squad = roomCode || 'Sunday Morning Crew';
     const link = customUrl || (getFriendInviteUrl ? getFriendInviteUrl(friendName) : `${window.location.origin}${window.location.pathname}`);
     const apkLink = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog-debug.apk';
     const text = friendName
-      ? `🏍️ Hey ${friendName}, join our Crew Radar "${squad}":\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nYour name is auto-configured—just tap and ride!`
-      : `🏍️ Join our Crew Radar "${squad}":\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nLogged in riders are automatically visible!`;
+      ? `🏍️ Hey ${friendName}, join our Weekend Ride Radar:\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nOpen the link and you are automatically live on radar with us!`
+      : `🏍️ Join our Weekend Ride Radar:\n👉 Web Radar: ${link}\n📥 Direct Android APK: ${apkLink}\nOpen the link and you are automatically live on radar with us!`;
     const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank');
   };
@@ -206,25 +201,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
     });
   };
 
-  const handleAddFriendSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!newFriendName.trim()) return;
-    const name = newFriendName.trim();
-    const bike = newFriendBike.trim() || undefined;
-    if (onAddSquadFriend) {
-      onAddSquadFriend(name, bike);
-    }
-    const inviteUrl = getFriendInviteUrl 
-      ? getFriendInviteUrl(name) 
-      : `${window.location.origin}${window.location.pathname}?rider=${encodeURIComponent(name)}`;
-    setJustAddedFriend({ name, bike, url: inviteUrl });
-    setNewFriendName('');
-    setNewFriendBike('');
-    triggerHaptic(40);
-  };
-
-  const onlineCount = members.filter(m => m.isOnline !== false).length + 1;
-  const totalRiders = members.length + 1;
+  const onlineCount = members.filter(m => m.isOnline !== false).length + (isOnRadar ? 1 : 0);
 
   return (
     <div className="relative w-full h-full flex-1 flex flex-col overflow-hidden rounded-none sm:rounded-2xl border sm:border-slate-800">
@@ -240,7 +217,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         isConnected={isConnected}
         members={members}
         sosAlert={sosAlert}
-        roomCode={roomCode || 'Sunday Morning Crew'}
+        roomCode={roomCode || 'Crew Radar'}
         lastRoomCode={lastRoomCode}
         theme={theme}
         unitSystem={unitSystem}
@@ -263,6 +240,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         focusedRiderId={focusedRiderId}
         onSelectRider={(id) => setFocusedRiderId(id)}
         activeRoute={activeRoute}
+        isOnRadar={isOnRadar}
+        onToggleRadar={onToggleRadar}
+        onJoinSharedRoute={onJoinSharedRoute}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -270,6 +250,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-4 sm:right-4 z-20 pointer-events-none flex flex-col gap-2">
         <div className="max-w-4xl mx-auto w-full space-y-2 pointer-events-auto">
+          
           {/* Active Planned Route & Google Maps Voice Navigation Bar */}
           {activeRoute && (
             <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/92 backdrop-blur-md border border-cyan-500/50 shadow-xl font-mono text-xs">
@@ -305,9 +286,12 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             {/* Roster Header */}
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 ring-2 ring-cyan-400/40" />
+                <span className={`w-2 h-2 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse' : 'bg-amber-400 ring-2 ring-amber-400/30'}`} />
                 <span className="font-heading font-black text-white text-xs uppercase tracking-wider">
-                  {roomCode || 'Sunday Morning Crew'}
+                  Crew Radar
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                  100km
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
                   {onlineCount} ACTIVE
@@ -342,14 +326,33 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                   </button>
                 )}
 
-                <button
-                  onClick={() => setIsAddFriendOpen(true)}
-                  className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                  title="Add friend to this crew"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Friend</span>
-                </button>
+                {/* 1-Tap On Radar / Off Radar Toggle */}
+                {onToggleRadar && (
+                  <button
+                    onClick={() => {
+                      triggerHaptic(30);
+                      onToggleRadar();
+                    }}
+                    className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 border ${
+                      isOnRadar
+                        ? 'bg-emerald-500/15 hover:bg-emerald-500/30 border-emerald-500/40 text-emerald-300'
+                        : 'bg-amber-500/15 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                    }`}
+                    title={isOnRadar ? 'You are live on radar. Tap to go Off Radar (Ghost mode)' : 'You are currently hidden. Tap to go Live on radar'}
+                  >
+                    {isOnRadar ? (
+                      <>
+                        <Eye className="w-2.5 h-2.5" />
+                        <span>Live</span>
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="w-2.5 h-2.5" />
+                        <span>Ghost</span>
+                      </>
+                    )}
+                  </button>
+                )}
 
                 <button
                   onClick={() => setIsConvoyDrawerExpanded(prev => !prev)}
@@ -369,42 +372,54 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     setFocusedRiderId('me');
                     triggerHaptic(20);
                   }}
-                  className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[175px] ${
+                  className={`p-2 rounded-xl border flex flex-col justify-between shrink-0 cursor-pointer transition-all active:scale-95 min-w-[180px] max-w-[210px] ${
                     focusedRiderId === 'me'
                       ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50'
                       : 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
                   }`}
                   title="Click to center map, or tap Edit to customize callsign"
                 >
-                  <div 
-                    className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
-                    style={{ backgroundColor: myColor || '#00f0ff' }}
-                  >
-                    {riderName.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="truncate flex-1">
-                    <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
-                      <span className="truncate">{riderName}</span>
-                      <span className="text-[9px] px-1 rounded bg-cyan-500/20 text-cyan-300 font-bold shrink-0">YOU</span>
+                  <div className="flex items-center gap-2.5">
+                    <div 
+                      className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
+                      style={{ backgroundColor: myColor || '#00f0ff' }}
+                    >
+                      {riderName.charAt(0).toUpperCase()}
                     </div>
-                    <div className="text-[10px] font-mono text-emerald-400 flex items-center justify-between gap-1">
-                      <span className="flex items-center gap-1 truncate">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                        <span className="truncate">{myLocation ? `${Math.round(myLocation.speedKmh)} km/h` : 'Online'}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsLoginModalOpen(true);
-                        }}
-                        className="p-0.5 text-cyan-400 hover:text-white cursor-pointer"
-                        title="Edit Callsign & Bike"
-                      >
-                        <Edit3 className="w-3 h-3" />
-                      </button>
+                    <div className="truncate flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
+                        <span className="truncate">{riderName}</span>
+                        <span className="text-[9px] px-1 rounded bg-cyan-500/20 text-cyan-300 font-bold shrink-0">YOU</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-emerald-400 flex items-center justify-between gap-1">
+                        <span className="flex items-center gap-1 truncate">
+                          <span className={`w-1.5 h-1.5 rounded-full ${isOnRadar ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'} shrink-0`} />
+                          <span className="truncate">
+                            {!isOnRadar ? 'Ghost mode' : myLocation ? `${Math.round(myLocation.speedKmh)} km/h` : 'Online'}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsLoginModalOpen(true);
+                          }}
+                          className="p-0.5 text-cyan-400 hover:text-white cursor-pointer"
+                          title="Edit Callsign & Bike"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Active Route broadcast indicator */}
+                  {activeRoute && (
+                    <div className="mt-1.5 pt-1 border-t border-slate-800/80 flex items-center gap-1 text-[9px] text-cyan-300 font-mono truncate">
+                      <Route className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
+                      <span className="truncate">Broadcasting: {activeRoute.name || 'Route'}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* When alone on radar */}
@@ -434,7 +449,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                           triggerHaptic(20);
                         }
                       }}
-                      className={`p-2 rounded-xl border flex items-center gap-2.5 shrink-0 cursor-pointer transition-all active:scale-95 min-w-[190px] ${
+                      className={`p-2 rounded-xl border flex flex-col justify-between shrink-0 cursor-pointer transition-all active:scale-95 min-w-[195px] max-w-[240px] ${
                         focusedRiderId === m.riderId
                           ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50 ring-1 ring-cyan-400/50'
                           : isOnline
@@ -442,52 +457,79 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                           : 'bg-slate-950/70 border-slate-800/60 opacity-60'
                       }`}
                     >
-                      <div 
-                        className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
-                        style={{ backgroundColor: m.color || '#ffe600' }}
-                      >
-                        {m.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="truncate flex-1">
-                        <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
-                          <span className="truncate">{m.name}</span>
-                          {distText && (
-                            <span className="text-[10px] text-cyan-400 font-bold shrink-0">{distText}</span>
-                          )}
+                      <div className="flex items-center gap-2.5">
+                        <div 
+                          className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
+                          style={{ backgroundColor: m.color || '#ffe600' }}
+                        >
+                          {m.name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="text-[10px] font-mono flex items-center justify-between gap-1 mt-0.5">
-                          <div className="flex items-center gap-1">
-                            {isOnline ? (
-                              <>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isStopped ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                                <span className={isStopped ? 'text-amber-300' : 'text-emerald-300'}>
-                                  {isStopped ? 'Stopped' : 'Cruising'}
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                <span className="text-slate-400">Offline</span>
-                              </>
+                        <div className="truncate flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
+                            <span className="truncate">{m.name}</span>
+                            {distText && (
+                              <span className="text-[10px] text-cyan-400 font-bold shrink-0">{distText}</span>
                             )}
                           </div>
-                          {m.location && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerHaptic(25);
-                                openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
-                              }}
-                              className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors"
-                              title={`Navigate to ${m.name} via Google Maps`}
-                            >
-                              <Navigation className="w-2.5 h-2.5" />
-                              <span>Nav</span>
-                            </button>
-                          )}
+                          <div className="text-[10px] font-mono flex items-center justify-between gap-1 mt-0.5">
+                            <div className="flex items-center gap-1 truncate">
+                              {isOnline ? (
+                                <>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isStopped ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'} shrink-0`} />
+                                  <span className={`truncate ${isStopped ? 'text-amber-300' : 'text-emerald-300'}`}>
+                                    {isStopped ? 'Stopped' : 'Cruising'}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0" />
+                                  <span className="text-slate-400 truncate">Offline</span>
+                                </>
+                              )}
+                            </div>
+                            {m.location && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic(25);
+                                  openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors shrink-0"
+                                title={`Navigate to ${m.name} via Google Maps`}
+                              >
+                                <Navigation className="w-2.5 h-2.5" />
+                                <span>Nav</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {/* 1-Tap JOIN ROUTE Banner if friend is sharing a route */}
+                      {m.sharedRoute && (
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1 text-[10px] text-cyan-300 font-mono font-bold truncate">
+                            <Route className="w-3 h-3 text-cyan-400 shrink-0" />
+                            <span className="truncate">{m.sharedRoute.routeName}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic(40);
+                              if (onJoinSharedRoute && m.sharedRoute) {
+                                onJoinSharedRoute(m.sharedRoute);
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[9px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-sm shrink-0"
+                            title={`Join ${m.name}'s route: ${m.sharedRoute.routeName}`}
+                          >
+                            <Route className="w-2.5 h-2.5" />
+                            <span>Join</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -498,7 +540,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          RIDER CALLSIGN & RADAR PROFILE MODAL (Instant 1-Tap Broadcast)
+          RIDER CALLSIGN & RADAR PROFILE MODAL (Saves permanently to disk)
       ───────────────────────────────────────────────────────────── */}
       {isLoginModalOpen && (
         <div 
@@ -575,7 +617,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                   Motorcycle Model
                 </label>
-                <span className="text-[9px] text-slate-500">Optional</span>
+                <span className="text-[9px] text-slate-500">Saved on phone</span>
               </div>
               <input
                 type="text"
@@ -655,132 +697,6 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 <span>Save Callsign</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          ADD FRIEND TO CREW MODAL (With 1-Tap WhatsApp Invite)
-      ───────────────────────────────────────────────────────────── */}
-      {isAddFriendOpen && (
-        <div 
-          onClick={e => { if (e.target === e.currentTarget) { setIsAddFriendOpen(false); setJustAddedFriend(null); } }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
-        >
-          <div 
-            onClick={e => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-5 shadow-2xl font-mono space-y-4 pointer-events-auto cursor-default"
-          >
-            
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-cyan-400" />
-                <span className="font-heading font-black text-sm text-white uppercase tracking-wider">
-                  Add Friend to Squad
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setIsAddFriendOpen(false);
-                  setJustAddedFriend(null);
-                }}
-                className="text-slate-400 hover:text-white p-1 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {justAddedFriend ? (
-              <div className="space-y-3 animate-in fade-in">
-                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5 text-emerald-400">
-                    <Check className="w-4 h-4" />
-                    <span>{justAddedFriend.name} added to Squad!</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    Share this 1-tap link with <strong>{justAddedFriend.name}</strong>. When they tap it, their phone saves their identity in cookies and joins your radar automatically!
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <button
-                    onClick={() => handleShareWhatsApp(justAddedFriend.url, justAddedFriend.name)}
-                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    <span>Send Invite on WhatsApp</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleCopyLink(justAddedFriend.url)}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedLink ? '✓ Link Copied to Clipboard!' : 'Copy 1-Tap Invite Link'}</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={() => setJustAddedFriend(null)}
-                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
-                  >
-                    Add Another
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAddFriendOpen(false);
-                      setJustAddedFriend(null);
-                    }}
-                    className="flex-1 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer"
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleAddFriendSubmit} className="space-y-3">
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Enter your friend's name. They will be added to your squad roster and automatically show up on your live map when they ride!
-                </p>
-
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    maxLength={18}
-                    value={newFriendName}
-                    onChange={e => setNewFriendName(e.target.value)}
-                    placeholder="Friend's Name (e.g. Vikram)"
-                    className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-cyan-400"
-                  />
-                  <input
-                    type="text"
-                    maxLength={25}
-                    value={newFriendBike}
-                    onChange={e => setNewFriendBike(e.target.value)}
-                    placeholder="Bike Model (optional, e.g. Royal Enfield 350)"
-                    className="w-full py-2 px-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-bold text-xs focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddFriendOpen(false)}
-                    className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!newFriendName.trim()}
-                    className="flex-1 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs cursor-pointer disabled:opacity-40 transition-colors shadow-sm"
-                  >
-                    Add to Squad
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}

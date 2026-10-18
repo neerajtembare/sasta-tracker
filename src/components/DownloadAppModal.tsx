@@ -3,8 +3,9 @@ import { Download, Smartphone, Share2, Check, X, ShieldCheck, Copy, Sparkles, Ex
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
 
-export const APK_DIRECT_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog-debug.apk';
-export const APK_RELEASE_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/tag/v1.0.0';
+export const APK_DIRECT_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog.apk';
+export const APK_DEBUG_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog-debug.apk';
+export const APK_RELEASE_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest';
 
 interface DownloadAppModalProps {
   isOpen: boolean;
@@ -121,7 +122,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
                   Recommended for Android
                 </span>
                 <span className="text-[10px] text-emerald-400 font-bold">
-                  v1.0.0 • ~4.05 MB
+                  v1.1.0 • ~4.0 MB
                 </span>
               </div>
 
@@ -137,7 +138,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
               <div className="pt-1">
                 <a
                   href={APK_DIRECT_URL}
-                  download="throttlelog-debug.apk"
+                  download="throttlelog.apk"
                   onClick={() => triggerHaptic(40)}
                   className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer transition-all active:scale-95 no-underline"
                 >
@@ -171,7 +172,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
                     If your browser displays <em>"File might be harmful"</em>, tap <strong>"Download anyway"</strong> (standard Android prompt for direct APKs).
                   </li>
                   <li>
-                    Pull down your notification bar or open your phone's <strong>Downloads</strong> folder, tap <strong>throttlelog-debug.apk</strong>, and tap <strong>Install</strong>.
+                    Pull down your notification bar or open your phone's <strong>Downloads</strong> folder, tap <strong>throttlelog.apk</strong>, and tap <strong>Install</strong>.
                   </li>
                 </ol>
               )}

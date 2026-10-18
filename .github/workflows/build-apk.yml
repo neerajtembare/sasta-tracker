@@ -45,11 +45,31 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Build Android Debug APK
+      - name: Setup Keystore (if provided)
+        if: "${{ secrets.KEYSTORE_BASE64 != '' }}"
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+
+      - name: Build Android APKs
         working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThrottleLog-Release-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -59,23 +79,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Prepare APK for Release
+      - name: Prepare APKs for Release
         run: |
+          cp android/app/build/outputs/apk/release/app-release.apk throttlelog.apk
           cp android/app/build/outputs/apk/debug/app-debug.apk throttlelog-debug.apk
 
       - name: Publish or Update GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.0
-          name: "ThrottleLog Android APK v1.0.0"
+          tag_name: v1.1.0
+          name: "ThrottleLog Android APK v1.1.0"
           body: |
-            ### ThrottleLog Android Standalone APK
-            Direct download link for Android riders:
-            - Real-time 100km open crew radar
-            - Direct GPS telemetry & high-speed lean angle logger
-            - Zero server logins, no Google Play account required
-          files: throttlelog-debug.apk
+            ### ThrottleLog Android Standalone APK (v1.1.0)
+            Direct standalone motorcycle crew radar & blackbox tracker for Android:
+            - **Automatic Convoy Regroup Chime**: Triumphant ascending harmonic audio chime when all riders converge within 40m.
+            - **Offline Regional Map Pre-Download**: 1-tap 25km bounding-box tile pre-caching for signal-dead mountain ghats.
+            - **High-G Crash & Abrupt Stop Detection**: Sensor fusion (>6.5G peak + rapid deceleration) with 30s emergency SOS alert.
+            - **Zero Cloud Costs / No Logins**: Decentralized direct telemetry via public MQTT broker.
+          files: |
+            throttlelog.apk
+            throttlelog-debug.apk
           prerelease: false
           make_latest: true
         env:

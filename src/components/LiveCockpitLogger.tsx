@@ -41,6 +41,7 @@ import { GroupRideHud } from './GroupRideHud';
 import { ShareLocationModal } from './ShareLocationModal';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
 import { Gyro3DVisualizer } from './Gyro3DVisualizer';
+import { checkBatteryOptimizationStatus, requestBatteryOptimizationExemption } from '../utils/nativeKeepAlive';
 
 interface LiveCockpitLoggerProps {
   onRideRecorded: (gpxString: string) => void;
@@ -106,6 +107,14 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
       return false;
     }
   });
+
+  const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean>(true);
+
+  useEffect(() => {
+    checkBatteryOptimizationStatus().then(ignored => {
+      setIsBatteryIgnored(ignored);
+    });
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -311,6 +320,26 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-emerald-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 border border-emerald-400">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+ 
+      {/* Background Battery Optimization Exemption Banner (Ensures 100% background GPS in pocket) */}
+      {!isBatteryIgnored && (
+        <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-between gap-2 font-mono text-xs text-amber-200 animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate text-[11px]">Enable unrestricted battery for 100% background GPS in pocket</span>
+          </div>
+          <button
+            onClick={async () => {
+              triggerHaptic(25);
+              await requestBatteryOptimizationExemption();
+              setIsBatteryIgnored(true);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] shrink-0 cursor-pointer shadow-sm transition-all active:scale-95"
+          >
+            Allow
+          </button>
         </div>
       )}
 

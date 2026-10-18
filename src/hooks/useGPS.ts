@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { LiveGpsPoint, UnitSystem } from '../types';
 import { convertDistance } from '../utils/units';
 import { playChime } from '../utils/audioChimes';
+import { addNativeLocationListener, NativeLocationData } from '../utils/nativeKeepAlive';
 import {
   calculate3DOrientation,
   createZeroCalibration,
@@ -396,7 +397,184 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
   }, []);
 
-  // ── Standby / Live GPS watch ──
+  const lastNativeFixTsRef = useRef<number>(0);
+
+  // ── Shared GPS Fix Processing Engine (Native Android GNSS + Browser Geolocation) ──
+  const processLocationFix = useCallback((coords: {
+    latitude: number;
+    longitude: number;
+    speed: number | null;
+    heading: number | null;
+    altitude: number | null;
+    accuracy: number | null;
+    isNative?: boolean;
+  }) => {
+    const { latitude, longitude, speed, heading, altitude, accuracy, isNative } = coords;
+    const nowTs = Date.now();
+
+    if (isNative) {
+      lastNativeFixTsRef.current = nowTs;
+    } else {
+      // Prioritize hardware-level native Android fix if received recently (< 1800ms)
+      if (nowTs - lastNativeFixTsRef.current < 1800) {
+        return;
+      }
+    }
+
+    // Clear any previous transient GPS error when a fix is successfully acquired
+    setGpsError(null);
+
+    // 1. Accuracy filter: if satellite fix is already locked (> 3 points) and current accuracy is poor (> 65m),
+    // drop this fix to eliminate false cell-tower triangulation or Wi-Fi jumps.
+    if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 65) {
+      return;
+    }
+
+    // 2. Speed acceleration anomaly filter: clamp spikes > 14 m/s² (~50 km/h per second)
+    let kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
+    const lastPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
+    if (isRecordingRef.current && lastPt) {
+      const dtSec = Math.max(0.3, (nowTs - lastPt.timestamp) / 1000);
+      const maxDeltaKmh = 14 * 3.6 * dtSec;
+      if (kmh - lastPt.speedKmh > maxDeltaKmh) {
+        kmh = lastPt.speedKmh + maxDeltaKmh;
+      } else if (lastPt.speedKmh - kmh > maxDeltaKmh * 1.5) {
+        kmh = Math.max(0, lastPt.speedKmh - maxDeltaKmh * 1.5);
+      }
+    }
+
+    setCurrentCoords(prev => {
+      if (prev && prev.lat === latitude && prev.lon === longitude) return prev;
+      return { lat: latitude, lon: longitude };
+    });
+    setCurrentSpeedKmh(kmh);
+
+    // 3. Compass stabilization & GPS centrifugal cornering fusion
+    if (kmh >= 2.5 && heading !== null && !isNaN(heading)) {
+      setCurrentHeading(heading);
+      if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
+        let dHeading = heading - lastGpsHeadingRef.current;
+        if (dHeading > 180) dHeading -= 360;
+        if (dHeading < -180) dHeading += 360;
+        const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
+        if (dtSec >= 0.2 && dtSec <= 3.0) {
+          const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
+          leanAngleRef.current = fused;
+          setLeanAngle(fused);
+        }
+      }
+      lastGpsHeadingRef.current = heading;
+      lastGpsPointTimeRef.current = nowTs;
+    }
+    if (altitude !== null) setCurrentAltitude(altitude);
+    setGpsAccuracy(accuracy);
+
+    // 4. Distance accumulation & point recording only active when recording and not paused
+    if (isRecordingRef.current && !isPausedRef.current) {
+      setMaxRecordedSpeed(prev => Math.max(prev, kmh));
+
+      if (lastPositionRef.current) {
+        const dMeters = haversineMeters(
+          lastPositionRef.current.lat,
+          lastPositionRef.current.lon,
+          latitude,
+          longitude,
+        );
+        // Move deadband: only accumulate if moved > 1.5m to avoid GPS jitter when parked.
+        if (dMeters > 1.5) {
+          if (dMeters < 1500) {
+            totalDistanceMetersRef.current += dMeters;
+            setTotalDistanceMeters(totalDistanceMetersRef.current);
+          }
+          lastPositionRef.current = { lat: latitude, lon: longitude };
+        }
+      } else {
+        lastPositionRef.current = { lat: latitude, lon: longitude };
+      }
+
+      // Stationary point throttling: if moving slower than 1.2 km/h and last point was saved < 5s ago,
+      // skip pushing duplicate stationary points to prevent inflating GPX size during red lights or long stops
+      const lastRecordedPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
+      if (kmh < 1.2 && lastRecordedPt && (nowTs - lastRecordedPt.timestamp) < 5000) {
+        return;
+      }
+
+      const pt: LiveGpsPoint = {
+        lat: latitude,
+        lon: longitude,
+        accuracy: accuracy || 0,
+        speed: speed !== null && speed >= 0 ? speed : null,
+        speedKmh: kmh,
+        heading: heading !== null && !isNaN(heading) ? heading : null,
+        altitude: altitude || null,
+        timestamp: Date.now(),
+        leanAngle: leanAngleRef.current,
+      };
+
+      recordedPointsRef.current.push(pt);
+      const count = recordedPointsRef.current.length;
+      setPointsCount(count);
+
+      // Continuous Persistent Session snapshot on EVERY point for zero data loss
+      try {
+        const snapshot = JSON.stringify({
+          points: recordedPointsRef.current,
+          elapsedSeconds: elapsedSecondsRef.current,
+          movingSeconds: movingSecondsRef.current,
+          stoppedSeconds: stoppedSecondsRef.current,
+          totalDistanceMeters: totalDistanceMetersRef.current,
+          waypoints: markedWaypointsRef.current,
+          timestamp: Date.now(),
+        });
+        localStorage.setItem('sasta_live_recovery_v1', snapshot);
+        sessionStorage.setItem('sasta_live_recovery', snapshot);
+      } catch {}
+
+      // Voice milestones using up-to-date ref
+      if (voiceFeedbackEnabledRef.current && 'speechSynthesis' in window) {
+        const totalKm = totalDistanceMetersRef.current / 1000;
+        const uSys = unitSystemRef.current;
+        const milestone =
+          uSys === 'imperial'
+            ? Math.floor((totalKm * 0.621371) / 5) * 5
+            : Math.floor(totalKm / 5) * 5;
+        if (milestone > 0 && milestone > lastSpokenKmRef.current) {
+          lastSpokenKmRef.current = milestone;
+          const distUnit = uSys === 'imperial' ? 'miles' : 'kilometers';
+          const spdUnit = uSys === 'imperial' ? 'miles per hour' : 'kilometers per hour';
+          const spd = uSys === 'imperial' ? Math.round(kmh * 0.621371) : Math.round(kmh);
+          const text = `${milestone} ${distUnit} completed. Current speed ${spd} ${spdUnit}.`;
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.rate = 1.05;
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+    }
+  }, [mountMode]);
+
+  // ── Native Android Hardware Location Listener (Foreground Service Bridge) ──
+  useEffect(() => {
+    let cleanupFn: (() => void) | null = null;
+    addNativeLocationListener((data: NativeLocationData) => {
+      processLocationFix({
+        latitude: data.latitude,
+        longitude: data.longitude,
+        speed: data.speed,
+        heading: data.bearing,
+        altitude: data.altitude,
+        accuracy: data.accuracy,
+        isNative: true,
+      });
+    }).then(cleanup => {
+      if (cleanup) cleanupFn = cleanup;
+    });
+
+    return () => {
+      if (cleanupFn) cleanupFn();
+    };
+  }, [processLocationFix]);
+
+  // ── Standby / Live Web GPS Watcher (Browser Fallback) ──
   const startGpsWatch = useCallback(() => {
     if (watchIdRef.current !== null) return;
     if (!navigator.geolocation) {
@@ -408,138 +586,15 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     watchIdRef.current = navigator.geolocation.watchPosition(
       position => {
         const { latitude, longitude, speed, heading, altitude, accuracy } = position.coords;
-        // Clear any previous transient GPS error when a fix is successfully acquired
-        setGpsError(null);
-
-        // 1. Accuracy filter: if satellite fix is already locked (> 3 points) and current accuracy is poor (> 65m),
-        // drop this fix to eliminate false cell-tower triangulation or Wi-Fi jumps.
-        if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 65) {
-          return;
-        }
-
-        // 2. Speed acceleration anomaly filter: clamp spikes > 14 m/s² (~50 km/h per second)
-        let kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
-        const lastPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
-        const nowTs = Date.now();
-        if (isRecordingRef.current && lastPt) {
-          const dtSec = Math.max(0.3, (nowTs - lastPt.timestamp) / 1000);
-          const maxDeltaKmh = 14 * 3.6 * dtSec;
-          if (kmh - lastPt.speedKmh > maxDeltaKmh) {
-            kmh = lastPt.speedKmh + maxDeltaKmh;
-          } else if (lastPt.speedKmh - kmh > maxDeltaKmh * 1.5) {
-            kmh = Math.max(0, lastPt.speedKmh - maxDeltaKmh * 1.5);
-          }
-        }
-
-        setCurrentCoords(prev => {
-          if (prev && prev.lat === latitude && prev.lon === longitude) return prev;
-          return { lat: latitude, lon: longitude };
+        processLocationFix({
+          latitude,
+          longitude,
+          speed,
+          heading,
+          altitude,
+          accuracy,
+          isNative: false,
         });
-        setCurrentSpeedKmh(kmh);
-
-        // 3. Compass stabilization & GPS centrifugal cornering fusion
-        if (kmh >= 2.5 && heading !== null && !isNaN(heading)) {
-          setCurrentHeading(heading);
-          if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
-            let dHeading = heading - lastGpsHeadingRef.current;
-            if (dHeading > 180) dHeading -= 360;
-            if (dHeading < -180) dHeading += 360;
-            const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
-            if (dtSec >= 0.2 && dtSec <= 3.0) {
-              const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
-              leanAngleRef.current = fused;
-              setLeanAngle(fused);
-            }
-          }
-          lastGpsHeadingRef.current = heading;
-          lastGpsPointTimeRef.current = nowTs;
-        }
-        if (altitude !== null) setCurrentAltitude(altitude);
-        setGpsAccuracy(accuracy);
-
-        // 4. Distance accumulation & point recording only active when recording and not paused
-        if (isRecordingRef.current && !isPausedRef.current) {
-          setMaxRecordedSpeed(prev => Math.max(prev, kmh));
-
-          if (lastPositionRef.current) {
-            const dMeters = haversineMeters(
-              lastPositionRef.current.lat,
-              lastPositionRef.current.lon,
-              latitude,
-              longitude,
-            );
-            // Move deadband: only accumulate if moved > 1.5m to avoid GPS jitter when parked.
-            // If moved > 1.5m, accumulate distance if < 1500m (smooth tunnel exit) and ALWAYS update lastPositionRef
-            // so distance tracking never permanently deadlocks after tunnels or temporary signal gaps!
-            if (dMeters > 1.5) {
-              if (dMeters < 1500) {
-                totalDistanceMetersRef.current += dMeters;
-                setTotalDistanceMeters(totalDistanceMetersRef.current);
-              }
-              lastPositionRef.current = { lat: latitude, lon: longitude };
-            }
-          } else {
-            lastPositionRef.current = { lat: latitude, lon: longitude };
-          }
-
-          // Stationary point throttling: if moving slower than 1.2 km/h and last point was saved < 5s ago,
-          // skip pushing duplicate stationary points to prevent inflating GPX size during red lights or long stops
-          const lastRecordedPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
-          if (kmh < 1.2 && lastRecordedPt && (nowTs - lastRecordedPt.timestamp) < 5000) {
-            return;
-          }
-
-          const pt: LiveGpsPoint = {
-            lat: latitude,
-            lon: longitude,
-            accuracy: accuracy || 0,
-            speed: speed !== null && speed >= 0 ? speed : null,
-            speedKmh: kmh,
-            heading: heading !== null && !isNaN(heading) ? heading : null,
-            altitude: altitude || null,
-            timestamp: Date.now(),
-            leanAngle: leanAngleRef.current,
-          };
-
-          recordedPointsRef.current.push(pt);
-          const count = recordedPointsRef.current.length;
-          setPointsCount(count);
-
-          // Continuous Persistent Session snapshot on EVERY point for zero data loss
-          try {
-            const snapshot = JSON.stringify({
-              points: recordedPointsRef.current,
-              elapsedSeconds: elapsedSecondsRef.current,
-              movingSeconds: movingSecondsRef.current,
-              stoppedSeconds: stoppedSecondsRef.current,
-              totalDistanceMeters: totalDistanceMetersRef.current,
-              waypoints: markedWaypointsRef.current,
-              timestamp: Date.now(),
-            });
-            localStorage.setItem('sasta_live_recovery_v1', snapshot);
-            sessionStorage.setItem('sasta_live_recovery', snapshot);
-          } catch {}
-
-          // Voice milestones using up-to-date ref
-          if (voiceFeedbackEnabledRef.current && 'speechSynthesis' in window) {
-            const totalKm = totalDistanceMetersRef.current / 1000;
-            const uSys = unitSystemRef.current;
-            const milestone =
-              uSys === 'imperial'
-                ? Math.floor((totalKm * 0.621371) / 5) * 5
-                : Math.floor(totalKm / 5) * 5;
-            if (milestone > 0 && milestone > lastSpokenKmRef.current) {
-              lastSpokenKmRef.current = milestone;
-              const distUnit = uSys === 'imperial' ? 'miles' : 'kilometers';
-              const spdUnit = uSys === 'imperial' ? 'miles per hour' : 'kilometers per hour';
-              const spd = uSys === 'imperial' ? Math.round(kmh * 0.621371) : Math.round(kmh);
-              const text = `${milestone} ${distUnit} completed. Current speed ${spd} ${spdUnit}.`;
-              const utterance = new SpeechSynthesisUtterance(text);
-              utterance.rate = 1.05;
-              window.speechSynthesis.speak(utterance);
-            }
-          }
-        }
       },
       error => {
         console.warn('Geolocation watch error:', error);
@@ -563,7 +618,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 },
     );
-  }, []);
+  }, [processLocationFix]);
 
   // Auto-start standby GPS fix on mount so satellite lock & accuracy are ready before user hits start
   useEffect(() => {

@@ -1,9 +1,27 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 
+export interface NativeLocationData {
+  latitude: number;
+  longitude: number;
+  speed: number | null;
+  speedKmh: number;
+  altitude: number | null;
+  bearing: number | null;
+  accuracy: number;
+  time: number;
+  totalDistanceMeters: number;
+}
+
 interface ThrottleLogNativePlugin {
   startKeepAlive(): Promise<void>;
   stopKeepAlive(): Promise<void>;
   setKeepScreenOn(options: { enabled: boolean }): Promise<void>;
+  isBatteryOptimizationIgnored(): Promise<{ isIgnored: boolean }>;
+  requestBatteryOptimizationExemption(): Promise<void>;
+  addListener(
+    eventName: 'onNativeLocation',
+    listenerFunc: (data: NativeLocationData) => void
+  ): Promise<any>;
 }
 
 let webWakeLockSentinel: any = null;
@@ -30,6 +48,9 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
         }
       }
     },
+    isBatteryOptimizationIgnored: async () => ({ isIgnored: true }),
+    requestBatteryOptimizationExemption: async () => {},
+    addListener: async () => ({ remove: () => {} }),
   },
 });
 
@@ -57,4 +78,45 @@ export async function stopNativeRadarKeepAlive() {
   } else {
     await NativeBridge.setKeepScreenOn({ enabled: false });
   }
+}
+
+export async function checkBatteryOptimizationStatus(): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.isBatteryOptimizationIgnored();
+      return !!res.isIgnored;
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+
+export async function requestBatteryOptimizationExemption(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.requestBatteryOptimizationExemption();
+    } catch (e) {
+      console.warn('Battery exemption request warning:', e);
+    }
+  }
+}
+
+export async function addNativeLocationListener(
+  callback: (data: NativeLocationData) => void
+): Promise<(() => void) | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const handle = await NativeBridge.addListener('onNativeLocation', callback);
+      return () => {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      };
+    } catch (e) {
+      console.warn('Could not register native location listener:', e);
+      return null;
+    }
+  }
+  return null;
 }

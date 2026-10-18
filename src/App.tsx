@@ -1104,6 +1104,7 @@ export default function App() {
               pointsCount={gps.pointsCount}
               totalDistanceMeters={gps.totalDistanceMeters}
               activeRoute={analysis}
+              onClearActiveRoute={handleCloseTrack}
               onLoadSampleRide={() => handleLoadSample()}
               isOnRadar={groupRide.isOnRadar}
               onToggleRadar={groupRide.toggleOnRadar}

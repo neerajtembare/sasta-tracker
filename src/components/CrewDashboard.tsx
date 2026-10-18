@@ -67,6 +67,7 @@ interface CrewDashboardProps {
   pointsCount?: number;
   totalDistanceMeters?: number;
   activeRoute?: RideAnalysis | null;
+  onClearActiveRoute?: () => void;
   onLoadSampleRide?: () => void;
   isOnRadar?: boolean;
   onToggleRadar?: (enable?: boolean) => void;
@@ -102,6 +103,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   pointsCount = 0,
   totalDistanceMeters = 0,
   activeRoute = null,
+  onClearActiveRoute,
   onLoadSampleRide,
   isOnRadar = true,
   onToggleRadar,
@@ -142,6 +144,17 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       return next;
     });
   };
+
+  const remainingDistKm = useMemo(() => {
+    if (!activeRoute || !activeRoute.points || activeRoute.points.length === 0 || !myLocation) return null;
+    const dest = activeRoute.points[activeRoute.points.length - 1];
+    const R = 6371; // km
+    const dLat = ((dest.lat - myLocation.lat) * Math.PI) / 180;
+    const dLon = ((dest.lon - myLocation.lon) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((myLocation.lat * Math.PI) / 180) * Math.cos((dest.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (R * c).toFixed(1);
+  }, [activeRoute, myLocation]);
 
   const isAnyLocalModalOpen = isLoginModalOpen;
   const localModalHistoryPushedRef = useRef(false);
@@ -296,10 +309,15 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 <div className="truncate">
                   <span className="font-bold text-white truncate">{activeRoute.name || 'Planned Route'}</span>
                   <span className="text-cyan-300 ml-1.5 font-bold">({activeRoute.totalDistanceKm.toFixed(1)} km)</span>
+                  {remainingDistKm && (
+                    <span className="text-emerald-400 font-bold ml-1.5 text-[10px]">
+                      • {remainingDistKm} km left
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => {
                     triggerHaptic(30);
@@ -314,6 +332,18 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                   <Navigation className="w-3.5 h-3.5" />
                   <span>Google Maps</span>
                 </button>
+                {onClearActiveRoute && (
+                  <button
+                    onClick={() => {
+                      triggerHaptic(20);
+                      onClearActiveRoute();
+                    }}
+                    className="h-9 w-9 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                    title="Clear active route from map"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           )}

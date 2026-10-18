@@ -76,6 +76,7 @@ interface CrewLiveMapProps {
   onToggleRadar?: (enable?: boolean) => void;
   onJoinSharedRoute?: (route: any) => void;
   starredRiderIds?: string[];
+  externalMapLayer?: MapLayerType;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
@@ -92,6 +93,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   isConnected = false,
   theme = 'dark',
   unitSystem = 'metric',
+  externalMapLayer,
   onTriggerSos,
   onDismissSos,
   onLeaveRoom,
@@ -153,16 +155,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return 'dark';
   });
 
-  const toggleSunlightMode = () => {
-    triggerHaptic(40);
-    setMapLayer(prev => {
-      const next: MapLayerType = prev === 'sunlight' ? 'dark' : 'sunlight';
-      try {
-        localStorage.setItem('sasta_sunlight_mode', String(next === 'sunlight'));
-      } catch {}
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (externalMapLayer) {
+      setMapLayer(externalMapLayer);
+    }
+  }, [externalMapLayer]);
 
   const [isLayerPopoverOpen, setIsLayerPopoverOpen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
@@ -1218,237 +1215,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          RIGHT FLOATING ACTION RAIL: Layers, Recenter, Compass, Fit Convoy, Flip
+          GOOGLE MAPS-STYLE FLOATING RE-CENTER FAB (BOTTOM-RIGHT)
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute right-2.5 top-12 z-20 flex flex-col gap-2.5 pointer-events-auto">
-        {/* Layer Switcher FAB */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              triggerHaptic(15);
-              setIsLayerPopoverOpen(prev => !prev);
-            }}
-            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
-              isLayerPopoverOpen
-                ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40'
-                : 'bg-slate-950/95 border-slate-700 text-slate-200 hover:text-white hover:border-cyan-400'
-            }`}
-            title="Map Style: Dark, Sunlight, Street, Satellite"
-          >
-            <Layers className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
-          </button>
-
-          {/* Layer Selection Popover */}
-          {isLayerPopoverOpen && (
-            <div className="absolute right-13 top-0 z-30 p-2 rounded-xl bg-slate-950/98 backdrop-blur-md border border-slate-700 shadow-2xl flex flex-col gap-1.5 min-w-[130px] animate-in fade-in zoom-in-95 duration-150">
-              <button
-                onClick={() => {
-                  setMapLayer('dark');
-                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
-                  setIsLayerPopoverOpen(false);
-                  triggerHaptic(20);
-                }}
-                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
-                  mapLayer === 'dark' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-cyan-400 shrink-0" />
-                <span>Dark</span>
-              </button>
-              <button
-                onClick={() => {
-                  setMapLayer('sunlight');
-                  try { localStorage.setItem('sasta_sunlight_mode', 'true'); } catch {}
-                  setIsLayerPopoverOpen(false);
-                  triggerHaptic(20);
-                }}
-                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
-                  mapLayer === 'sunlight' ? 'bg-amber-400 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-300 border border-amber-600 shrink-0" />
-                <span>☀️ Sunlight</span>
-              </button>
-              <button
-                onClick={() => {
-                  setMapLayer('streets');
-                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
-                  setIsLayerPopoverOpen(false);
-                  triggerHaptic(20);
-                }}
-                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
-                  mapLayer === 'streets' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-amber-600 shrink-0" />
-                <span>Street</span>
-              </button>
-              <button
-                onClick={() => {
-                  setMapLayer('satellite');
-                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
-                  setIsLayerPopoverOpen(false);
-                  triggerHaptic(20);
-                }}
-                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
-                  mapLayer === 'satellite' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 border border-emerald-400 shrink-0" />
-                <span>Satellite</span>
-              </button>
-
-              <div className="h-px bg-slate-800 my-0.5" />
-              <button
-                onClick={() => {
-                  setIsLayerPopoverOpen(false);
-                  handleCacheRegionalMap();
-                }}
-                disabled={isCachingRoute || !myLocation}
-                className="px-3 py-2 rounded-lg text-left font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-colors text-emerald-400 hover:bg-slate-800 disabled:opacity-50"
-                title="Download 25km surrounding area tiles for offline riding in mountain ghats"
-              >
-                <Download className="w-3.5 h-3.5 shrink-0" />
-                <span>Save 25km Area</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* 1-Tap Sunlight Glare Mode Toggle Button */}
-        <button
-          onClick={toggleSunlightMode}
-          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
-            mapLayer === 'sunlight'
-              ? 'bg-amber-400 border-amber-200 text-slate-950 ring-2 ring-amber-400/60 shadow-amber-500/40'
-              : 'bg-slate-950/95 border-slate-700 text-amber-400 hover:bg-slate-900 hover:border-amber-400'
-          }`}
-          title={mapLayer === 'sunlight' ? 'Switch back to Dark Mode' : '1-Tap Sunlight / Glare High Contrast Mode'}
-        >
-          {mapLayer === 'sunlight' ? <Sun className="w-5 h-5 sm:w-5.5 sm:h-5.5" /> : <Moon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />}
-        </button>
-
-        {/* Recenter on Me */}
+      <div 
+        style={{ bottom: 'max(4.2rem, calc(env(safe-area-inset-bottom) + 3.8rem))' }}
+        className="absolute right-3 sm:right-4 z-20 flex flex-col gap-2 pointer-events-auto"
+      >
         <button
           onClick={handleRecenterMe}
-          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-12 h-12 rounded-full backdrop-blur-md border shadow-2xl flex items-center justify-center cursor-pointer transition-all active:scale-90 ${
             selectedRiderId === 'me'
               ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40 ring-2 ring-cyan-400/50'
-              : 'bg-slate-950/95 border-slate-700 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
+              : 'bg-slate-950/90 border-slate-700 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
           }`}
-          title="Recenter on Me (GPS)"
+          title="Recenter on My Location (GPS)"
+          aria-label="Recenter Map"
         >
-          <Crosshair className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
+          <Crosshair className="w-5 h-5 stroke-[2.2]" />
         </button>
-
-        {/* Motorcycle Glove Zoom In (+) */}
-        <button
-          onClick={() => {
-            triggerHaptic(15);
-            mapInstanceRef.current?.zoomIn();
-          }}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-950/95 backdrop-blur-md border border-slate-700 hover:border-cyan-400 text-slate-200 hover:text-white shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
-          title="Zoom In (Motorcycle Glove Friendly 48px)"
-        >
-          <Plus className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
-        </button>
-
-        {/* Motorcycle Glove Zoom Out (-) */}
-        <button
-          onClick={() => {
-            triggerHaptic(15);
-            mapInstanceRef.current?.zoomOut();
-          }}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-950/95 backdrop-blur-md border border-slate-700 hover:border-cyan-400 text-slate-200 hover:text-white shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
-          title="Zoom Out (Motorcycle Glove Friendly 48px)"
-        >
-          <Minus className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
-        </button>
-
-        {/* Compass & Course-Up Navigation Toggle */}
-        <button
-          onClick={() => {
-            triggerHaptic(20);
-            setOrientationMode(prev => prev === 'north' ? 'course' : 'north');
-            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
-          }}
-          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 ${
-            orientationMode === 'course'
-              ? 'bg-amber-500 border-amber-300 text-slate-950 ring-2 ring-amber-400/50 shadow-amber-500/40'
-              : 'bg-slate-950/95 border-slate-700 text-amber-400 hover:border-amber-400'
-          }`}
-          title={`Orientation: ${orientationMode === 'course' ? 'Course-Up (Direction Ahead)' : 'North-Up'}. Tap to toggle.`}
-        >
-          <div 
-            style={{ transform: `rotate(${-targetMapRotation}deg)`, transition: 'transform 0.35s ease-out' }}
-            className="flex flex-col items-center justify-center w-5 h-5 pointer-events-none"
-          >
-            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[7px] border-b-rose-500" />
-            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-t-[7px] border-t-slate-400" />
-          </div>
-          <span className="text-[8px] font-mono font-black -mt-0.5 tracking-tighter">
-            {myHeading !== null ? `${Math.round(myHeading)}°` : 'N'}
-          </span>
-        </button>
-
-        {/* Fit All Crew Riders (Convoy Bounds) */}
-        <button
-          onClick={handleFitAllRiders}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-950/95 backdrop-blur-md border border-slate-700 hover:border-sky-400 text-sky-400 hover:text-sky-300 shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
-          title="Fit Convoy (Show all riders on map)"
-        >
-          <Scan className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
-        </button>
-
-        {/* Flip Map 180° */}
-        <button
-          onClick={() => {
-            triggerHaptic(20);
-            setIsFlipped180(prev => !prev);
-            setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
-          }}
-          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
-            isFlipped180
-              ? 'bg-purple-600 border-purple-300 text-white shadow-purple-600/40 ring-2 ring-purple-400/50'
-              : 'bg-slate-950/95 border-slate-700 text-slate-300 hover:border-purple-400'
-          }`}
-          title="Flip Map 180° (Fix inverted phone mount)"
-        >
-          <RotateCw className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
-        </button>
-
-        {/* Offline Map Pre-Cache Button (Save Route Map or 25km Region for Mountain Ghats) */}
-        {activeRoute ? (
-          <button
-            onClick={handleCacheOfflineRoute}
-            disabled={isCachingRoute}
-            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
-              isCachingRoute
-                ? 'bg-emerald-500 border-emerald-300 text-slate-950 animate-pulse ring-2 ring-emerald-400/50'
-                : cacheSuccessMsg
-                ? 'bg-emerald-500 border-emerald-300 text-slate-950'
-                : 'bg-slate-950/95 border-slate-700 text-emerald-400 hover:border-emerald-400'
-            }`}
-            title="Download Route Map Tiles for Offline Ghats / Zero Cellular Coverage"
-          >
-            {cacheSuccessMsg ? <Check className="w-5 h-5" /> : <Download className="w-5 h-5" />}
-          </button>
-        ) : myLocation ? (
-          <button
-            onClick={handleCacheRegionalMap}
-            disabled={isCachingRoute}
-            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
-              isCachingRoute
-                ? 'bg-emerald-500 border-emerald-300 text-slate-950 animate-pulse ring-2 ring-emerald-400/50'
-                : cacheSuccessMsg
-                ? 'bg-emerald-500 border-emerald-300 text-slate-950'
-                : 'bg-slate-950/95 border-slate-700 text-emerald-400 hover:border-emerald-400'
-            }`}
-            title="Download 25km Surrounding Area Map for Offline Ghats / Zero Cellular Coverage"
-          >
-            {cacheSuccessMsg ? <Check className="w-5 h-5" /> : <Download className="w-5 h-5" />}
-          </button>
-        ) : null}
       </div>
 
       {/* Offline Caching Progress / Success Pill */}

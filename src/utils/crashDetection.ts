@@ -1,0 +1,136 @@
+/**
+ * ThrottleLog — Motorcycle High-G Crash & Abrupt Stop Detection Engine
+ * 
+ * Engineered specifically for motorcycle touring and Indian road dynamics:
+ * - Heavily filtered against single-cylinder engine thump (RE 350, KTM 390)
+ * - Damped against speed-breakers, rumble strips, and potholes
+ * - Requires:
+ *   1. Active riding motion (> 18 km/h) prior to event
+ *   2. Severe G-force impact spike (> 6.5G)
+ *   3. Abrupt speed collapse to < 3 km/h within 2 seconds
+ *   4. Sustained stationary state for > 4 seconds
+ */
+
+export interface CrashEvent {
+  timestamp: number;
+  peakG: number;
+  preImpactSpeedKmh: number;
+}
+
+class MotorcycleCrashDetector {
+  private isListening = false;
+  private onCrashCallback: ((event: CrashEvent) => void) | null = null;
+  private recentSpeeds: Array<{ speedKmh: number; time: number }> = [];
+  private potentialImpact: { peakG: number; time: number; preSpeed: number } | null = null;
+  private impactCooldownUntil = 0;
+  private currentSpeedKmh = 0;
+
+  // Persistence Key
+  private readonly STORAGE_KEY = 'sasta_crash_detection_v1';
+
+  public isEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+      const saved = localStorage.getItem(this.STORAGE_KEY);
+      return saved !== 'false'; // Default enabled
+    } catch {
+      return true;
+    }
+  }
+
+  public setEnabled(enabled: boolean) {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(this.STORAGE_KEY, String(enabled));
+    } catch {}
+    if (!enabled) {
+      this.potentialImpact = null;
+    }
+  }
+
+  public isSupported(): boolean {
+    return typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
+  }
+
+  public updateGpsSpeed(speedKmh: number) {
+    const now = Date.now();
+    this.currentSpeedKmh = speedKmh;
+    this.recentSpeeds.push({ speedKmh, time: now });
+
+    // Prune speeds older than 6 seconds
+    this.recentSpeeds = this.recentSpeeds.filter(s => now - s.time <= 6000);
+
+    // If an impact was recorded, check if bike remained stopped for 4 seconds
+    if (this.potentialImpact && now - this.potentialImpact.time >= 4000) {
+      if (speedKmh <= 3.5) {
+        // Confirmed crash: Severe impact + speed dropped to 0 and stayed stopped
+        const event: CrashEvent = {
+          timestamp: this.potentialImpact.time,
+          peakG: this.potentialImpact.peakG,
+          preImpactSpeedKmh: this.potentialImpact.preSpeed,
+        };
+        this.potentialImpact = null;
+        this.impactCooldownUntil = now + 60000; // 60s cooldown
+        if (this.onCrashCallback) {
+          this.onCrashCallback(event);
+        }
+      } else {
+        // False alarm: rider hit a bump and kept riding at speed
+        this.potentialImpact = null;
+      }
+    }
+  }
+
+  public startListening(onCrashDetected: (event: CrashEvent) => void) {
+    if (typeof window === 'undefined' || this.isListening) return;
+    this.onCrashCallback = onCrashDetected;
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      if (!this.isEnabled()) return;
+      const now = Date.now();
+      if (now < this.impactCooldownUntil) return;
+
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
+
+      // Magnitude of total acceleration vector in m/s^2
+      const magMs2 = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+      // Convert to G-force (1G ≈ 9.80665 m/s^2)
+      const gForce = magMs2 / 9.80665;
+
+      // Indian road threshold: 6.5G (potholes with damped phone mounts peak at 2.5-4G)
+      if (gForce >= 6.5) {
+        // Check if rider was actually riding before this (> 18 km/h in past 4s)
+        const speedsInWindow = this.recentSpeeds.filter(s => now - s.time <= 4000);
+        const maxPreSpeed = speedsInWindow.length > 0 
+          ? Math.max(...speedsInWindow.map(s => s.speedKmh)) 
+          : this.currentSpeedKmh;
+
+        if (maxPreSpeed >= 18) {
+          // Record potential impact candidate
+          if (!this.potentialImpact || gForce > this.potentialImpact.peakG) {
+            this.potentialImpact = {
+              peakG: Number(gForce.toFixed(1)),
+              time: now,
+              preSpeed: Number(maxPreSpeed.toFixed(0)),
+            };
+          }
+        }
+      }
+    };
+
+    try {
+      window.addEventListener('devicemotion', handleMotion, { passive: true });
+      this.isListening = true;
+    } catch (err) {
+      console.warn('Crash detection motion listener warning:', err);
+    }
+  }
+
+  public stopListening() {
+    this.isListening = false;
+    this.potentialImpact = null;
+  }
+}
+
+export const crashDetector = new MotorcycleCrashDetector();

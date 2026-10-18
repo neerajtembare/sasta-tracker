@@ -26,6 +26,8 @@ import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { CrewDashboard } from './components/CrewDashboard';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { DownloadAppModal } from './components/DownloadAppModal';
+import { CrashAlertModal } from './components/CrashAlertModal';
+import { crashDetector, CrashEvent } from './utils/crashDetection';
 import { useGroupRide, SharedRouteInfo } from './hooks/useGroupRide';
 import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
@@ -205,6 +207,27 @@ export default function App() {
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
   const [focusedCoordinate, setFocusedCoordinate] = useState<{ lat: number; lon: number; label?: string } | null>(null);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [crashModalEvent, setCrashModalEvent] = useState<CrashEvent | null>(null);
+
+  // High-G Impact & Crash Detection Listener
+  useEffect(() => {
+    crashDetector.startListening((event) => {
+      setCrashModalEvent(event);
+    });
+    return () => crashDetector.stopListening();
+  }, []);
+
+  const handleConfirmCrashSos = useCallback(() => {
+    setCrashModalEvent(null);
+    groupRide.triggerSos();
+    setSessionNotice('🚨 Emergency SOS automatically broadcast to squad after impact!');
+    setTimeout(() => setSessionNotice(null), 8000);
+  }, [groupRide]);
+
+  const handleCancelCrashSos = useCallback(() => {
+    setCrashModalEvent(null);
+    triggerHaptic(40);
+  }, []);
 
   // Native Android Foreground Service & Keep-Alive (guarantees GPS and WebSocket survive backgrounding to Google Maps/Spotify)
   useEffect(() => {
@@ -250,6 +273,7 @@ export default function App() {
         gps.currentSpeedKmh,
         gps.currentHeading
       );
+      crashDetector.updateGpsSpeed(gps.currentSpeedKmh);
     }
   }, [
     gps.currentCoords?.lat,
@@ -1359,6 +1383,14 @@ export default function App() {
         theme={theme}
         deferredInstallPrompt={deferredInstallPrompt}
         onInstallPwaPrompt={handleTriggerPwaInstall}
+      />
+
+      {/* Severe Impact & Motorcycle Crash Alert Modal */}
+      <CrashAlertModal
+        isOpen={crashModalEvent !== null}
+        crashEvent={crashModalEvent}
+        onCancel={handleCancelCrashSos}
+        onConfirmSos={handleConfirmCrashSos}
       />
     </div>
   );

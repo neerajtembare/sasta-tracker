@@ -84,7 +84,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}
-      className="absolute z-30 pointer-events-none flex justify-center"
+      className="absolute z-40 pointer-events-none flex justify-center"
     >
       <div className="pointer-events-auto w-full max-w-xl space-y-1.5 font-mono">
         
@@ -283,7 +283,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             ) : isConnected ? (
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span className="truncate">Squad #{roomCode} • Waiting for friends</span>
+                <span className="truncate">Live Radar • Waiting for friends to join</span>
               </div>
             ) : (
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">

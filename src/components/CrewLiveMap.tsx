@@ -1031,76 +1031,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          SLEEK FLOATING STATUS CAPSULE (Google Maps Style)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="absolute top-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none">
-        {/* Squad Status Pill */}
-        <div 
-          onClick={() => {
-            if (onToggleRadar) {
-              triggerHaptic(30);
-              onToggleRadar();
-            }
-          }}
-          className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2 rounded-full backdrop-blur-md shadow-xl text-white font-mono text-xs cursor-pointer transition-all active:scale-95 border ${
-            isOnRadar 
-              ? 'bg-slate-950/95 border-cyan-500/60 hover:border-cyan-400' 
-              : 'bg-slate-950/95 border-amber-500/60 hover:border-amber-400'
-          }`}
-          title={isOnRadar ? 'Live on Radar (100km). Tap to go off radar (Ghost mode)' : 'Off Radar (Ghost mode). Tap to go live on radar'}
-        >
-          <span className={`w-2.5 h-2.5 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/50 animate-pulse' : 'bg-amber-400'}`} />
-          <span className="font-heading font-black tracking-wide text-white uppercase text-xs">
-            {isOnRadar ? 'Crew Radar' : 'Off Radar'}
-          </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-            100km
-          </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-            {members.filter(m => m.location && m.isOnline !== false).length + (isOnRadar ? 1 : 0)} ACTIVE
-          </span>
-        </div>
-
-        {/* Right Action: Callsign / Profile Customizer & SOS Emergency Alert */}
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          {onOpenCrewManage && (
-            <button
-              onClick={() => {
-                triggerHaptic(20);
-                onOpenCrewManage();
-              }}
-              className="h-10 px-2.5 sm:px-3 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl cursor-pointer transition-all active:scale-95"
-              title="Edit Callsign, Motorcycle Model & Radar Color"
-            >
-              <div 
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-slate-950 shrink-0 shadow-xs" 
-                style={{ backgroundColor: myColor || '#00f0ff' }}
-              >
-                {(myRiderName || 'R').charAt(0).toUpperCase()}
-              </div>
-              <span className="max-w-[65px] sm:max-w-[105px] truncate">{myRiderName || 'Rider'}</span>
-              <Edit3 className="w-3 h-3 text-cyan-400 shrink-0" />
-            </button>
-          )}
-
-          {isConnected && onTriggerSos && (
-            <button
-              onClick={() => {
-                if (confirm('🚨 Broadcast REGROUP alert with your live GPS location to all crew members?')) {
-                  onTriggerSos();
-                }
-              }}
-              className="h-10 px-3.5 rounded-full bg-rose-600 hover:bg-rose-500 backdrop-blur-md border border-rose-400 text-white font-mono font-black text-xs flex items-center gap-1.5 shadow-xl shadow-rose-950/60 cursor-pointer transition-all active:scale-95"
-              title="Broadcast Emergency SOS / Regroup to Crew"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              <span>SOS</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
           CONVOY PROXIMITY PILL (Shows primary starred buddy distance & speed)
       ───────────────────────────────────────────────────────────── */}
       {primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
@@ -1111,7 +1041,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               mapInstanceRef.current.flyTo([primaryStarredMember.location.lat, primaryStarredMember.location.lon], 16, { animate: true, duration: 0.6 });
             }
           }}
-          className={`absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
+          className={`absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
             primaryStarredMember.distanceFromMeMeters > 2500
               ? 'bg-amber-950/95 border-amber-500 text-amber-300 animate-pulse'
               : 'bg-slate-950/95 border-amber-500/60 text-white'
@@ -1137,25 +1067,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          1-TAP REJOIN PILL ON MAP (If disconnected but last squad known)
-      ───────────────────────────────────────────────────────────── */}
-      {!isConnected && lastRoomCode && onRejoinRoom && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <button
-            onClick={onRejoinRoom}
-            className="h-8 px-3.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-black text-xs flex items-center gap-1.5 shadow-xl shadow-amber-500/30 cursor-pointer transition-all active:scale-95 animate-in fade-in"
-          >
-            <Radio className="w-3.5 h-3.5" />
-            <span>Rejoin Crew "{lastRoomCode}"</span>
-          </button>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
           CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed)
       ───────────────────────────────────────────────────────────── */}
       {crewNotification && (
-        <div className="absolute top-12 left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-14 left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200">
           <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-mono text-xs ${
             crewNotification.type === 'join'
               ? 'bg-emerald-950/92 border-emerald-500/60 text-emerald-200 shadow-emerald-950/40'
@@ -1266,7 +1181,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)
       ───────────────────────────────────────────────────────────── */}
       {sosAlert && (
-        <div className="absolute top-12 left-2 right-12 z-20 p-2 rounded-xl bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2">
+        <div className="absolute top-14 left-2 right-12 z-20 p-2 rounded-xl bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 truncate">
             <span>🚨</span>
             <span className="font-bold text-rose-300 truncate text-[11px]">

@@ -93,6 +93,11 @@ export default function App() {
   const [isGarageOpen, setIsGarageOpen] = useState<boolean>(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState<boolean>(false);
+  const [finishedRideSummary, setFinishedRideSummary] = useState<{
+    distanceKm: number;
+    durationMin: number;
+    maxSpeedKmh: number;
+  } | null>(null);
 
   // Global Unit System (Metric km/h <-> Imperial mph)
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
@@ -454,7 +459,7 @@ export default function App() {
     }
   };
 
-  const handleLiveRideRecorded = useCallback((gpxText: string) => {
+  const handleLiveRideRecorded = useCallback((gpxText: string, keepOnMap: boolean = false) => {
     try {
       const parsed = parseGPX(gpxText);
       const squadPrefix = groupRide.roomCode ? `[Crew ${groupRide.roomCode}] ` : '';
@@ -462,7 +467,17 @@ export default function App() {
       parsed.name = rideName;
       isLocallyInitiatedRouteRef.current = true;
       setAnalysis(parsed);
-      setCurrentTab('analysis');
+
+      if (keepOnMap) {
+        const durationMin = Math.max(1, Math.round((parsed.totalDurationSec || 0) / 60));
+        setFinishedRideSummary({
+          distanceKm: parsed.totalDistanceKm,
+          durationMin,
+          maxSpeedKmh: parsed.maxSpeedKmh,
+        });
+      } else {
+        setCurrentTab('analysis');
+      }
 
       // Auto-save live ride to Garage so it's never lost
       try {
@@ -483,7 +498,7 @@ export default function App() {
     } catch (err: any) {
       setErrorMessage('Error analyzing recorded ride: ' + err.message);
     }
-  }, []);
+  }, [groupRide.roomCode, setCurrentTab]);
 
   const handleStartRecording = useCallback(() => {
     controls.startNewRecording();
@@ -508,7 +523,8 @@ export default function App() {
       pts,
       gps.markedWaypoints
     );
-    handleLiveRideRecorded(gpxString);
+    // Stay on map and present in-map ride summary
+    handleLiveRideRecorded(gpxString, true);
   }, [controls, gps.pointsCount, gps.markedWaypoints, handleLiveRideRecorded]);
 
   const triggerUploadClick = () => {
@@ -860,6 +876,23 @@ export default function App() {
         )}
         {currentTab === 'analysis' && analysis && (
           <div className="space-y-4 animate-in fade-in duration-300">
+            {/* Direct Return to Live Crew Map Banner */}
+            <div className={`p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-md font-mono text-xs ${
+              theme === 'light' ? 'bg-cyan-50 border-cyan-200 text-slate-800' : 'bg-cyan-950/40 border-cyan-500/30 text-white'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setCurrentTab('crew')}
+                className="py-2 px-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center gap-2 cursor-pointer transition-all shadow-md active:scale-95 shrink-0"
+              >
+                <Users className="w-4 h-4 stroke-[2.5]" />
+                <span>← Return to Live Crew Map</span>
+              </button>
+              <div className="text-right truncate hidden xs:block">
+                <span className="text-[11px] text-slate-400">Viewing Saved Ride Telemetry</span>
+              </div>
+            </div>
+
             {/* Hero Metrics Bar with Edit Ride Name, Calibration & Share Story */}
             <HeroTelemetry
               analysis={analysis}
@@ -1067,7 +1100,21 @@ export default function App() {
         )}
 
         {/* Tab 2: Live GPS Logger (Kept mounted to maintain uninterrupted background recording & crew location sync when switching tabs) */}
-        <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300' : 'hidden'}>
+        <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300 space-y-3' : 'hidden'}>
+          <div className={`p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-md font-mono text-xs ${
+            theme === 'light' ? 'bg-cyan-50 border-cyan-200 text-slate-800' : 'bg-cyan-950/40 border-cyan-500/30 text-white'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setCurrentTab('crew')}
+              className="py-1.5 px-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center gap-2 cursor-pointer transition-all shadow-md active:scale-95"
+            >
+              <Users className="w-4 h-4 stroke-[2.5]" />
+              <span>← Return to Live Crew Map</span>
+            </button>
+            <span className="text-[11px] text-slate-400 font-mono hidden xs:inline">Solo Digital Cockpit</span>
+          </div>
+
           <LiveCockpitLogger
             onRideRecorded={handleLiveRideRecorded}
             isRecording={gps.isRecording}
@@ -1107,10 +1154,6 @@ export default function App() {
               sosAlert={groupRide.sosAlert}
               crewNotification={groupRide.crewNotification}
               onDismissCrewNotification={groupRide.dismissCrewNotification}
-              onCreateRoom={groupRide.createRoom}
-              onJoinRoom={groupRide.joinRoom}
-              onRejoinRoom={groupRide.rejoinRoom}
-              onLeaveRoom={groupRide.leaveRoom}
               onTriggerSos={groupRide.triggerSos}
               onDismissSos={groupRide.dismissSos}
               onUpdateRiderName={groupRide.updateRiderName}
@@ -1139,6 +1182,12 @@ export default function App() {
               onOpenGarage={() => setIsGarageOpen(true)}
               onOpenDownloadApp={handleOpenDownloadApp}
               onOpenFaq={() => setCurrentTab('faq')}
+              finishedRideSummary={finishedRideSummary}
+              onDismissRideSummary={() => setFinishedRideSummary(null)}
+              onViewTelemetry={() => {
+                setFinishedRideSummary(null);
+                setCurrentTab('analysis');
+              }}
             />
           </div>
         )}

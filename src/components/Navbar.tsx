@@ -109,6 +109,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </button>
 
+        {/* Mobile Portrait: Direct Return to Live Crew Map */}
+        <button
+          id="btn-nav-mobile-crew"
+          type="button"
+          onClick={() => setCurrentTab('crew')}
+          className="md:hidden landscape:hidden flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow-sm cursor-pointer transition-all active:scale-95"
+        >
+          <Users className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>← Crew Map</span>
+        </button>
+
         {/* Navigation Mode Switcher (Visible on desktop & in landscape mobile) */}
         <div
           className={`hidden landscape:flex md:flex items-center gap-1 p-0.5 sm:p-1 border rounded-lg transition-colors ${

@@ -1,47 +1,28 @@
-import React, { useState } from 'react';
-import { Menu, Users, Share2, Radio, Check, Copy, ShieldAlert } from 'lucide-react';
+import React from 'react';
+import { Menu, Share2, Radio, Users } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
 
 interface TopMapCapsuleProps {
   onOpenDrawer: () => void;
-  roomCode?: string;
   isConnected: boolean;
   onlineCount: number;
   riderName: string;
   myColor: string;
-  isRecording?: boolean;
-  onToggleRecording?: () => void;
   onShareInvite?: () => void;
-  onOpenSquadModal?: () => void;
   theme?: AppTheme;
 }
 
 export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
   onOpenDrawer,
-  roomCode,
   isConnected,
   onlineCount,
   riderName,
   myColor,
-  isRecording = false,
-  onToggleRecording,
   onShareInvite,
-  onOpenSquadModal,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
-  const [copied, setCopied] = useState(false);
-
-  const handleCopyCode = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!roomCode) return;
-    navigator.clipboard.writeText(roomCode).then(() => {
-      setCopied(true);
-      triggerHaptic(25);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   return (
     <header 
@@ -53,7 +34,7 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
       className="absolute z-30 pointer-events-none flex justify-center"
     >
       <div 
-        className={`pointer-events-auto w-full max-w-xl h-12 px-2 sm:px-3 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-2 shadow-2xl transition-all font-mono ${
+        className={`pointer-events-auto w-full max-w-xl h-11 px-2 sm:px-2.5 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-2 shadow-2xl transition-all font-mono ${
           isLight
             ? 'bg-white/95 border-slate-300/80 text-slate-800 shadow-slate-300/40'
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white shadow-black/80'
@@ -67,9 +48,9 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
             triggerHaptic(20);
             onOpenDrawer();
           }}
-          title="Open Menu & Settings"
+          title="Open Menu & Garage"
           aria-label="Open Navigation Menu"
-          className={`w-10 h-10 min-w-[40px] rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-9 h-9 min-w-[36px] rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
             isLight
               ? 'hover:bg-slate-100 text-slate-700'
               : 'hover:bg-slate-800/80 text-slate-300'
@@ -78,70 +59,39 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
           <Menu className="w-5 h-5 stroke-[2.2]" />
         </button>
 
-        {/* Center: Minimalist Squad / Room Pill */}
+        {/* Center: Clean Live Radar Status (Glanceable, No redundant popup) */}
         <div 
-          onClick={() => {
-            triggerHaptic(20);
-            if (onOpenSquadModal) {
-              onOpenSquadModal();
-            } else {
-              onOpenDrawer();
-            }
-          }}
-          className={`flex-1 min-w-0 flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer transition-all active:scale-98 ${
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
             isConnected
-              ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-              : isLight
-              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-              : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+              ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+              : 'text-slate-400 bg-slate-800/40 border border-slate-800'
           }`}
-          title={isConnected ? `Connected to Squad #${roomCode}. Tap to manage squad.` : 'Tap to create or join a squad.'}
+          title={isConnected ? 'Connected to Global Crew Radar' : 'Connecting to Global Crew Radar...'}
         >
           <span className={`w-2 h-2 rounded-full shrink-0 ${
             isConnected ? 'bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse' : 'bg-slate-500'
           }`} />
-
-          <div className="flex items-center gap-1.5 truncate text-xs font-bold">
-            {isConnected ? (
-              <>
-                <span className="font-heading font-black tracking-wider uppercase text-white truncate">
-                  Squad #{roomCode}
-                </span>
-                <span className="text-[10px] opacity-75 font-mono shrink-0">
-                  • {onlineCount} {onlineCount === 1 ? 'Rider' : 'Riders'}
-                </span>
-              </>
-            ) : (
-              <>
-                <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">Solo Ride • Tap to Join Squad</span>
-              </>
-            )}
-          </div>
-
-          {isConnected && roomCode && (
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              title="Copy 4-digit squad code"
-              className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer shrink-0 transition-colors"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          )}
+          <span className="truncate">
+            {isConnected 
+              ? (onlineCount > 0 
+                  ? `Live Radar • ${onlineCount + 1} Riders` 
+                  : 'Live Radar • Solo')
+              : 'Reconnecting Radar...'}
+          </span>
         </div>
 
-        {/* Right: Share Invite or Live Rec indicator */}
+        {/* Right: 1-Tap WhatsApp Invite & Profile Badge */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {isConnected && onShareInvite && (
+          {onShareInvite && (
             <button
+              id="btn-quick-invite"
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic(25);
                 onShareInvite();
               }}
-              title="Share squad link via WhatsApp"
+              title="Invite friends via WhatsApp"
               className="h-8 px-2 sm:px-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
             >
               <Share2 className="w-3.5 h-3.5" />
@@ -149,14 +99,14 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
             </button>
           )}
 
-          {/* User Profile Avatar with Color Badge */}
+          {/* User Profile Avatar with Color Indicator */}
           <button
             type="button"
             onClick={() => {
               triggerHaptic(20);
               onOpenDrawer();
             }}
-            title={`Rider: ${riderName}`}
+            title={`Rider: ${riderName} (Tap for Settings)`}
             className="w-8 h-8 rounded-xl border flex items-center justify-center font-bold text-xs cursor-pointer transition-all active:scale-95 relative"
             style={{
               borderColor: myColor,

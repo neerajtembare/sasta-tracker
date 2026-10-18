@@ -36,11 +36,6 @@ interface AppDrawerProps {
   bikeModel?: string;
   myColor: string;
   onUpdateProfile: (name: string, bike: string, color: string) => void;
-  roomCode?: string;
-  isConnected: boolean;
-  onCreateRoom: () => void;
-  onJoinRoom: (code: string) => void;
-  onLeaveRoom: () => void;
   onShareWhatsApp: () => void;
   mapLayer: 'streets' | 'satellite' | 'dark';
   onChangeMapLayer: (layer: 'streets' | 'satellite' | 'dark') => void;
@@ -72,11 +67,6 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   bikeModel = '',
   myColor,
   onUpdateProfile,
-  roomCode,
-  isConnected,
-  onCreateRoom,
-  onJoinRoom,
-  onLeaveRoom,
   onShareWhatsApp,
   mapLayer,
   onChangeMapLayer,
@@ -92,10 +82,6 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   const [bikeInput, setBikeInput] = useState(bikeModel);
   const [selectedColor, setSelectedColor] = useState(myColor);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
-
-  // Join Room State
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
 
   // Android Background / Pocket Ride Battery Optimization Status
   const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean>(true);
@@ -115,23 +101,6 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
     triggerHaptic(30);
     onUpdateProfile(nameInput.trim() || 'Rider', bikeInput.trim(), selectedColor);
     setIsProfileEditing(false);
-  };
-
-  const handleJoinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!joinCodeInput.trim()) return;
-    triggerHaptic(30);
-    onJoinRoom(joinCodeInput.trim().toUpperCase());
-    setJoinCodeInput('');
-  };
-
-  const handleCopyCode = () => {
-    if (!roomCode) return;
-    navigator.clipboard.writeText(roomCode).then(() => {
-      setCopiedCode(true);
-      triggerHaptic(25);
-      setTimeout(() => setCopiedCode(false), 2000);
-    });
   };
 
   return (
@@ -288,99 +257,36 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              2. SQUAD & CREW ROOM MANAGEMENT
+              2. GLOBAL CREW RADAR & WHATSAPP INVITE
           ───────────────────────────────────────────────────────────── */}
-          <div className={`p-3 rounded-2xl border transition-all ${
+          <div className={`p-3 rounded-2xl border transition-all space-y-2.5 ${
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
           }`}>
-            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-2">
-              Squad Riding Room
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                Live Crew Radar
+              </span>
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>ACTIVE</span>
+              </span>
+            </div>
 
-            {isConnected && roomCode ? (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <div>
-                      <div className="text-[10px] text-emerald-400 font-bold uppercase">Connected Squad</div>
-                      <div className="font-heading font-black text-base text-white tracking-wider">#{roomCode}</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyCode}
-                    className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 cursor-pointer transition-colors"
-                    title="Copy squad code"
-                  >
-                    {copiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+              All riders on Sasta Tracker are automatically connected together on the live radar. Zero room codes, zero typing.
+            </p>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic(25);
-                      onShareWhatsApp();
-                    }}
-                    className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>WhatsApp</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic(25);
-                      onLeaveRoom();
-                    }}
-                    className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-rose-900/60 border border-slate-700 hover:border-rose-500/50 text-slate-300 hover:text-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Leave Squad</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic(30);
-                    onCreateRoom();
-                    onClose();
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-95"
-                >
-                  <Plus className="w-4 h-4 stroke-[3]" />
-                  <span>Create New Squad Room</span>
-                </button>
-
-                <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                  <div className="flex-1 h-px bg-slate-800" />
-                  <span>OR JOIN ROOM</span>
-                  <div className="flex-1 h-px bg-slate-800" />
-                </div>
-
-                <form onSubmit={handleJoinSubmit} className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    maxLength={6}
-                    placeholder="CODE (e.g. 4092)"
-                    className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-slate-700 text-white font-mono font-bold text-xs tracking-wider uppercase focus:outline-hidden focus:border-cyan-400"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                  >
-                    Join
-                  </button>
-                </form>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(25);
+                onShareWhatsApp();
+              }}
+              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Invite Friends to Ride via WhatsApp</span>
+            </button>
           </div>
 
           {/* ─────────────────────────────────────────────────────────────

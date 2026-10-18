@@ -214,16 +214,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Current heading from myLocation
   const myHeading = myLocation?.heading !== null && myLocation?.heading !== undefined ? myLocation.heading : null;
 
+  const isFreePanning = selectedRiderId === null;
+
   // Calculate rotation for map container
   // North-up: 0° (or 180° if flipped by user).
   // Course-up: rotated by -myHeading so bike's forward path is ALWAYS UP on phone screen!
+  // In Free Exploration mode (user dragging/browsing): keep North-Up (0°) so pan gestures match finger movement 1:1!
   const targetMapRotation = useMemo(() => {
     let base = 0;
-    if (orientationMode === 'course' && myHeading !== null) {
+    if (orientationMode === 'course' && myHeading !== null && !isFreePanning) {
       base = -myHeading;
     }
     return (isFlipped180 ? 180 : 0) + base;
-  }, [orientationMode, myHeading, isFlipped180]);
+  }, [orientationMode, myHeading, isFlipped180, isFreePanning]);
 
   // Cardinal direction helper
   const getCardinal = (deg: number | null) => {
@@ -311,6 +314,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       lastSeparationWarningRef.current = now;
       playWarningChime();
       triggerHaptic([80, 50, 80]);
+
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          const laggingRider = (primaryStarredMember && primaryStarredMember.distanceFromMeMeters && primaryStarredMember.distanceFromMeMeters > 1200)
+            ? primaryStarredMember
+            : onlineOthers.reduce((prev, curr) => (curr.distanceFromMeMeters ?? 0) > (prev.distanceFromMeMeters ?? 0) ? curr : prev);
+          const distKm = (checkDist / 1000).toFixed(1);
+          const utterance = new SpeechSynthesisUtterance(`Squad alert: ${laggingRider.name} is ${distKm} kilometers behind`);
+          utterance.rate = 1.05;
+          utterance.volume = 1.0;
+          window.speechSynthesis.speak(utterance);
+        } catch {}
+      }
     }
   }, [members, primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
 
@@ -769,29 +785,29 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         : '';
 
       const leaderCrown = m.isHost
-        ? `<div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+        ? `<div class="upright-counter-rotate" style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
         : '';
 
       const starBadge = isStarred
-        ? `<div style="position:absolute; top:-18px; right:-6px; transform:rotate(${memberCounterRotation}deg); font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10;">⭐</div>`
+        ? `<div class="upright-counter-rotate" style="position:absolute; top:-18px; right:-6px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10; transition:transform 0.3s ease;">⭐</div>`
         : '';
 
       const haloRing = isStarred
-        ? `<div style="position:absolute; width:38px; height:38px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
+        ? `<div style="position:absolute; width:44px; height:44px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
         : '';
 
       const opacity = isOnline ? '1' : '0.65';
 
       const html = `
-        <div style="position:relative; width:38px; height:38px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
+        <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
           ${haloRing}
           ${leaderCrown}
           ${starBadge}
           ${bearingArrow}
-          <div style="width:26px; height:26px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transition:transform 0.3s ease;">
+          <div class="upright-counter-rotate" style="width:28px; height:28px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
             ${initial}
           </div>
-          <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
+          <div class="upright-counter-rotate" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
             ${isStarred ? '⭐ ' : ''}${m.name}
           </div>
         </div>
@@ -800,8 +816,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const icon = L.divIcon({
         className: `live-rider-marker-${m.riderId}`,
         html,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
       });
 
       let marker = memberMarkersRef.current.get(m.riderId);
@@ -832,13 +848,23 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         marker.setLatLng(pos);
         marker.setZIndexOffset(isStarred ? 960 : 900);
 
-        // Zero-GC in-place rotation of the direction arrow without destroying DOM
+        // Zero-GC in-place rotation of the direction arrow & upright labels without destroying DOM
         const el = marker.getElement();
-        if (el && bearing !== null && bearing !== undefined) {
-          const arrowEl = el.querySelector('.live-rider-arrow') as HTMLElement | null;
-          if (arrowEl) {
-            arrowEl.style.transform = `rotate(${bearing}deg)`;
+        if (el) {
+          if (bearing !== null && bearing !== undefined) {
+            const arrowEl = el.querySelector('.live-rider-arrow') as HTMLElement | null;
+            if (arrowEl) {
+              arrowEl.style.transform = `rotate(${memberArrowRotation}deg)`;
+            }
           }
+          const uprightEls = el.querySelectorAll('.upright-counter-rotate') as NodeListOf<HTMLElement>;
+          uprightEls.forEach((upEl) => {
+            if (upEl.textContent?.includes(m.name) || upEl.textContent?.includes('LEADER')) {
+              upEl.style.transform = `translateX(-50%) rotate(${memberCounterRotation}deg)`;
+            } else {
+              upEl.style.transform = `rotate(${memberCounterRotation}deg)`;
+            }
+          });
         }
 
         // Only rebuild DOM icon if identity, host status, online state or star status changed
@@ -860,7 +886,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         });
       }
     });
-  }, [members, unitSystem, starredRiderIds]);
+  }, [members, unitSystem, starredRiderIds, targetMapRotation, orientationMode, myHeading]);
 
   // SOS Marker (Crisp solid alert marker)
   useEffect(() => {
@@ -1192,7 +1218,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         }}
         className="absolute z-20 pointer-events-auto animate-in fade-in duration-200"
       >
-        <div className={`px-2.5 py-1.5 rounded-2xl backdrop-blur-xl border shadow-2xl flex flex-col items-center justify-center font-mono ${
+        <div 
+          onClick={() => triggerHaptic(20)}
+          className={`px-2.5 py-1.5 rounded-2xl backdrop-blur-xl border shadow-2xl flex flex-col items-center justify-center font-mono cursor-pointer transition-all active:scale-95 ${
           isLight 
             ? 'bg-white/95 border-slate-300 text-slate-800' 
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white shadow-black/80'
@@ -1227,7 +1255,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         }}
         className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto"
       >
-        {/* Glove-friendly Zoom In / Out Buttons */}
+        {/* Glove-friendly Zoom In / Out & Layer Quick Toggle */}
         <div className="flex flex-col gap-1.5 mb-0.5">
           <button
             type="button"
@@ -1252,6 +1280,18 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             aria-label="Zoom Out"
           >
             −
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(20);
+              setMapLayer(prev => prev === 'dark' ? 'sunlight' : prev === 'sunlight' ? 'satellite' : 'dark');
+            }}
+            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500"
+            title={`Map Theme: ${mapLayer.toUpperCase()} • Tap to cycle Dark / Sunlight / Satellite`}
+            aria-label="Toggle Map Theme"
+          >
+            <Layers className="w-4 h-4" />
           </button>
         </div>
 
@@ -1298,6 +1338,28 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <Crosshair className="w-5 h-5 stroke-[2.2]" />
         </button>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          GOOGLE MAPS-STYLE PROMINENT RE-CENTER BUTTON (WHEN FREE-PANNING)
+      ───────────────────────────────────────────────────────────── */}
+      {selectedRiderId !== 'me' && myLocation && (
+        <div 
+          style={{ 
+            bottom: 'max(4.8rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
+          }}
+          className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-auto animate-in slide-in-from-bottom-2 duration-150"
+        >
+          <button
+            type="button"
+            onClick={handleRecenterMe}
+            className="px-4 py-2 rounded-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs font-mono shadow-2xl flex items-center gap-2 cursor-pointer transition-all active:scale-95 ring-2 ring-cyan-300 shadow-cyan-500/40"
+            title="Snap back to current motorcycle location & resume direction follow"
+          >
+            <Crosshair className="w-4 h-4 stroke-[2.8]" />
+            <span>Re-center</span>
+          </button>
+        </div>
+      )}
 
       {/* Offline Caching Progress / Success Pill */}
       {(cacheProgress || cacheSuccessMsg) && (

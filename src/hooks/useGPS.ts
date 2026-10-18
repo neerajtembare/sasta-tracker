@@ -151,6 +151,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const recordedPointsRef = useRef<LiveGpsPoint[]>([]);
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<{ lat: number; lon: number } | null>(null);
+  const lastFixCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
   const wakeLockRef = useRef<any>(null);
   const leanAngleRef = useRef(0);
   const currentSpeedRef = useRef(0);
@@ -344,6 +345,20 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       const alpha = e.alpha ?? 0;
       lastOrientationEventRef.current = { beta, gamma, alpha };
 
+      // Real-time stationary compass orientation (updates blue beam / chevron instantly at red lights)
+      if (currentSpeedRef.current < 2.5) {
+        let compassHeading: number | null = null;
+        if (typeof (e as any).webkitCompassHeading === 'number' && !isNaN((e as any).webkitCompassHeading)) {
+          compassHeading = (e as any).webkitCompassHeading;
+        } else if (alpha !== null && alpha !== undefined && !isNaN(alpha)) {
+          const screenAngle = getScreenAngle();
+          compassHeading = (360 - alpha + screenAngle + 360) % 360;
+        }
+        if (compassHeading !== null) {
+          setCurrentHeading(Math.round(compassHeading));
+        }
+      }
+
       if (mountMode === 'handlebar') {
         const angle = getScreenAngle();
         const reading = calculate3DOrientation(
@@ -378,12 +393,19 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       }
     };
 
-    if (typeof window !== 'undefined' && window.DeviceOrientationEvent) {
-      window.addEventListener('deviceorientation', handleOrientation);
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      if ('ondeviceorientationabsolute' in win) {
+        win.addEventListener('deviceorientationabsolute', handleOrientation);
+      } else if (win.DeviceOrientationEvent) {
+        win.addEventListener('deviceorientation', handleOrientation);
+      }
     }
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('deviceorientation', handleOrientation);
+        const win = window as any;
+        win.removeEventListener('deviceorientationabsolute', handleOrientation);
+        win.removeEventListener('deviceorientation', handleOrientation);
       }
     };
   }, [enabled, mountMode, mountOrientation, getScreenAngle]);
@@ -455,18 +477,25 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     let effectiveHeading: number | null = (heading !== null && !isNaN(heading)) ? heading : null;
 
     // Tier 2: Calculated forward bearing from consecutive GPS points (if moving >= 2.0 km/h)
-    if (effectiveHeading === null && lastPositionRef.current && kmh >= 2.0) {
-      const dMeters = haversineMeters(lastPositionRef.current.lat, lastPositionRef.current.lon, latitude, longitude);
+    // Works ALWAYS, whether recording or riding freely on live map!
+    if (effectiveHeading === null && lastFixCoordsRef.current && kmh >= 2.0) {
+      const dMeters = haversineMeters(lastFixCoordsRef.current.lat, lastFixCoordsRef.current.lon, latitude, longitude);
       if (dMeters >= 2.0) {
-        effectiveHeading = calculateForwardBearing(lastPositionRef.current.lat, lastPositionRef.current.lon, latitude, longitude);
+        effectiveHeading = calculateForwardBearing(lastFixCoordsRef.current.lat, lastFixCoordsRef.current.lon, latitude, longitude);
       }
+    }
+
+    // Always keep lastFixCoordsRef updated on every fix with movement >= 2m
+    if (!lastFixCoordsRef.current || haversineMeters(lastFixCoordsRef.current.lat, lastFixCoordsRef.current.lon, latitude, longitude) >= 2.0) {
+      lastFixCoordsRef.current = { lat: latitude, lon: longitude };
     }
 
     // Tier 3: Stationary compass orientation (alpha) from device magnetometer
     if (effectiveHeading === null && kmh < 2.0 && lastOrientationEventRef.current) {
       const alpha = lastOrientationEventRef.current.alpha;
       if (alpha !== null && alpha !== undefined && !isNaN(alpha)) {
-        effectiveHeading = (360 - alpha + 360) % 360;
+        const screenAngle = getScreenAngle();
+        effectiveHeading = (360 - alpha + screenAngle + 360) % 360;
       }
     }
 

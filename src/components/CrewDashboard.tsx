@@ -16,10 +16,10 @@ import {
   UserCheck,
   Bike,
   Shield,
-  Activity,
   Check,
   AlertTriangle,
-  Copy
+  Copy,
+  Route
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { openGoogleMapsNavigation } from '../utils/navigation';
@@ -215,10 +215,40 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       />
 
       {/* ─────────────────────────────────────────────────────────────
-          BOTTOM FLOATING CONVOY ROSTER HUD
+          BOTTOM FLOATING CONVOY ROSTER HUD & ACTIVE ROUTE
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-4 sm:right-4 z-20 pointer-events-none">
-        <div className="max-w-4xl mx-auto pointer-events-auto">
+      <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-4 sm:right-4 z-20 pointer-events-none flex flex-col gap-2">
+        <div className="max-w-4xl mx-auto w-full space-y-2 pointer-events-auto">
+          {/* Active Planned Route & Google Maps Voice Navigation Bar */}
+          {activeRoute && (
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/92 backdrop-blur-md border border-cyan-500/50 shadow-xl font-mono text-xs">
+              <div className="flex items-center gap-2 truncate">
+                <Route className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <div className="truncate">
+                  <span className="font-bold text-white truncate">{activeRoute.name || 'Planned Route'}</span>
+                  <span className="text-cyan-300 ml-1.5 font-bold">({activeRoute.totalDistanceKm.toFixed(1)} km)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => {
+                    triggerHaptic(30);
+                    if (activeRoute.points && activeRoute.points.length > 0) {
+                      const last = activeRoute.points[activeRoute.points.length - 1];
+                      openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
+                    }
+                  }}
+                  className="h-7 px-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
+                  title="Launch Google Maps turn-by-turn voice navigation to destination"
+                >
+                  <Navigation className="w-3 h-3" />
+                  <span>Google Maps</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-slate-700/80 shadow-2xl space-y-2">
             
             {/* Roster Header */}

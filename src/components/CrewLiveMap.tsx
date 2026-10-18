@@ -1089,62 +1089,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          BOTTOM FLOATING RIDER TELEMETRY TRAY & ACTIVE ROUTE HUD
-      ───────────────────────────────────────────────────────────── */}
-      <div className="absolute bottom-2 left-2 right-2 z-10 pointer-events-none flex flex-col gap-1.5">
-        
-        {/* Active Planned Route & Google Maps Voice Navigation Bar */}
-        {activeRoute && (
-          <div className="pointer-events-auto flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-slate-950/92 backdrop-blur-md border border-cyan-500/50 shadow-xl font-mono text-xs">
-            <div className="flex items-center gap-2 truncate">
-              <Route className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <div className="truncate">
-                <span className="font-bold text-white truncate">{activeRoute.name || 'Planned Route'}</span>
-                <span className="text-cyan-300 ml-1.5 font-bold">({activeRoute.totalDistanceKm.toFixed(1)} km)</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {/* 1-Tap Google Maps Voice Turn-by-Turn Navigation */}
-              <button
-                onClick={() => {
-                  triggerHaptic(30);
-                  if (activeRoute.points && activeRoute.points.length > 0) {
-                    const last = activeRoute.points[activeRoute.points.length - 1];
-                    openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
-                  }
-                }}
-                className="h-7 px-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95"
-                title="Launch Google Maps turn-by-turn voice navigation to destination"
-              >
-                <Navigation className="w-3 h-3" />
-                <span>Google Maps</span>
-              </button>
-
-              {/* 1-Tap Offline Route Tile Cache */}
-              <button
-                onClick={handleCacheOfflineRoute}
-                disabled={isCachingRoute}
-                className="h-7 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 text-slate-300 hover:text-white font-bold text-[10px] flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 disabled:opacity-60"
-                title="Pre-cache all map tiles along this route for offline riding in mountain passes"
-              >
-                <Download className="w-3 h-3 text-cyan-400" />
-                {isCachingRoute ? (
-                  <span className="text-cyan-300">{cacheProgress?.percentage || 0}%</span>
-                ) : cacheSuccessMsg ? (
-                  <span className="text-emerald-400">Saved</span>
-                ) : (
-                  <span className="hidden sm:inline">Offline</span>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-
-      </div>
-
     </div>
   );
 };

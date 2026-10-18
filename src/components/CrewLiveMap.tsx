@@ -23,9 +23,12 @@ import {
   Route,
   Download,
   ArrowUp,
-  Layers
+  Layers,
+  Sun,
+  Moon,
+  Volume2
 } from 'lucide-react';
-import { triggerHaptic } from '../utils/audioChimes';
+import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
 
 interface MyLocationData {
   lat: number;
@@ -73,7 +76,7 @@ interface CrewLiveMapProps {
   starredRiderIds?: string[];
 }
 
-export type MapLayerType = 'dark' | 'streets' | 'satellite';
+export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
 
 export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   myLocation,
@@ -139,7 +142,26 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const [cacheSuccessMsg, setCacheSuccessMsg] = useState<string | null>(null);
 
   // Default to Dark map for eye comfort and stealth motorcycle cockpit look
-  const [mapLayer, setMapLayer] = useState<MapLayerType>('dark');
+  const [mapLayer, setMapLayer] = useState<MapLayerType>(() => {
+    try {
+      if (typeof window !== 'undefined' && localStorage.getItem('sasta_sunlight_mode') === 'true') {
+        return 'sunlight';
+      }
+    } catch {}
+    return 'dark';
+  });
+
+  const toggleSunlightMode = () => {
+    triggerHaptic(40);
+    setMapLayer(prev => {
+      const next: MapLayerType = prev === 'sunlight' ? 'dark' : 'sunlight';
+      try {
+        localStorage.setItem('sasta_sunlight_mode', String(next === 'sunlight'));
+      } catch {}
+      return next;
+    });
+  };
+
   const [isLayerPopoverOpen, setIsLayerPopoverOpen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
@@ -252,6 +274,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return starredList[0];
   }, [members, starredRiderIds]);
 
+  // Convoy Separation Watchdog: Alert rider via Bluetooth intercom when primary starred buddy falls behind
+  const lastSeparationWarningRef = useRef<number>(0);
+  useEffect(() => {
+    if (!primaryStarredMember || !myLocation) return;
+    const dist = primaryStarredMember.distanceFromMeMeters ?? 0;
+    const mySpeed = myLocation.speedKmh ?? 0;
+    const now = Date.now();
+
+    // If rider is actively cruising (> 25 km/h) and primary starred buddy falls > 2000m behind
+    if (dist > 2000 && mySpeed > 25) {
+      if (now - lastSeparationWarningRef.current > 60000) {
+        lastSeparationWarningRef.current = now;
+        playWarningChime();
+        triggerHaptic([80, 50, 80]);
+      }
+    }
+  }, [primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -331,6 +371,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         maxNativeZoom: 18,
         opacity: 0.85,
       }).addTo(map);
+    } else if (mapLayer === 'sunlight') {
+      // High-contrast, maximum luminance CARTO Voyager base with contrast/saturation boost
+      tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+        attribution: '&copy; CARTO &copy; OpenStreetMap',
+        className: 'sunlight-map-tiles',
+      }).addTo(map);
     } else {
       // Pristine Dark Mode Map (Esri Dark Gray with maxNativeZoom: 16 so street level 17-19 does not go blank)
       tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
@@ -369,25 +417,47 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const latLngs: L.LatLngTuple[] = activeRoute.points.map(p => [p.lat, p.lon]);
 
-    // 1. Route outer ambient glow
-    const glow = L.polyline(latLngs, {
-      color: '#00f0ff',
-      weight: 6,
-      opacity: 0.35,
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(map);
-    routeGlowPolylineRef.current = glow;
+    if (mapLayer === 'sunlight') {
+      // High-contrast dual-stroke Rally GPS route for blinding sunlight:
+      // Heavy 8px jet-black casing underneath, 4.5px neon yellow (#ffe600) core on top
+      const casing = L.polyline(latLngs, {
+        color: '#000000',
+        weight: 8,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routeGlowPolylineRef.current = casing;
 
-    // 2. High-contrast main route line
-    const line = L.polyline(latLngs, {
-      color: '#00e5ff',
-      weight: 3.5,
-      opacity: 0.95,
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(map);
-    routePolylineRef.current = line;
+      const line = L.polyline(latLngs, {
+        color: '#ffe600',
+        weight: 4.5,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routePolylineRef.current = line;
+    } else {
+      // 1. Route outer ambient glow
+      const glow = L.polyline(latLngs, {
+        color: '#00f0ff',
+        weight: 6,
+        opacity: 0.35,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routeGlowPolylineRef.current = glow;
+
+      // 2. High-contrast main route line
+      const line = L.polyline(latLngs, {
+        color: '#00e5ff',
+        weight: 3.5,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      routePolylineRef.current = line;
+    }
 
     // 3. Start Marker
     const startPt = activeRoute.points[0];
@@ -445,7 +515,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         routeMarkersRef.current.push(stopMarker);
       });
     }
-  }, [activeRoute]);
+  }, [activeRoute, mapLayer]);
 
   // ─── Offline Route Map Tile Pre-Caching ───
   const handleCacheOfflineRoute = async () => {
@@ -1131,17 +1201,18 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40'
                 : 'bg-slate-950/95 border-slate-700 text-slate-200 hover:text-white hover:border-cyan-400'
             }`}
-            title="Map Style: Dark, Street, Satellite"
+            title="Map Style: Dark, Sunlight, Street, Satellite"
           >
             <Layers className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
           </button>
 
           {/* Layer Selection Popover */}
           {isLayerPopoverOpen && (
-            <div className="absolute right-13 top-0 z-30 p-2 rounded-xl bg-slate-950/98 backdrop-blur-md border border-slate-700 shadow-2xl flex flex-col gap-1.5 min-w-[120px] animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-13 top-0 z-30 p-2 rounded-xl bg-slate-950/98 backdrop-blur-md border border-slate-700 shadow-2xl flex flex-col gap-1.5 min-w-[130px] animate-in fade-in zoom-in-95 duration-150">
               <button
                 onClick={() => {
                   setMapLayer('dark');
+                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
@@ -1154,7 +1225,22 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               </button>
               <button
                 onClick={() => {
+                  setMapLayer('sunlight');
+                  try { localStorage.setItem('sasta_sunlight_mode', 'true'); } catch {}
+                  setIsLayerPopoverOpen(false);
+                  triggerHaptic(20);
+                }}
+                className={`px-3 py-2 rounded-lg text-left font-mono text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors ${
+                  mapLayer === 'sunlight' ? 'bg-amber-400 text-slate-950 font-black' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-300 border border-amber-600 shrink-0" />
+                <span>☀️ Sunlight</span>
+              </button>
+              <button
+                onClick={() => {
                   setMapLayer('streets');
+                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
@@ -1168,6 +1254,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               <button
                 onClick={() => {
                   setMapLayer('satellite');
+                  try { localStorage.setItem('sasta_sunlight_mode', 'false'); } catch {}
                   setIsLayerPopoverOpen(false);
                   triggerHaptic(20);
                 }}
@@ -1181,6 +1268,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </div>
           )}
         </div>
+
+        {/* 1-Tap Sunlight Glare Mode Toggle Button */}
+        <button
+          onClick={toggleSunlightMode}
+          className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+            mapLayer === 'sunlight'
+              ? 'bg-amber-400 border-amber-200 text-slate-950 ring-2 ring-amber-400/60 shadow-amber-500/40'
+              : 'bg-slate-950/95 border-slate-700 text-amber-400 hover:bg-slate-900 hover:border-amber-400'
+          }`}
+          title={mapLayer === 'sunlight' ? 'Switch back to Dark Mode' : '1-Tap Sunlight / Glare High Contrast Mode'}
+        >
+          {mapLayer === 'sunlight' ? <Sun className="w-5 h-5 sm:w-5.5 sm:h-5.5" /> : <Moon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />}
+        </button>
 
         {/* Recenter on Me */}
         <button
@@ -1296,6 +1396,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1"
+              title="Send WhatsApp emergency confirmation to rider"
+            >
+              <Share2 className="w-3 h-3" />
+              <span>WA</span>
+            </a>
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
               target="_blank"

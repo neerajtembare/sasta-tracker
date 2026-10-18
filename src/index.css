@@ -75,6 +75,10 @@
   background: #080c10;
 }
 
+.sunlight-map-tiles {
+  filter: contrast(125%) saturate(120%) brightness(105%) !important;
+}
+
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
   background: #0f172a !important;

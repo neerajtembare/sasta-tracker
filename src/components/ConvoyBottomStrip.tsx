@@ -18,6 +18,7 @@ import { triggerHaptic } from '../utils/audioChimes';
 import { GroupMemberInfo } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
+import { CALLOUT_PRESETS, CalloutPreset } from '../utils/callouts';
 
 interface ConvoyBottomStripProps {
   members: GroupMemberInfo[];
@@ -34,6 +35,7 @@ interface ConvoyBottomStripProps {
   onOpenSquadDrawer?: () => void;
   onSelectRider?: (riderId: string) => void;
   onShareWhatsApp?: () => void;
+  onSendCallout?: (preset: CalloutPreset) => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
 }
@@ -53,11 +55,13 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   onOpenSquadDrawer,
   onSelectRider,
   onShareWhatsApp,
+  onSendCallout,
   theme = 'dark',
   unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isCalloutOpen, setIsCalloutOpen] = useState(false);
 
   // Active online squad members (excluding self)
   const otherRiders = members;
@@ -235,6 +239,52 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           </div>
         )}
 
+        {/* 1-Tap Quick Squad Callout Popover Sheet */}
+        {isCalloutOpen && (
+          <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 animate-in slide-in-from-bottom-3 duration-200 ${
+            isLight ? 'bg-white/98 border-slate-300 text-slate-800' : 'bg-[#0d131a]/98 border-[#1e2a38] text-white'
+          }`}>
+            <div className="flex items-center justify-between pb-1 border-b border-slate-800/80">
+              <div className="flex items-center gap-1.5">
+                <span className="text-base">📣</span>
+                <span className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                  Quick Squad Callout
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCalloutOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-tight font-sans">
+              One tap alerts all riders' screens & helmet Bluetooth intercoms:
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {CALLOUT_PRESETS.map((preset) => (
+                <button
+                  key={preset.type}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(30);
+                    onSendCallout?.(preset);
+                    setIsCalloutOpen(false);
+                  }}
+                  className="p-2.5 rounded-xl border flex items-center gap-2.5 text-left transition-all active:scale-95 cursor-pointer bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 hover:border-cyan-400"
+                >
+                  <span className="text-xl shrink-0">{preset.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-white text-xs truncate">{preset.label}</div>
+                    <div className="text-[9px] text-slate-400 truncate font-sans">{preset.spokenText}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ─────────────────────────────────────────────────────────────
             MINIMALIST BOTTOM STRIP (DEFAULT 48px COLLAPSED VIEW)
         ───────────────────────────────────────────────────────────── */}
@@ -252,11 +302,33 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               onTriggerSos();
             }}
             title="Broadcast emergency SOS to all squad riders"
-            className="h-10 px-3.5 min-w-[58px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-950/60 cursor-pointer transition-all active:scale-95 shrink-0"
+            className="h-10 px-3 min-w-[54px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg shadow-rose-950/60 cursor-pointer transition-all active:scale-95 shrink-0"
           >
             <ShieldAlert className="w-4 h-4 fill-current animate-pulse" />
             <span>SOS</span>
           </button>
+
+          {/* Quick Callout Intent Button (Fuel, Chai, Regroup) */}
+          {onSendCallout && (
+            <button
+              id="btn-callout-toggle"
+              type="button"
+              onClick={() => {
+                triggerHaptic(25);
+                setIsCalloutOpen(prev => !prev);
+                if (isExpanded) setIsExpanded(false);
+              }}
+              title="Quick Callout to Crew (Fuel, Chai, Regroup)"
+              className={`h-10 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0 border ${
+                isCalloutOpen
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md font-black'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300'
+              }`}
+            >
+              <span className="text-sm">📣</span>
+              <span className="hidden xs:inline">Ping</span>
+            </button>
+          )}
 
           {/* Center: Glanceable Convoy Buddy Distances or Solo Tracker */}
           <div 

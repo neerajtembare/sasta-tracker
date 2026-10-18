@@ -24,6 +24,7 @@ import { RideStoryModal } from './components/RideStoryModal';
 import { RideReportModal } from './components/RideReportModal';
 import { TrackComparisonModal } from './components/TrackComparisonModal';
 import { CrewDashboard } from './components/CrewDashboard';
+import { CalloutBanner } from './components/CalloutBanner';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { DownloadAppModal } from './components/DownloadAppModal';
 import { CrashAlertModal } from './components/CrashAlertModal';
@@ -469,7 +470,7 @@ export default function App() {
       setAnalysis(parsed);
 
       if (keepOnMap) {
-        const durationMin = Math.max(1, Math.round((parsed.totalDurationSec || 0) / 60));
+        const durationMin = Math.max(1, Math.round((parsed.totalDurationSeconds || 0) / 60));
         setFinishedRideSummary({
           distanceKm: parsed.totalDistanceKm,
           durationMin,
@@ -760,6 +761,15 @@ export default function App() {
 
       {/* In-App Browser Helper Banner (only on secondary views) */}
       {currentTab !== 'crew' && <InAppBrowserBanner />}
+
+      {/* Global Callout Flash Banner for secondary tabs */}
+      {currentTab !== 'crew' && (
+        <CalloutBanner
+          callout={groupRide.activeCallout}
+          onDismiss={groupRide.dismissCallout}
+          theme={theme}
+        />
+      )}
 
       {/* Main Container */}
       <main className={`w-full transition-all ${
@@ -1188,6 +1198,9 @@ export default function App() {
                 setFinishedRideSummary(null);
                 setCurrentTab('analysis');
               }}
+              activeCallout={groupRide.activeCallout}
+              onDismissCallout={groupRide.dismissCallout}
+              onSendCallout={groupRide.sendCallout}
             />
           </div>
         )}

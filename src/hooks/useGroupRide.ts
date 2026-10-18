@@ -12,6 +12,8 @@ import {
 import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
 import { playVoiceBlastAudio } from '../utils/voiceBlast';
+import { RiderCallout, CalloutPreset, playCalloutAlert } from '../utils/callouts';
+export type { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface GroupRiderLocation {
   riderId: string;
@@ -238,6 +240,8 @@ export function useGroupRide() {
   const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
   const [activeVoiceBlast, setActiveVoiceBlast] = useState<ActiveVoiceBlast | null>(null);
   const voiceBlastTimeoutRef = useRef<any>(null);
+  const [activeCallout, setActiveCallout] = useState<RiderCallout | null>(null);
+  const calloutTimeoutRef = useRef<any>(null);
   const [isConvoyRegrouped, setIsConvoyRegrouped] = useState<boolean>(false);
   const wasSeparatedRef = useRef<boolean>(true);
   const lastRegroupNotificationTimeRef = useRef<number>(0);
@@ -405,6 +409,20 @@ export function useGroupRide() {
         voiceBlastTimeoutRef.current = setTimeout(() => {
           setActiveVoiceBlast(null);
         }, (blast.durationMs || 3000) + 2500);
+      }
+    } else if (data.type === 'CALLOUT') {
+      const callout: RiderCallout = data.payload;
+      if (callout && callout.riderId && callout.riderId !== currentMyId) {
+        // Play radio squelch and announce voice alert through helmet intercom / earbuds
+        playCalloutAlert(callout.riderName || 'Rider', callout.spokenText || callout.message);
+
+        if (calloutTimeoutRef.current) clearTimeout(calloutTimeoutRef.current);
+        setActiveCallout(callout);
+        postCrewNotification(`${callout.icon || '📣'} ${callout.riderName}: ${callout.title}`, 'info');
+
+        calloutTimeoutRef.current = setTimeout(() => {
+          setActiveCallout(null);
+        }, 10000);
       }
     }
   }, [postCrewNotification]);
@@ -848,6 +866,38 @@ export function useGroupRide() {
     postCrewNotification(`🎙️ Voice blast sent to crew radar!`, 'info');
   }, [broadcastPayload, postCrewNotification]);
 
+  const sendCallout = useCallback((preset: CalloutPreset) => {
+    const payload: RiderCallout = {
+      id: `callout_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      riderId: profileRef.current.id,
+      riderName: profileRef.current.name,
+      bikeModel: profileRef.current.bikeModel,
+      color: profileRef.current.color,
+      type: preset.type,
+      icon: preset.icon,
+      title: preset.label,
+      message: preset.spokenText,
+      spokenText: preset.spokenText,
+      timestamp: Date.now(),
+    };
+
+    // Locally announce & show confirmation for the sender
+    playCalloutAlert('You', preset.spokenText);
+    setActiveCallout(payload);
+    if (calloutTimeoutRef.current) clearTimeout(calloutTimeoutRef.current);
+    calloutTimeoutRef.current = setTimeout(() => {
+      setActiveCallout(null);
+    }, 10000);
+
+    // Broadcast over MQTT to all squad members on the radar
+    broadcastPayload({
+      type: 'CALLOUT',
+      payload,
+    });
+
+    postCrewNotification(`Sent callout: "${preset.label}"`, 'info');
+  }, [broadcastPayload, postCrewNotification]);
+
   const membersArray = useMemo(() => Array.from(members.values()), [members]);
   const squadFriendsArray = useMemo(() => getAllSquadFriends(), [getAllSquadFriends]);
 
@@ -875,6 +925,9 @@ export function useGroupRide() {
     activeVoiceBlast,
     dismissVoiceBlast: () => setActiveVoiceBlast(null),
     sendVoiceBlast,
+    activeCallout,
+    dismissCallout: () => setActiveCallout(null),
+    sendCallout,
     isConvoyRegrouped,
     updateMyLocation,
     triggerSos,

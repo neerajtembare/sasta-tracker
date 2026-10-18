@@ -12,6 +12,8 @@ import { CrewLiveMap, MapLayerType } from './CrewLiveMap';
 import { TopMapCapsule } from './TopMapCapsule';
 import { ConvoyBottomStrip } from './ConvoyBottomStrip';
 import { AppDrawer } from './AppDrawer';
+import { CalloutBanner } from './CalloutBanner';
+import { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface FinishedRideSummary {
   distanceKm: number;
@@ -70,6 +72,9 @@ interface CrewDashboardProps {
   finishedRideSummary?: FinishedRideSummary | null;
   onDismissRideSummary?: () => void;
   onViewTelemetry?: () => void;
+  activeCallout?: RiderCallout | null;
+  onDismissCallout?: () => void;
+  onSendCallout?: (preset: CalloutPreset) => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -115,6 +120,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   finishedRideSummary = null,
   onDismissRideSummary,
   onViewTelemetry,
+  activeCallout = null,
+  onDismissCallout,
+  onSendCallout,
 }) => {
   // Navigation & Settings Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -201,6 +209,15 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       />
 
       {/* ─────────────────────────────────────────────────────────────
+          2B. INCOMING RIDER CALLOUT HEADS-UP FLASH BANNER
+      ───────────────────────────────────────────────────────────── */}
+      <CalloutBanner
+        callout={activeCallout}
+        onDismiss={onDismissCallout || (() => {})}
+        theme={theme}
+      />
+
+      {/* ─────────────────────────────────────────────────────────────
           3. SLIM GOOGLE MAPS-STYLE BOTTOM CONVOY STRIP
       ───────────────────────────────────────────────────────────── */}
       <ConvoyBottomStrip
@@ -223,6 +240,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onOpenSquadDrawer={() => setIsDrawerOpen(true)}
         onSelectRider={(id) => setFocusedRiderId(id)}
         onShareWhatsApp={handleShareWhatsApp}
+        onSendCallout={onSendCallout}
         theme={theme}
         unitSystem={unitSystem}
       />

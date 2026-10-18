@@ -52,11 +52,15 @@ export class SimpleMqttClient {
     this.keepAlive = options.keepAliveSeconds || 30;
 
     if (typeof window !== 'undefined') {
+      let onlineDebounceTimer: any = null;
       this.boundOnlineHandler = () => {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-          this.reconnectAttempts = 0;
-          this.connect();
-        }
+        clearTimeout(onlineDebounceTimer);
+        onlineDebounceTimer = setTimeout(() => {
+          if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            this.reconnectAttempts = 0;
+            this.connect();
+          }
+        }, 1200);
       };
       window.addEventListener('online', this.boundOnlineHandler);
     }

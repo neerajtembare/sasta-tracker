@@ -79,8 +79,12 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
 
   return (
     <div 
-      style={{ bottom: 'max(0.6rem, env(safe-area-inset-bottom))' }}
-      className="absolute left-2.5 right-2.5 sm:left-4 sm:right-4 z-30 pointer-events-none flex justify-center"
+      style={{ 
+        bottom: 'max(0.75rem, calc(env(safe-area-inset-bottom) + 0.25rem))',
+        left: 'max(0.6rem, env(safe-area-inset-left))',
+        right: 'max(0.6rem, env(safe-area-inset-right))',
+      }}
+      className="absolute z-30 pointer-events-none flex justify-center"
     >
       <div className="pointer-events-auto w-full max-w-xl space-y-1.5 font-mono">
         
@@ -248,7 +252,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               onTriggerSos();
             }}
             title="Broadcast emergency SOS to all squad riders"
-            className="h-9 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg shadow-rose-950/60 cursor-pointer transition-all active:scale-95 shrink-0"
+            className="h-10 px-3.5 min-w-[58px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-950/60 cursor-pointer transition-all active:scale-95 shrink-0"
           >
             <ShieldAlert className="w-4 h-4 fill-current animate-pulse" />
             <span>SOS</span>
@@ -304,7 +308,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                 onToggleRecording();
               }}
               title={isRecording ? 'Stop & save ride track' : 'Start tracking GPS ride'}
-              className={`h-9 px-3 rounded-xl font-mono text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
+              className={`h-10 px-3.5 min-w-[64px] rounded-xl font-mono text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
                 isRecording
                   ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30'
                   : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'

@@ -45,8 +45,12 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
 
   return (
     <header 
-      style={{ top: 'max(0.6rem, env(safe-area-inset-top))' }}
-      className="absolute left-2.5 right-2.5 sm:left-4 sm:right-4 z-30 pointer-events-none flex justify-center"
+      style={{ 
+        top: 'max(0.6rem, env(safe-area-inset-top))',
+        left: 'max(0.6rem, env(safe-area-inset-left))',
+        right: 'max(0.6rem, env(safe-area-inset-right))',
+      }}
+      className="absolute z-30 pointer-events-none flex justify-center"
     >
       <div 
         className={`pointer-events-auto w-full max-w-xl h-12 px-2 sm:px-3 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-2 shadow-2xl transition-all font-mono ${
@@ -65,7 +69,7 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
           }}
           title="Open Menu & Settings"
           aria-label="Open Navigation Menu"
-          className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+          className={`w-10 h-10 min-w-[40px] rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
             isLight
               ? 'hover:bg-slate-100 text-slate-700'
               : 'hover:bg-slate-800/80 text-slate-300'

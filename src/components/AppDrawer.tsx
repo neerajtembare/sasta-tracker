@@ -145,6 +145,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         style={{
           paddingTop: 'max(1rem, env(safe-area-inset-top))',
           paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
         }}
       >
         {/* Header */}

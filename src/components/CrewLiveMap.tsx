@@ -1218,8 +1218,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           GOOGLE MAPS-STYLE FLOATING RE-CENTER FAB (BOTTOM-RIGHT)
       ───────────────────────────────────────────────────────────── */}
       <div 
-        style={{ bottom: 'max(4.2rem, calc(env(safe-area-inset-bottom) + 3.8rem))' }}
-        className="absolute right-3 sm:right-4 z-20 flex flex-col gap-2 pointer-events-auto"
+        style={{ 
+          bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
+          right: 'max(0.75rem, env(safe-area-inset-right))',
+        }}
+        className="absolute z-20 flex flex-col gap-2 pointer-events-auto"
       >
         <button
           onClick={handleRecenterMe}

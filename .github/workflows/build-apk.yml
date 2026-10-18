@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build Debug APK
+    name: Build Android APKs
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,11 +46,12 @@ jobs:
         run: npx cap sync android
 
       - name: Setup Keystore (if provided)
-        if: "${{ secrets.KEYSTORE_BASE64 != '' }}"
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          fi
 
       - name: Build Android APKs
         working-directory: android

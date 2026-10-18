@@ -713,24 +713,37 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     map.flyTo(pos, 16, { animate: true, duration: 1.2 });
   }, [sosAlert]);
 
-  // Initial Auto-fit Bounds
+  // Dynamic Auto-fit Bounds: auto-encompass all active riders within 100km
+  const lastFittedSignatureRef = useRef<string>('');
   useEffect(() => {
-    if (!mapInstanceRef.current || hasInitialFit) return;
+    if (!mapInstanceRef.current) return;
+    const activeMembers = members.filter(m => m.location && m.isOnline !== false);
+    const signature = activeMembers.map(m => m.riderId).sort().join(',');
 
-    const points: L.LatLngTuple[] = [];
-    if (myLocation) points.push([myLocation.lat, myLocation.lon]);
-    members.forEach(m => {
-      if (m.location) points.push([m.location.lat, m.location.lon]);
-    });
+    // When the roster of active members changes or on initial fix:
+    if (signature !== lastFittedSignatureRef.current) {
+      lastFittedSignatureRef.current = signature;
 
-    if (points.length > 0) {
-      if (points.length === 1) {
-        mapInstanceRef.current.setView(points[0], 15);
-      } else {
+      const points: L.LatLngTuple[] = [];
+      if (myLocation) points.push([myLocation.lat, myLocation.lon]);
+
+      activeMembers.forEach(m => {
+        if (m.location) {
+          // Auto-include all riders within 100km
+          if (m.distanceFromMeMeters === undefined || m.distanceFromMeMeters <= 100000) {
+            points.push([m.location.lat, m.location.lon]);
+          }
+        }
+      });
+
+      if (points.length > 1) {
         const bounds = L.latLngBounds(points);
-        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+        mapInstanceRef.current.fitBounds(bounds, { padding: [55, 55], maxZoom: 15, animate: true });
+        setHasInitialFit(true);
+      } else if (points.length === 1 && !hasInitialFit) {
+        mapInstanceRef.current.setView(points[0], 15);
+        setHasInitialFit(true);
       }
-      setHasInitialFit(true);
     }
   }, [myLocation, members, hasInitialFit]);
 
@@ -742,7 +755,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const points: L.LatLngTuple[] = [];
     if (myLocation) points.push([myLocation.lat, myLocation.lon]);
     members.forEach(m => {
-      if (m.location) points.push([m.location.lat, m.location.lon]);
+      if (m.location && m.isOnline !== false) {
+        points.push([m.location.lat, m.location.lon]);
+      }
     });
 
     if (points.length === 0) return;
@@ -751,7 +766,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       mapInstanceRef.current.flyTo(points[0], 16, { animate: true, duration: 0.8 });
     } else {
       const bounds = L.latLngBounds(points);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], animate: true });
+      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 15, animate: true });
     }
     setSelectedRiderId(null);
   };
@@ -827,69 +842,39 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       <div className="absolute top-2 left-2 right-2 z-10 flex items-center justify-between pointer-events-none gap-1.5">
         
         {/* Left: Manage Crew Pill & Callsign */}
+        {/* Left: Live Radar Indicator & Callsign */}
         <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
-          <button
-            onClick={() => onOpenCrewManage ? onOpenCrewManage(isConnected ? 'active' : 'saved') : onToggleCrewList?.()}
-            className="h-8 px-2.5 rounded-full bg-slate-950/90 backdrop-blur-md border border-cyan-500/50 hover:border-cyan-400 text-white font-mono text-[11px] font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
-            title="Open Crew Management (Make Crew, Join Crew, Saved Squads)"
-          >
-            {isConnected ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse" />
-                <span className="font-heading font-black tracking-wider text-cyan-400">Crew Radar</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                  {roomCode}
-                </span>
-              </>
-            ) : (
-              <>
-                <Users className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-slate-200">Manage Crew</span>
-              </>
-            )}
-          </button>
+          <div className="h-8 px-2.5 rounded-full bg-slate-950/90 backdrop-blur-md border border-cyan-500/50 text-white font-mono text-[11px] font-bold flex items-center gap-1.5 shadow-md">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse" />
+            <span className="font-heading font-black tracking-wider text-cyan-400">RADAR</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              {members.filter(m => m.location && m.isOnline !== false).length + 1} LIVE
+            </span>
+          </div>
 
-          {/* Callsign Tag (Compact on mobile, full on desktop) */}
-          {isEditingHandle ? (
-            <div className="flex items-center gap-1 bg-slate-950/90 border border-cyan-400 rounded-full h-8 px-2 shadow-md">
-              <input
-                type="text"
-                maxLength={15}
-                value={tempHandle}
-                onChange={e => setTempHandle(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleSaveHandle();
-                  if (e.key === 'Escape') setIsEditingHandle(false);
-                }}
-                placeholder="Callsign..."
-                className="bg-transparent text-[11px] font-mono font-bold text-white focus:outline-none w-20"
-                autoFocus
-              />
-              <button
-                onClick={handleSaveHandle}
-                className="px-2 py-0.5 bg-cyan-500 text-slate-950 font-bold text-[9px] rounded-full cursor-pointer"
-              >
-                Save
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                setTempHandle(myRiderName);
-                setIsEditingHandle(true);
-              }}
-              className="hidden sm:flex h-8 px-2.5 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 hover:border-slate-500 text-slate-300 hover:text-white font-mono text-[11px] items-center gap-1.5 shadow-md cursor-pointer transition-colors"
-              title="Tap to change your rider callsign"
-            >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: myColor || '#00f0ff' }} />
-              <span className="font-bold truncate max-w-[90px]">{myRiderName}</span>
-              <Edit3 className="w-2.5 h-2.5 text-slate-500" />
-            </button>
-          )}
+          {/* Callsign Tag - visible on ALL screen sizes */}
+          <button
+            onClick={() => onOpenCrewManage ? onOpenCrewManage('active') : onToggleCrewList?.()}
+            className="h-8 px-2.5 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-slate-200 hover:text-white font-mono text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+            title="Tap to change your rider callsign, bike & color"
+          >
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: myColor || '#00f0ff' }} />
+            <span className="font-bold truncate max-w-[80px] sm:max-w-[120px]">{myRiderName}</span>
+            <Edit3 className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
+          </button>
         </div>
 
-        {/* Right: Map Controls, Layer Toggle & Maximize (Clean, spacious, unclipped) */}
+        {/* Right: Map Controls, Layer Toggle & Maximize */}
         <div className="flex items-center gap-1 pointer-events-auto shrink-0">
+          {/* Fit Convoy / View Everyone Button */}
+          <button
+            onClick={handleFitAllRiders}
+            className="h-8 px-2 sm:px-2.5 rounded-full bg-slate-950/90 hover:bg-slate-900 backdrop-blur-md border border-sky-500/60 hover:border-sky-400 text-sky-300 font-mono text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shadow-md cursor-pointer transition-all active:scale-95 shrink-0"
+            title="Fit all riders within 100km on map"
+          >
+            <Scan className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="hidden xs:inline">See All</span>
+          </button>
           {/* 1-Tap Garage Route Recording Sync */}
           {isRecording ? (
             <button

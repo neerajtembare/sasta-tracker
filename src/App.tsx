@@ -48,17 +48,30 @@ export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
 export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<AppTab>(() => {
+  const [currentTab, setCurrentTabState] = useState<AppTab>(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('room') || params.get('crew')) {
-          return 'crew';
+        if (params.get('tab')) return params.get('tab') as AppTab;
+        if (params.get('room') || params.get('crew')) return 'crew';
+        const saved = localStorage.getItem('sasta_active_tab');
+        if (saved && ['home', 'analysis', 'cockpit', 'crew', 'faq'].includes(saved)) {
+          return saved as AppTab;
         }
       }
     } catch {}
-    return 'home';
+    return 'crew'; // Direct open app straight to live Crew Radar!
   });
+
+  const setCurrentTab = useCallback((action: AppTab | ((prev: AppTab) => AppTab)) => {
+    setCurrentTabState(prev => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      try {
+        localStorage.setItem('sasta_active_tab', next);
+      } catch {}
+      return next;
+    });
+  }, []);
   // Don't preload demo ride — let landing page be the entry point
   const [analysis, setAnalysis] = useState<RideAnalysis | null>(null);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
@@ -906,6 +919,7 @@ export default function App() {
               lastRoomCode={groupRide.lastRoomCode}
               riderName={groupRide.riderName}
               myColor={groupRide.myColor}
+              bikeModel={groupRide.bikeModel}
               myLocation={myLocation}
               isHost={groupRide.isHost}
               isConnected={groupRide.isConnected}

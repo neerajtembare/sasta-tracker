@@ -511,10 +511,45 @@ export function useGroupRide() {
     setStatusMessage('Logged out. Check in to rejoin crew radar.');
   }, []);
 
-  const updateRiderName = useCallback((newName: string) => {
+  const updateProfile = useCallback((name: string, bikeModel?: string, color?: string) => {
+    const cleanName = (name && name.trim()) || profileRef.current.name || 'Rider';
+    const updated: RiderProfile = {
+      ...profileRef.current,
+      name: cleanName,
+      bikeModel: bikeModel !== undefined && bikeModel.trim() ? bikeModel.trim() : profileRef.current.bikeModel,
+      color: color || profileRef.current.color,
+    };
+    setProfile(updated);
+    profileRef.current = updated;
+
+    saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(updated));
+    saveIdentity('sasta_rider_name', cleanName);
+
+    // Immediately broadcast updated profile so other riders see the new name & color right away
+    const payload: any = {
+      riderId: updated.id,
+      name: updated.name,
+      color: updated.color,
+      bikeModel: updated.bikeModel,
+      timestamp: Date.now(),
+      status: 'stopped',
+    };
+    if (myLocationRef.current) {
+      Object.assign(payload, myLocationRef.current);
+      payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
+    }
+    broadcastPayload({
+      type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+      payload,
+    });
+
+    postCrewNotification(`Callsign updated: ${cleanName}`, 'info');
+  }, [broadcastPayload, postCrewNotification]);
+
+  const updateRiderName = useCallback((newName: string, bikeModel?: string, color?: string) => {
     if (!newName.trim()) return;
-    loginRider(newName.trim(), profile.bikeModel, profile.color, profile.squadName);
-  }, [loginRider, profile.bikeModel, profile.color, profile.squadName]);
+    updateProfile(newName.trim(), bikeModel, color);
+  }, [updateProfile]);
 
   const addSquadFriend = useCallback((name: string, bikeModel?: string) => {
     const cleanName = name.trim();
@@ -568,11 +603,12 @@ export function useGroupRide() {
     getFriendInviteUrl,
     sosAlert,
     crewNotification,
+    dismissCrewNotification: () => setCrewNotification(null),
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),
-    dismissCrewNotification: () => setCrewNotification(null),
     updateRiderName,
+    updateProfile,
     createRoom: (name: string) => loginRider(name),
     joinRoom: (code: string, name?: string) => loginRider(name || profile.name, undefined, undefined, code),
     rejoinRoom: () => loginRider(profile.name),

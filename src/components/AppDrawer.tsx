@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Users, 
@@ -18,10 +18,12 @@ import {
   ArrowRight,
   Bike,
   Sparkles,
-  Gauge
+  Gauge,
+  BatteryCharging
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
+import { checkBatteryOptimizationStatus, requestBatteryOptimizationExemption } from '../utils/nativeKeepAlive';
 
 interface AppDrawerProps {
   isOpen: boolean;
@@ -94,6 +96,17 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   // Join Room State
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Android Background / Pocket Ride Battery Optimization Status
+  const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      checkBatteryOptimizationStatus().then(ignored => {
+        setIsBatteryIgnored(ignored);
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -510,6 +523,44 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               {isLight ? <Moon className="w-3.5 h-3.5 text-slate-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
               <span>{isLight ? 'Light Mode' : 'Dark Mode'}</span>
             </button>
+          </div>
+
+          {/* Pocket Mode & Background GPS Battery Card */}
+          <div className={`p-3 rounded-xl border space-y-2 text-left font-mono ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="font-heading font-black text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                <BatteryCharging className="w-4 h-4 text-emerald-400" />
+                <span>Pocket Ride & Background GPS</span>
+              </span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                isBatteryIgnored 
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+              }`}>
+                {isBatteryIgnored ? 'UNRESTRICTED' : 'OPTIMIZED'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+              Lock your phone in your pocket or use Google Maps. Sasta Tracker runs in the background and broadcasts your live position to your riding crew.
+            </p>
+
+            {!isBatteryIgnored && (
+              <button
+                type="button"
+                onClick={async () => {
+                  triggerHaptic(30);
+                  await requestBatteryOptimizationExemption();
+                  const updated = await checkBatteryOptimizationStatus();
+                  setIsBatteryIgnored(updated);
+                }}
+                className="w-full py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] flex items-center justify-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+              >
+                <span>⚡ Grant Unrestricted Battery for Long Rides</span>
+              </button>
+            )}
           </div>
 
           {/* Download App APK Link */}

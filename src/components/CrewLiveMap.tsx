@@ -273,23 +273,29 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return starredList[0];
   }, [members, starredRiderIds]);
 
-  // Convoy Separation Watchdog: Alert rider via Bluetooth intercom when primary starred buddy falls behind
+  // Convoy Separation Watchdog: Alert rider via Bluetooth intercom when any squad member falls behind
   const lastSeparationWarningRef = useRef<number>(0);
   useEffect(() => {
-    if (!primaryStarredMember || !myLocation) return;
-    const dist = primaryStarredMember.distanceFromMeMeters ?? 0;
+    if (!myLocation) return;
     const mySpeed = myLocation.speedKmh ?? 0;
-    const now = Date.now();
+    if (mySpeed < 20) return; // Only alert if actively cruising
 
-    // If rider is actively cruising (> 25 km/h) and primary starred buddy falls > 2000m behind
-    if (dist > 2000 && mySpeed > 25) {
-      if (now - lastSeparationWarningRef.current > 60000) {
-        lastSeparationWarningRef.current = now;
-        playWarningChime();
-        triggerHaptic([80, 50, 80]);
-      }
+    const onlineOthers = members.filter(m => m.isOnline && m.distanceFromMeMeters !== undefined);
+    if (onlineOthers.length === 0) return;
+
+    // Prioritize primary starred buddy if set, else check furthest squad member
+    const checkDist = primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined
+      ? primaryStarredMember.distanceFromMeMeters
+      : Math.max(...onlineOthers.map(m => m.distanceFromMeMeters ?? 0));
+
+    const now = Date.now();
+    // Alert if someone drops > 1200m behind and haven't alerted in 60s
+    if (checkDist > 1200 && (now - lastSeparationWarningRef.current > 60000)) {
+      lastSeparationWarningRef.current = now;
+      playWarningChime();
+      triggerHaptic([80, 50, 80]);
     }
-  }, [primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
+  }, [members, primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
 
   // Initialize Leaflet Map
   useEffect(() => {

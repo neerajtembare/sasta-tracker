@@ -70,6 +70,7 @@ interface CrewLiveMapProps {
   isOnRadar?: boolean;
   onToggleRadar?: (enable?: boolean) => void;
   onJoinSharedRoute?: (route: any) => void;
+  starredRiderIds?: string[];
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite';
@@ -110,6 +111,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   isOnRadar = true,
   onToggleRadar,
   onJoinSharedRoute,
+  starredRiderIds = [],
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -119,7 +121,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   const myMarkerRef = useRef<L.Marker | null>(null);
   const prevMyPosRef = useRef<{ lat: number; lon: number; speedKmh: number; heading: number | null } | null>(null);
   const memberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const memberCacheRef = useRef<Map<string, { lat: number; lon: number; speedText: string; bearing: number | null; isOnline: boolean; isStopped: boolean; isHost: boolean; color: string }>>(new Map());
+  const memberCacheRef = useRef<Map<string, { lat: number; lon: number; speedText: string; bearing: number | null; isOnline: boolean; isStopped: boolean; isHost: boolean; color: string; isStarred?: boolean }>>(new Map());
   const sosMarkerRef = useRef<L.Marker | null>(null);
 
   // Active Route layers
@@ -241,6 +243,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(1)} km`;
   };
+
+  const primaryStarredMember = useMemo(() => {
+    if (!starredRiderIds || starredRiderIds.length === 0) return null;
+    const starredList = members.filter(m => starredRiderIds.includes(m.riderId) && m.location && m.isOnline !== false);
+    if (starredList.length === 0) return null;
+    starredList.sort((a, b) => (a.distanceFromMeMeters ?? 999999) - (b.distanceFromMeMeters ?? 999999));
+    return starredList[0];
+  }, [members, starredRiderIds]);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -593,10 +603,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const bearing = m.location.bearing;
       const isOnline = m.isOnline !== false;
       const statusTag = !isOnline ? 'OFFLINE' : isStopped ? 'STOP' : speed;
+      const isStarred = Boolean(starredRiderIds && starredRiderIds.includes(m.riderId));
 
       const prev = memberCacheRef.current.get(m.riderId);
       const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
-      const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color;
+      const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color || prev.isStarred !== isStarred;
 
       // Centered 360° rotating direction arrow
       const bearingArrow = bearing !== null && bearing !== undefined
@@ -609,17 +620,27 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         ? `<div style="position:absolute; top:-16px; left:50%; transform:translateX(-50%); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
         : '';
 
+      const starBadge = isStarred
+        ? `<div style="position:absolute; top:-16px; right:-6px; font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10;">⭐</div>`
+        : '';
+
+      const haloRing = isStarred
+        ? `<div style="position:absolute; width:34px; height:34px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
+        : '';
+
       const opacity = isOnline ? '1' : '0.65';
 
       const html = `
         <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
+          ${haloRing}
           ${leaderCrown}
+          ${starBadge}
           ${bearingArrow}
-          <div style="width:24px; height:24px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:10px;">
+          <div style="width:24px; height:24px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:10px;">
             ${initial}
           </div>
-          <div style="position:absolute; bottom:-15px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 3px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">
-            ${m.name}
+          <div style="position:absolute; bottom:-15px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 3px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">
+            ${isStarred ? '⭐ ' : ''}${m.name}
           </div>
         </div>
       `;
@@ -633,7 +654,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       let marker = memberMarkersRef.current.get(m.riderId);
       if (!marker) {
-        marker = L.marker(pos, { icon, zIndexOffset: 900 }).addTo(map);
+        marker = L.marker(pos, { icon, zIndexOffset: isStarred ? 960 : 900 }).addTo(map);
         marker.on('click', () => {
           triggerHaptic(20);
           setSelectedRiderId(m.riderId);
@@ -652,10 +673,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           isStopped,
           isHost: m.isHost,
           color,
+          isStarred,
         });
       } else {
         // High-speed direct position update without DOM destruction
         marker.setLatLng(pos);
+        marker.setZIndexOffset(isStarred ? 960 : 900);
 
         // Zero-GC in-place rotation of the direction arrow without destroying DOM
         const el = marker.getElement();
@@ -666,8 +689,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           }
         }
 
-        // Only rebuild DOM icon if identity, host status, or online state changed
-        const identityOrStateChanged = !prev || prev.isOnline !== isOnline || prev.isHost !== m.isHost || prev.color !== color;
+        // Only rebuild DOM icon if identity, host status, online state or star status changed
+        const identityOrStateChanged = !prev || prev.isOnline !== isOnline || prev.isHost !== m.isHost || prev.color !== color || prev.isStarred !== isStarred;
         if (identityOrStateChanged) {
           marker.setIcon(icon);
         }
@@ -681,10 +704,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           isStopped,
           isHost: m.isHost,
           color,
+          isStarred,
         });
       }
     });
-  }, [members, unitSystem]);
+  }, [members, unitSystem, starredRiderIds]);
 
   // SOS Marker (Crisp solid alert marker)
   useEffect(() => {
@@ -932,8 +956,28 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </span>
         </div>
 
-        {/* Right Action: SOS Emergency Alert */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        {/* Right Action: Callsign / Profile Customizer & SOS Emergency Alert */}
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+          {onOpenCrewManage && (
+            <button
+              onClick={() => {
+                triggerHaptic(20);
+                onOpenCrewManage();
+              }}
+              className="h-10 px-2.5 sm:px-3 rounded-full bg-slate-950/90 backdrop-blur-md border border-slate-700/80 hover:border-cyan-400 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl cursor-pointer transition-all active:scale-95"
+              title="Edit Callsign, Motorcycle Model & Radar Color"
+            >
+              <div 
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-slate-950 shrink-0 shadow-xs" 
+                style={{ backgroundColor: myColor || '#00f0ff' }}
+              >
+                {(myRiderName || 'R').charAt(0).toUpperCase()}
+              </div>
+              <span className="max-w-[65px] sm:max-w-[105px] truncate">{myRiderName || 'Rider'}</span>
+              <Edit3 className="w-3 h-3 text-cyan-400 shrink-0" />
+            </button>
+          )}
+
           {isConnected && onTriggerSos && (
             <button
               onClick={() => {
@@ -950,6 +994,42 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           )}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          CONVOY PROXIMITY PILL (Shows primary starred buddy distance & speed)
+      ───────────────────────────────────────────────────────────── */}
+      {primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
+        <div
+          onClick={() => {
+            triggerHaptic(20);
+            if (primaryStarredMember.location && mapInstanceRef.current) {
+              mapInstanceRef.current.flyTo([primaryStarredMember.location.lat, primaryStarredMember.location.lon], 16, { animate: true, duration: 0.6 });
+            }
+          }}
+          className={`absolute top-12 left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
+            primaryStarredMember.distanceFromMeMeters > 2500
+              ? 'bg-amber-950/95 border-amber-500 text-amber-300 animate-pulse'
+              : 'bg-slate-950/95 border-amber-500/60 text-white'
+          }`}
+          title="Tap to center map on your primary starred convoy buddy"
+        >
+          <span className="text-amber-400">⭐</span>
+          <span className="font-black text-amber-300">{primaryStarredMember.name}:</span>
+          <span>
+            {primaryStarredMember.distanceFromMeMeters < 1000
+              ? `${Math.round(primaryStarredMember.distanceFromMeMeters)}m`
+              : `${(primaryStarredMember.distanceFromMeMeters / 1000).toFixed(1)}km`}
+          </span>
+          {primaryStarredMember.location?.speedKmh !== undefined && (
+            <span className="text-cyan-400 text-[10px]">
+              ({Math.round(primaryStarredMember.location.speedKmh)} km/h)
+            </span>
+          )}
+          {primaryStarredMember.distanceFromMeMeters > 2500 && (
+            <span className="text-amber-400 font-black text-[10px] ml-0.5">• LAGGING</span>
+          )}
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           1-TAP REJOIN PILL ON MAP (If disconnected but last squad known)

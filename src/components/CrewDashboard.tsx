@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { 
   GroupMemberInfo, 
@@ -21,7 +21,9 @@ import {
   Route,
   Play,
   Eye,
-  EyeOff
+  EyeOff,
+  Star,
+  MessageSquare
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { openGoogleMapsNavigation } from '../utils/navigation';
@@ -118,6 +120,29 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   const [isConvoyDrawerExpanded, setIsConvoyDrawerExpanded] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Starred Convoy Buddies (persisted on device for zero-friction group focus)
+  const [starredRiderIds, setStarredRiderIds] = useState<string[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('sasta_starred_riders');
+        if (saved) return JSON.parse(saved);
+      }
+    } catch {}
+    return [];
+  });
+  const [filterMode, setFilterMode] = useState<'all' | 'squad'>('all');
+
+  const toggleStarRider = (id: string) => {
+    triggerHaptic(25);
+    setStarredRiderIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      try {
+        localStorage.setItem('sasta_starred_riders', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const isAnyLocalModalOpen = isLoginModalOpen;
   const localModalHistoryPushedRef = useRef(false);
 
@@ -203,6 +228,17 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
 
   const onlineCount = members.filter(m => m.isOnline !== false).length + (isOnRadar ? 1 : 0);
 
+  const displayedMembers = useMemo(() => {
+    if (filterMode === 'squad' && starredRiderIds.length > 0) {
+      return members.filter(m => starredRiderIds.includes(m.riderId));
+    }
+    return [...members].sort((a, b) => {
+      const aStarred = starredRiderIds.includes(a.riderId) ? 1 : 0;
+      const bStarred = starredRiderIds.includes(b.riderId) ? 1 : 0;
+      return bStarred - aStarred;
+    });
+  }, [members, filterMode, starredRiderIds]);
+
   return (
     <div className="relative w-full h-full flex-1 flex flex-col overflow-hidden rounded-none sm:rounded-2xl border sm:border-slate-800">
       
@@ -243,6 +279,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         isOnRadar={isOnRadar}
         onToggleRadar={onToggleRadar}
         onJoinSharedRoute={onJoinSharedRoute}
+        starredRiderIds={starredRiderIds}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -285,7 +322,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             
             {/* Roster Header */}
             <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className={`w-2 h-2 rounded-full ${isOnRadar ? 'bg-emerald-400 ring-2 ring-emerald-400/40 animate-pulse' : 'bg-amber-400 ring-2 ring-amber-400/30'}`} />
                 <span className="font-heading font-black text-white text-xs uppercase tracking-wider">
                   Crew Radar
@@ -293,9 +330,39 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
                   100km
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                  {onlineCount} ACTIVE
-                </span>
+                {starredRiderIds.length > 0 ? (
+                  <div className="flex items-center rounded-lg bg-slate-900 border border-slate-700/80 p-0.5 text-[9px] font-mono">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(20);
+                        setFilterMode('all');
+                      }}
+                      className={`px-1.5 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
+                        filterMode === 'all' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      All ({members.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(20);
+                        setFilterMode('squad');
+                      }}
+                      className={`px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 transition-colors cursor-pointer ${
+                        filterMode === 'squad' ? 'bg-amber-400 text-slate-950 font-black' : 'text-amber-400 hover:text-amber-300'
+                      }`}
+                    >
+                      <span>⭐ Convoy</span>
+                      <span>({starredRiderIds.length})</span>
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                    {onlineCount} ACTIVE
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -431,9 +498,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 )}
 
                 {/* CREW FRIENDS CARDS */}
-                {members.map(m => {
+                {displayedMembers.map(m => {
                   const isOnline = m.isOnline !== false;
                   const isStopped = m.location?.status === 'stopped' || (m.location?.speedKmh || 0) < 2.5;
+                  const isStarred = starredRiderIds.includes(m.riderId);
                   const distText = m.distanceFromMeMeters !== undefined
                     ? m.distanceFromMeMeters < 1000
                       ? `${Math.round(m.distanceFromMeMeters)}m`
@@ -449,9 +517,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                           triggerHaptic(20);
                         }
                       }}
-                      className={`p-2 rounded-xl border flex flex-col justify-between shrink-0 cursor-pointer transition-all active:scale-95 min-w-[195px] max-w-[240px] ${
+                      className={`p-2 rounded-xl border flex flex-col justify-between shrink-0 cursor-pointer transition-all active:scale-95 min-w-[200px] max-w-[250px] ${
                         focusedRiderId === m.riderId
                           ? 'bg-cyan-950/80 border-cyan-400 shadow-md shadow-cyan-950/50 ring-1 ring-cyan-400/50'
+                          : isStarred
+                          ? 'bg-amber-950/30 border-amber-500/60 shadow-xs'
                           : isOnline
                           ? 'bg-slate-900/90 border-slate-800 hover:border-slate-600'
                           : 'bg-slate-950/70 border-slate-800/60 opacity-60'
@@ -459,14 +529,30 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     >
                       <div className="flex items-center gap-2.5">
                         <div 
-                          className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs"
+                          className="w-8 h-8 rounded-lg text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-xs relative"
                           style={{ backgroundColor: m.color || '#ffe600' }}
                         >
                           {m.name.charAt(0).toUpperCase()}
+                          {isStarred && (
+                            <span className="absolute -top-1.5 -right-1.5 text-[10px]">⭐</span>
+                          )}
                         </div>
                         <div className="truncate flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-1 font-mono text-xs font-bold text-white truncate">
-                            <span className="truncate">{m.name}</span>
+                            <div className="flex items-center gap-1 truncate">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleStarRider(m.riderId);
+                                }}
+                                className="p-0.5 -ml-1 text-slate-500 hover:text-amber-400 cursor-pointer transition-colors shrink-0"
+                                title={isStarred ? 'Starred Convoy Buddy (Click to unstar)' : 'Star buddy to focus on radar'}
+                              >
+                                <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+                              </button>
+                              <span className="truncate">{m.name}</span>
+                            </div>
                             {distText && (
                               <span className="text-[10px] text-cyan-400 font-bold shrink-0">{distText}</span>
                             )}
@@ -489,21 +575,36 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                                 </>
                               )}
                             </div>
-                            {m.location && (
+                            <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  triggerHaptic(25);
-                                  openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
+                                  triggerHaptic(20);
+                                  handleShareWhatsApp(undefined, m.name);
                                 }}
-                                className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors shrink-0"
-                                title={`Navigate to ${m.name} via Google Maps`}
+                                className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors shrink-0"
+                                title={`Ping ${m.name} via WhatsApp`}
                               >
-                                <Navigation className="w-2.5 h-2.5" />
-                                <span>Nav</span>
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                <span>Ping</span>
                               </button>
-                            )}
+                              {m.location && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerHaptic(25);
+                                    openGoogleMapsNavigation(m.location!.lat, m.location!.lon, m.name);
+                                  }}
+                                  className="px-1.5 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-500/40 font-bold text-[9px] flex items-center gap-0.5 cursor-pointer transition-colors shrink-0"
+                                  title={`Navigate to ${m.name} via Google Maps`}
+                                >
+                                  <Navigation className="w-2.5 h-2.5" />
+                                  <span>Nav</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -522,6 +623,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                               triggerHaptic(40);
                               if (onJoinSharedRoute && m.sharedRoute) {
                                 onJoinSharedRoute(m.sharedRoute);
+                                if (!starredRiderIds.includes(m.riderId)) {
+                                  toggleStarRider(m.riderId);
+                                }
                               }
                             }}
                             className="h-8 px-3 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md shrink-0"

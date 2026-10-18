@@ -4,7 +4,15 @@
  * clear acoustic feedback to Bluetooth helmet intercoms (Sena, Cardo, etc.).
  */
 
-type ChimeType = 'start' | 'pause' | 'resume' | 'waypoint' | 'warning';
+export type ChimeType = 
+  | 'start' 
+  | 'pause' 
+  | 'resume' 
+  | 'waypoint' 
+  | 'warning' 
+  | 'sos' 
+  | 'route_shared' 
+  | 'radar_join';
 
 let audioCtx: AudioContext | null = null;
 
@@ -30,7 +38,15 @@ export function triggerHaptic(pattern: number | number[] = 40) {
 }
 
 export function playChime(type: ChimeType) {
-  triggerHaptic(type === 'warning' ? [60, 40, 60] : 45);
+  if (type === 'sos') {
+    triggerHaptic([150, 50, 150, 50, 250]);
+  } else if (type === 'route_shared') {
+    triggerHaptic([50, 40, 80]);
+  } else if (type === 'warning') {
+    triggerHaptic([60, 40, 60]);
+  } else {
+    triggerHaptic(40);
+  }
 
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -98,6 +114,42 @@ export function playChime(type: ChimeType) {
 
       osc.start(now);
       osc.stop(now + 0.16);
+    } else if (type === 'sos') {
+      // Urgent alternating emergency siren (880Hz / 660Hz)
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(660, now + 0.15);
+      osc.frequency.setValueAtTime(880, now + 0.30);
+      osc.frequency.setValueAtTime(660, now + 0.45);
+
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.60);
+
+      osc.start(now);
+      osc.stop(now + 0.61);
+    } else if (type === 'route_shared') {
+      // Melodic ascending route announcement (C5 -> G5 -> C6)
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(783.99, now + 0.12);
+      osc.frequency.setValueAtTime(1046.50, now + 0.24);
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc.start(now);
+      osc.stop(now + 0.46);
+    } else if (type === 'radar_join') {
+      // Soft pleasant radar join chime (520Hz -> 780Hz)
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(520, now);
+      osc.frequency.exponentialRampToValueAtTime(780, now + 0.12);
+
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+      osc.start(now);
+      osc.stop(now + 0.29);
     }
   } catch (err) {
     console.warn('Audio chime play warning:', err);
@@ -106,6 +158,9 @@ export function playChime(type: ChimeType) {
 
 export const playWaypointChime = () => playChime('waypoint');
 export const playWarningChime = () => playChime('warning');
+export const playSosChime = () => playChime('sos');
+export const playRouteSharedChime = () => playChime('route_shared');
+export const playRadarJoinChime = () => playChime('radar_join');
 
 // ── Inaudible Background Audio Keep-Alive ───────────────────────────
 // Mobile browsers (Android Chrome, iOS Safari) and Android WebViews prioritize

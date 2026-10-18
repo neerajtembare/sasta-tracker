@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { haversineDistance } from '../utils/gpxParser';
-import { playWaypointChime, playWarningChime } from '../utils/audioChimes';
+import { 
+  playWaypointChime, 
+  playWarningChime, 
+  playSosChime, 
+  playRouteSharedChime, 
+  playRadarJoinChime 
+} from '../utils/audioChimes';
 import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
 
@@ -251,7 +257,7 @@ export function useGroupRide() {
         const isPreviouslyOffline = !existing || !existing.isOnline;
 
         if (isPreviouslyOffline) {
-          playWaypointChime();
+          playRadarJoinChime();
           postCrewNotification(`🏍️ ${loc.name || 'Rider'} joined the Crew Radar!`, 'join');
         }
 
@@ -314,7 +320,7 @@ export function useGroupRide() {
           membersRef.current = next;
           return next;
         });
-        playWaypointChime();
+        playRouteSharedChime();
         postCrewNotification(`🗺️ ${share.riderName || 'Rider'} loaded route: "${share.routeName}" (${share.distanceKm.toFixed(1)} km)`, 'info');
       }
     } else if (data.type === 'ROUTE_CLEAR') {
@@ -337,7 +343,7 @@ export function useGroupRide() {
       const alert: SosAlert = data.payload;
       if (alert && alert.fromName) {
         setSosAlert(alert);
-        playWarningChime();
+        playSosChime();
         postCrewNotification(`🚨 REGROUP ALERT from ${alert.fromName}!`, 'alert');
       }
     } else if (data.type === 'OFFLINE') {

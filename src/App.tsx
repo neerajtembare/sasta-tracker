@@ -1115,6 +1115,7 @@ export default function App() {
               activeVoiceBlast={groupRide.activeVoiceBlast}
               onDismissVoiceBlast={groupRide.dismissVoiceBlast}
               onSendVoiceBlast={groupRide.sendVoiceBlast}
+              isConvoyRegrouped={groupRide.isConvoyRegrouped}
             />
           </div>
         )}

@@ -77,6 +77,7 @@ interface CrewDashboardProps {
   activeVoiceBlast?: ActiveVoiceBlast | null;
   onDismissVoiceBlast?: () => void;
   onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
+  isConvoyRegrouped?: boolean;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -116,6 +117,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   activeVoiceBlast = null,
   onDismissVoiceBlast,
   onSendVoiceBlast,
+  isConvoyRegrouped = false,
 }) => {
   const isLight = theme === 'light';
 
@@ -407,6 +409,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                 ) : (
                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
                     {onlineCount} ACTIVE
+                  </span>
+                )}
+
+                {/* Celebratory Regroup Badge when squad has assembled together */}
+                {isConvoyRegrouped && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 font-black border border-emerald-400/50 flex items-center gap-1 animate-in fade-in" title="All squad members are together in close proximity!">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span>REGROUPED</span>
                   </span>
                 )}
               </div>

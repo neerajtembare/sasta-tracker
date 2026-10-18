@@ -5,7 +5,9 @@ import {
   playWarningChime, 
   playSosChime, 
   playRouteSharedChime, 
-  playRadarJoinChime 
+  playRadarJoinChime,
+  playRegroupChime,
+  triggerHaptic
 } from '../utils/audioChimes';
 import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
@@ -236,6 +238,9 @@ export function useGroupRide() {
   const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
   const [activeVoiceBlast, setActiveVoiceBlast] = useState<ActiveVoiceBlast | null>(null);
   const voiceBlastTimeoutRef = useRef<any>(null);
+  const [isConvoyRegrouped, setIsConvoyRegrouped] = useState<boolean>(false);
+  const wasSeparatedRef = useRef<boolean>(true);
+  const lastRegroupNotificationTimeRef = useRef<number>(0);
 
   // References
   const profileRef = useRef<RiderProfile>(profile);
@@ -551,6 +556,48 @@ export function useGroupRide() {
     return () => clearInterval(ageInterval);
   }, []);
 
+  // Convoy Regroup Convergence Engine:
+  // Detects when all active squad members converge within 40 meters at a stop (e.g. tea stall, toll booth)
+  useEffect(() => {
+    const regroupInterval = setInterval(() => {
+      if (!profile.isLoggedIn || !isOnRadarRef.current || !myLocationRef.current) return;
+
+      const onlineWithLoc = Array.from(membersRef.current.values()).filter(
+        m => m.isOnline && m.location && typeof m.distanceFromMeMeters === 'number'
+      );
+
+      // Only evaluate if there's at least 1 other squad member active
+      if (onlineWithLoc.length === 0) return;
+
+      const mySpeed = myLocationRef.current.speedKmh || 0;
+      const distances = onlineWithLoc.map(m => m.distanceFromMeMeters as number);
+      const maxDist = Math.max(...distances);
+
+      // Condition: All active squad members are within 40m AND speed is low (< 18 km/h or stopped)
+      const allClose = maxDist <= 40;
+      const isSlowOrStopped = mySpeed < 18;
+
+      if (allClose && isSlowOrStopped) {
+        const now = Date.now();
+        // Trigger if previously separated and at least 2 minutes since last chime
+        if (wasSeparatedRef.current && (now - lastRegroupNotificationTimeRef.current > 120000)) {
+          wasSeparatedRef.current = false;
+          lastRegroupNotificationTimeRef.current = now;
+          setIsConvoyRegrouped(true);
+          playRegroupChime();
+          triggerHaptic([70, 40, 70, 40, 120]);
+          postCrewNotification(`🟢 Convoy Regrouped! All ${onlineWithLoc.length + 1} riders assembled.`, 'join');
+        }
+      } else if (maxDist > 120 || mySpeed > 25) {
+        // Convoy has departed / separated on the open road
+        wasSeparatedRef.current = true;
+        setIsConvoyRegrouped(false);
+      }
+    }, 3500);
+
+    return () => clearInterval(regroupInterval);
+  }, [profile.isLoggedIn, postCrewNotification]);
+
   // Public Methods
   const updateMyLocation = useCallback((lat: number, lon: number, speedKmh: number, bearing: number | null, leanAngle?: number) => {
     myLocationRef.current = { lat, lon, speedKmh, bearing, leanAngle };
@@ -828,6 +875,7 @@ export function useGroupRide() {
     activeVoiceBlast,
     dismissVoiceBlast: () => setActiveVoiceBlast(null),
     sendVoiceBlast,
+    isConvoyRegrouped,
     updateMyLocation,
     triggerSos,
     dismissSos: () => setSosAlert(null),

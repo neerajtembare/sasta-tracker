@@ -12,7 +12,8 @@ export type ChimeType =
   | 'warning' 
   | 'sos' 
   | 'route_shared' 
-  | 'radar_join';
+  | 'radar_join'
+  | 'regroup';
 
 let audioCtx: AudioContext | null = null;
 
@@ -150,6 +151,19 @@ export function playChime(type: ChimeType) {
 
       osc.start(now);
       osc.stop(now + 0.29);
+    } else if (type === 'regroup') {
+      // Triumphant ascending triad for squad reunion: C5 (523Hz) -> E5 (659Hz) -> G5 (784Hz) -> C6 (1046Hz)
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.09);
+      osc.frequency.setValueAtTime(783.99, now + 0.18);
+      osc.frequency.setValueAtTime(1046.50, now + 0.27);
+
+      gain.gain.setValueAtTime(0.32, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      osc.start(now);
+      osc.stop(now + 0.56);
     }
   } catch (err) {
     console.warn('Audio chime play warning:', err);
@@ -161,6 +175,7 @@ export const playWarningChime = () => playChime('warning');
 export const playSosChime = () => playChime('sos');
 export const playRouteSharedChime = () => playChime('route_shared');
 export const playRadarJoinChime = () => playChime('radar_join');
+export const playRegroupChime = () => playChime('regroup');
 
 // ── Inaudible Background Audio Keep-Alive ───────────────────────────
 // Mobile browsers (Android Chrome, iOS Safari) and Android WebViews prioritize

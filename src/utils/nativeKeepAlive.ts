@@ -117,6 +117,8 @@ export async function addNativeLocationListener(
           handle.remove();
         }
       };
+    } catch (e) {
+      console.warn('Could not register native location listener:', e);
       return null;
     }
   }

@@ -18,6 +18,8 @@ interface ThrottleLogNativePlugin {
   setKeepScreenOn(options: { enabled: boolean }): Promise<void>;
   isBatteryOptimizationIgnored(): Promise<{ isIgnored: boolean }>;
   requestBatteryOptimizationExemption(): Promise<void>;
+  speak(options: { text: string; rate?: number; pitch?: number }): Promise<void>;
+  stopSpeaking(): Promise<void>;
   addListener(
     eventName: 'onNativeLocation',
     listenerFunc: (data: NativeLocationData) => void
@@ -50,6 +52,8 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     },
     isBatteryOptimizationIgnored: async () => ({ isIgnored: true }),
     requestBatteryOptimizationExemption: async () => {},
+    speak: async () => {},
+    stopSpeaking: async () => {},
     addListener: async () => ({ remove: () => {} }),
   },
 });
@@ -113,10 +117,29 @@ export async function addNativeLocationListener(
           handle.remove();
         }
       };
-    } catch (e) {
-      console.warn('Could not register native location listener:', e);
       return null;
     }
   }
   return null;
 }
+
+export async function nativeSpeak(text: string, rate: number = 1.05, pitch: number = 1.0): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.speak({ text, rate, pitch });
+    } catch (e) {
+      console.warn('Native TTS speak warning:', e);
+    }
+  }
+}
+
+export async function nativeStopSpeaking(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.stopSpeaking();
+    } catch (e) {
+      console.warn('Native TTS stop warning:', e);
+    }
+  }
+}
+

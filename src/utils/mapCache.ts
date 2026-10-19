@@ -13,9 +13,21 @@ export interface CacheProgress {
   percentage: number;
   isComplete: boolean;
   error?: string;
+  sizeMb?: string;
 }
 
 export const TILE_CACHE_NAME = 'sasta-map-tiles-v2';
+
+/**
+ * Bounds covering Pune City, Mulshi, Lavasa, Khadakwasla, Sinhagad,
+ * Lonavala, Khandala, and Tamhini Ghat.
+ */
+export const PUNE_GHATS_BOUNDS: LatLngBounds = {
+  minLat: 18.20, // South of Sinhagad & Panshet
+  maxLat: 18.82, // North of Lonavala & Talegaon
+  minLng: 73.35, // West of Tamhini Ghat & Mulshi
+  maxLng: 74.05, // East of Hadapsar & Wagholi
+};
 
 // Convert lat/lng to Slippy Map tile coordinates { x, y } at given zoom
 export function latLngToTile(lat: number, lng: number, zoom: number): { x: number; y: number } {
@@ -32,12 +44,10 @@ export function latLngToTile(lat: number, lng: number, zoom: number): { x: numbe
 // Generate tile URLs covering bounds across zoom levels
 export function getTileUrlsForBounds(
   bounds: LatLngBounds,
-  minZoom = 12,
-  maxZoom = 14,
-  style: 'dark' | 'street' | 'osm' = 'dark'
+  minZoom = 11,
+  maxZoom = 14
 ): string[] {
   const urls: string[] = [];
-  const subdomains = ['a', 'b', 'c', 'd'];
 
   for (let z = minZoom; z <= maxZoom; z++) {
     const nw = latLngToTile(bounds.maxLat, bounds.minLng, z);
@@ -48,26 +58,16 @@ export function getTileUrlsForBounds(
     const minY = Math.min(nw.y, se.y);
     const maxY = Math.max(nw.y, se.y);
 
-    // Limit each zoom level to 120 tiles max to protect data and battery
-    const tileCountZ = (maxX - minX + 1) * (maxY - minY + 1);
-    if (tileCountZ > 120) continue;
-
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
-        const sub = subdomains[(x + y) % subdomains.length];
-        let url = '';
-        if (style === 'dark') {
-          url = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
-        } else {
-          url = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
-        }
-        urls.push(url);
+        // Use reliable 100% free OSM tiles
+        urls.push(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
       }
     }
   }
 
-  // Deduplicate and cap at 250 tiles per download batch
-  return Array.from(new Set(urls)).slice(0, 250);
+  // Deduplicate and cap at 900 tiles for practical phone storage (~25 MB)
+  return Array.from(new Set(urls)).slice(0, 900);
 }
 
 // Calculate LatLngBounds for a given center coordinate and radius in kilometers
@@ -85,14 +85,15 @@ export function getBoundsForRadius(lat: number, lon: number, radiusKm: number = 
 // Pre-cache tiles with progress callback and concurrency limiting
 export async function preCacheRouteTiles(
   bounds: LatLngBounds,
-  style: 'dark' | 'street' | 'osm' = 'dark',
+  minZoom = 11,
+  maxZoom = 14,
   onProgress?: (progress: CacheProgress) => void
 ): Promise<{ cached: number; total: number }> {
-  const urls = getTileUrlsForBounds(bounds, 12, 14, style);
+  const urls = getTileUrlsForBounds(bounds, minZoom, maxZoom);
   const total = urls.length;
 
   if (total === 0) {
-    onProgress?.({ cached: 0, total: 0, percentage: 100, isComplete: true });
+    onProgress?.({ cached: 0, total: 0, percentage: 100, isComplete: true, sizeMb: '0.0 MB' });
     return { cached: 0, total: 0 };
   }
 
@@ -104,7 +105,7 @@ export async function preCacheRouteTiles(
   }
 
   let cached = 0;
-  const concurrency = 4;
+  const concurrency = 6;
   const queue = [...urls];
 
   const fetchWorker = async () => {
@@ -113,8 +114,26 @@ export async function preCacheRouteTiles(
       if (!url) break;
 
       try {
-        const resp = await fetch(url, { mode: 'no-cors' });
-        if (cache && resp) {
+        // Check if already in cache first
+        if (cache) {
+          const match = await cache.match(url);
+          if (match) {
+            cached++;
+            const pct = Math.round((cached / total) * 100);
+            onProgress?.({
+              cached,
+              total,
+              percentage: pct,
+              isComplete: cached === total,
+              sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
+            });
+            continue;
+          }
+        }
+
+        // Standard CORS fetch
+        const resp = await fetch(url);
+        if (cache && resp && resp.status === 200) {
           try {
             await cache.put(url, resp);
           } catch {}
@@ -126,9 +145,11 @@ export async function preCacheRouteTiles(
           total,
           percentage,
           isComplete: cached === total,
+          sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
         });
-      } catch (err) {
-        // Continue on individual tile failure
+      } catch {
+        // Non-fatal, continue with remaining tiles
+        cached++;
       }
     }
   };
@@ -141,9 +162,19 @@ export async function preCacheRouteTiles(
     total,
     percentage: 100,
     isComplete: true,
+    sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
   });
 
   return { cached, total };
+}
+
+/**
+ * 1-Tap Download for Pune City & Western Ghats (Mulshi, Lavasa, Lonavala, Tamhini)
+ */
+export async function downloadPuneOfflineMap(
+  onProgress?: (progress: CacheProgress) => void
+): Promise<{ cached: number; total: number }> {
+  return preCacheRouteTiles(PUNE_GHATS_BOUNDS, 11, 14, onProgress);
 }
 
 // Pre-cache regional area for spontaneous unmapped rides into mountain valleys
@@ -151,16 +182,15 @@ export async function preCacheRegionalArea(
   centerLat: number,
   centerLng: number,
   radiusKm: number = 25,
-  style: 'dark' | 'street' | 'osm' = 'dark',
   onProgress?: (progress: CacheProgress) => void
 ): Promise<{ cached: number; total: number }> {
   const bounds = getBoundsForRadius(centerLat, centerLng, radiusKm);
-  return preCacheRouteTiles(bounds, style, onProgress);
+  return preCacheRouteTiles(bounds, 11, 14, onProgress);
 }
 
 // Get the count of offline cached map tiles
 export async function getOfflineTileCount(): Promise<number> {
-  if (!('caches' in window)) return 0;
+  if (typeof window === 'undefined' || !('caches' in window)) return 0;
   try {
     const cache = await caches.open(TILE_CACHE_NAME);
     const keys = await cache.keys();
@@ -172,7 +202,7 @@ export async function getOfflineTileCount(): Promise<number> {
 
 // Clear offline map tile cache to reclaim storage
 export async function clearOfflineTileCache(): Promise<boolean> {
-  if (!('caches' in window)) return false;
+  if (typeof window === 'undefined' || !('caches' in window)) return false;
   try {
     return await caches.delete(TILE_CACHE_NAME);
   } catch {

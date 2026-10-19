@@ -3,16 +3,19 @@ import { X, Check } from 'lucide-react';
 import { RiderCallout } from '../utils/callouts';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
+import { VoiceBlastPttButton } from './VoiceBlastPtt';
 
 interface CalloutBannerProps {
   callout: RiderCallout | null;
   onDismiss: () => void;
+  onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
   theme?: AppTheme;
 }
 
 export const CalloutBanner: React.FC<CalloutBannerProps> = ({
   callout,
   onDismiss,
+  onSendVoiceBlast,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -94,8 +97,15 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
             </div>
           </div>
 
-          {/* Right Action: Acknowledge / Dismiss */}
-          <div className="flex items-center gap-1 shrink-0">
+          {/* Right Action: PTT Reply / Acknowledge / Dismiss */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onSendVoiceBlast && (
+              <VoiceBlastPttButton
+                onSendVoiceBlast={onSendVoiceBlast}
+                compact
+              />
+            )}
+
             <button
               type="button"
               onClick={() => {

@@ -9,6 +9,7 @@
 
 import { playRadioSquelch } from './voiceBlast';
 import { triggerHaptic } from './audioChimes';
+import { speakAlert } from './tts';
 
 export type CalloutType = 'fuel' | 'chai' | 'regroup' | 'scenic' | 'hazard';
 
@@ -82,32 +83,14 @@ export function playCalloutAlert(riderName: string, spokenText: string) {
   playRadioSquelch('open');
   triggerHaptic([60, 40, 60]);
 
-  // 2. Announce speech over Bluetooth/earbuds using Web Speech Synthesis API
+  // 2. Announce speech over Bluetooth/earbuds using universal TTS (Native Android + Web fallback)
   setTimeout(() => {
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Stop any pending speech
-        const speech = new SpeechSynthesisUtterance(`${riderName} says: ${spokenText}`);
-        speech.rate = 1.05;
-        speech.pitch = 1.0;
-        speech.volume = 1.0;
-
-        const voices = window.speechSynthesis.getVoices();
-        // Prefer natural English voice if available
-        const preferred = voices.find(
-          v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha'))
-        ) || voices.find(v => v.lang.startsWith('en'));
-
-        if (preferred) speech.voice = preferred;
-
-        speech.onend = () => {
-          playRadioSquelch('close');
-        };
-
-        window.speechSynthesis.speak(speech);
-      }
-    } catch (e) {
-      console.warn('Speech synthesis audio notice warning:', e);
-    }
+    speakAlert(`${riderName} says: ${spokenText}`, {
+      rate: 1.05,
+      pitch: 1.0,
+      onEnd: () => {
+        playRadioSquelch('close');
+      },
+    });
   }, 90);
 }

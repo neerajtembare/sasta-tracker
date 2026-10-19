@@ -21,11 +21,15 @@ import {
   Gauge,
   BatteryCharging,
   Power,
-  Compass
+  Compass,
+  Download,
+  Trash2,
+  HardDrive
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
 import { checkBatteryOptimizationStatus, requestBatteryOptimizationExemption } from '../utils/nativeKeepAlive';
+import { downloadPuneOfflineMap, getOfflineTileCount, clearOfflineTileCache, CacheProgress } from '../utils/mapCache';
 
 interface AppDrawerProps {
   isOpen: boolean;
@@ -96,6 +100,12 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   // Android Background / Pocket Ride Battery Optimization Status
   const [isBatteryIgnored, setIsBatteryIgnored] = useState<boolean>(true);
 
+  // Offline Pune & Western Ghats Map Caching State
+  const [cachedTileCount, setCachedTileCount] = useState<number>(0);
+  const [isDownloadingMap, setIsDownloadingMap] = useState<boolean>(false);
+  const [downloadProgress, setDownloadProgress] = useState<CacheProgress | null>(null);
+  const [cacheNotice, setCacheNotice] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       setNameInput(riderName);
@@ -104,8 +114,40 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
       checkBatteryOptimizationStatus().then(ignored => {
         setIsBatteryIgnored(ignored);
       });
+      getOfflineTileCount().then(count => {
+        setCachedTileCount(count);
+      });
     }
   }, [isOpen, riderName, bikeModel, myColor]);
+
+  const handleDownloadPuneMap = async () => {
+    triggerHaptic(30);
+    setIsDownloadingMap(true);
+    setCacheNotice(null);
+    try {
+      await downloadPuneOfflineMap((p) => {
+        setDownloadProgress(p);
+      });
+      const count = await getOfflineTileCount();
+      setCachedTileCount(count);
+      setCacheNotice('Pune & Ghats Map successfully saved for offline riding!');
+      triggerHaptic([50, 40, 50]);
+    } catch {
+      setCacheNotice('Download error. Please check connection and retry.');
+    } finally {
+      setIsDownloadingMap(false);
+      setTimeout(() => setCacheNotice(null), 5000);
+    }
+  };
+
+  const handleClearCache = async () => {
+    triggerHaptic(25);
+    await clearOfflineTileCache();
+    setCachedTileCount(0);
+    setDownloadProgress(null);
+    setCacheNotice('Offline map cache cleared.');
+    setTimeout(() => setCacheNotice(null), 3000);
+  };
 
   if (!isOpen) return null;
 
@@ -399,6 +441,101 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 </button>
               </div>
             )}
+          </div>
+
+          {/* ─────────────────────────────────────────────────────────────
+              3B. OFFLINE MAPS (ZERO-SIGNAL MOUNTAIN GHATS & PUNE)
+          ───────────────────────────────────────────────────────────── */}
+          <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                    Pune & Ghats Offline Map
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-sans">
+                    Mulshi, Lavasa, Lonavala, Tamhini & City
+                  </div>
+                </div>
+              </div>
+              {cachedTileCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  Ready
+                </span>
+              )}
+            </div>
+
+            {/* Storage Info */}
+            <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono pt-1 border-t border-slate-800/80">
+              <span className="text-slate-400">Offline Storage:</span>
+              <span className="font-bold text-cyan-400">
+                {cachedTileCount > 0 
+                  ? `${cachedTileCount} tiles (~${((cachedTileCount * 25) / 1024).toFixed(1)} MB)`
+                  : 'No map downloaded yet'}
+              </span>
+            </div>
+
+            {/* Active Download Progress Bar */}
+            {isDownloadingMap && downloadProgress && (
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                  <span className="text-cyan-400 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                    Downloading tiles...
+                  </span>
+                  <span>{downloadProgress.percentage}% ({downloadProgress.cached}/{downloadProgress.total})</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-150"
+                    style={{ width: `${downloadProgress.percentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Status notice */}
+            {cacheNotice && (
+              <div className="p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold text-center animate-in fade-in">
+                {cacheNotice}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-1 font-mono">
+              <button
+                type="button"
+                disabled={isDownloadingMap}
+                onClick={handleDownloadPuneMap}
+                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-cyan-950/40 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>
+                  {isDownloadingMap 
+                    ? 'Downloading...' 
+                    : cachedTileCount > 0 
+                    ? 'Update Pune Map' 
+                    : 'Download Offline Map'}
+                </span>
+              </button>
+
+              {cachedTileCount > 0 && (
+                <button
+                  type="button"
+                  disabled={isDownloadingMap}
+                  onClick={handleClearCache}
+                  title="Clear offline map tiles to reclaim storage"
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-300 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ─────────────────────────────────────────────────────────────

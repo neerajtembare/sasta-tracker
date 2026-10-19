@@ -12,6 +12,7 @@ import {
   GyroCalibration,
 } from '../utils/gyro3d';
 import { calculateForwardBearing } from '../utils/gpxParser';
+import { speakAlert } from '../utils/tts';
 
 export interface GPSState {
   // Position & motion
@@ -348,11 +349,13 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       // Real-time stationary compass orientation (updates blue beam / chevron instantly at red lights)
       if (currentSpeedRef.current < 2.5) {
         let compassHeading: number | null = null;
-        if (typeof (e as any).webkitCompassHeading === 'number' && !isNaN((e as any).webkitCompassHeading)) {
-          compassHeading = (e as any).webkitCompassHeading;
+        const screenAngle = getScreenAngle();
+        const webkitHeading = (e as any).webkitCompassHeading;
+        if (typeof webkitHeading === 'number' && !isNaN(webkitHeading)) {
+          compassHeading = (webkitHeading + screenAngle + 360) % 360;
         } else if (alpha !== null && alpha !== undefined && !isNaN(alpha)) {
-          const screenAngle = getScreenAngle();
-          compassHeading = (360 - alpha + screenAngle + 360) % 360;
+          // Standard W3C azimuth correction: subtract screenAngle when rotating into landscape
+          compassHeading = (360 - alpha - screenAngle + 360) % 360;
         }
         if (compassHeading !== null) {
           setCurrentHeading(Math.round(compassHeading));
@@ -495,7 +498,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       const alpha = lastOrientationEventRef.current.alpha;
       if (alpha !== null && alpha !== undefined && !isNaN(alpha)) {
         const screenAngle = getScreenAngle();
-        effectiveHeading = (360 - alpha + screenAngle + 360) % 360;
+        effectiveHeading = (360 - alpha - screenAngle + 360) % 360;
       }
     }
 
@@ -581,8 +584,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         sessionStorage.setItem('sasta_live_recovery', snapshot);
       } catch {}
 
-      // Voice milestones using up-to-date ref
-      if (voiceFeedbackEnabledRef.current && 'speechSynthesis' in window) {
+      // Voice milestones using universal TTS engine (Native Android + Web fallback)
+      if (voiceFeedbackEnabledRef.current) {
         const totalKm = totalDistanceMetersRef.current / 1000;
         const uSys = unitSystemRef.current;
         const milestone =
@@ -595,9 +598,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           const spdUnit = uSys === 'imperial' ? 'miles per hour' : 'kilometers per hour';
           const spd = uSys === 'imperial' ? Math.round(kmh * 0.621371) : Math.round(kmh);
           const text = `${milestone} ${distUnit} completed. Current speed ${spd} ${spdUnit}.`;
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.rate = 1.05;
-          window.speechSynthesis.speak(utterance);
+          speakAlert(text, { rate: 1.05 });
         }
       }
     }

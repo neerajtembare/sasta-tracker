@@ -13,6 +13,7 @@ import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
 import { playVoiceBlastAudio } from '../utils/voiceBlast';
 import { RiderCallout, CalloutPreset, playCalloutAlert } from '../utils/callouts';
+import { speakAlert } from '../utils/tts';
 export type { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface GroupRiderLocation {
@@ -246,6 +247,17 @@ export function useGroupRide() {
   const wasSeparatedRef = useRef<boolean>(true);
   const lastRegroupNotificationTimeRef = useRef<number>(0);
 
+  // 4. Squad Leader Designation
+  const [leaderId, setLeaderId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('sasta_squad_leader_id') || null;
+    } catch {
+      return null;
+    }
+  });
+  const leaderIdRef = useRef<string | null>(leaderId);
+  leaderIdRef.current = leaderId;
+
   // References
   const profileRef = useRef<RiderProfile>(profile);
   profileRef.current = profile;
@@ -310,7 +322,7 @@ export function useGroupRide() {
           name: loc.name || existing?.name || 'Rider',
           color: loc.color || existing?.color || getRiderColor(loc.riderId),
           bikeModel: loc.bikeModel || existing?.bikeModel,
-          isHost: false,
+          isHost: loc.riderId === leaderIdRef.current,
           lastSeen: Date.now(),
           location: hasValidCoords ? {
             ...loc,
@@ -335,6 +347,7 @@ export function useGroupRide() {
             next.set(share.riderId, {
               ...current,
               sharedRoute: share,
+              isHost: share.riderId === leaderIdRef.current,
               lastSeen: Date.now(),
               isOnline: true,
             });
@@ -343,7 +356,7 @@ export function useGroupRide() {
               riderId: share.riderId,
               name: share.riderName || 'Rider',
               color: getRiderColor(share.riderId),
-              isHost: false,
+              isHost: share.riderId === leaderIdRef.current,
               lastSeen: Date.now(),
               isOnline: true,
               sharedRoute: share,
@@ -376,7 +389,12 @@ export function useGroupRide() {
       if (alert && alert.fromName) {
         setSosAlert(alert);
         playSosChime();
-        postCrewNotification(`🚨 REGROUP ALERT from ${alert.fromName}!`, 'alert');
+        triggerHaptic([100, 50, 100, 50, 150]);
+        speakAlert(`Emergency! S O S alert from ${alert.fromName}! Pull over and check map immediately!`, {
+          rate: 1.0,
+          pitch: 1.05,
+        });
+        postCrewNotification(`🚨 EMERGENCY SOS from ${alert.fromName}!`, 'alert');
       }
     } else if (data.type === 'OFFLINE') {
       const riderId = data.riderId;
@@ -423,6 +441,26 @@ export function useGroupRide() {
         calloutTimeoutRef.current = setTimeout(() => {
           setActiveCallout(null);
         }, 10000);
+      }
+    } else if (data.type === 'SET_LEADER') {
+      const newLeaderId = data.payload?.leaderId;
+      const newLeaderName = data.payload?.leaderName || 'Squad Member';
+      if (newLeaderId) {
+        setLeaderId(newLeaderId);
+        leaderIdRef.current = newLeaderId;
+        try {
+          localStorage.setItem('sasta_squad_leader_id', newLeaderId);
+        } catch {}
+        setMembers(prev => {
+          const next = new Map();
+          prev.forEach((val, key) => {
+            next.set(key, { ...val, isHost: key === newLeaderId });
+          });
+          return next;
+        });
+        playRegroupChime();
+        speakAlert(`${newLeaderName} is now the ride leader.`);
+        postCrewNotification(`👑 ${newLeaderName} is now the Ride Lead!`, 'info');
       }
     }
   }, [postCrewNotification]);
@@ -898,6 +936,32 @@ export function useGroupRide() {
     postCrewNotification(`Sent callout: "${preset.label}"`, 'info');
   }, [broadcastPayload, postCrewNotification]);
 
+  const setSquadLeader = useCallback((targetRiderId: string, targetName: string) => {
+    setLeaderId(targetRiderId);
+    leaderIdRef.current = targetRiderId;
+    try {
+      localStorage.setItem('sasta_squad_leader_id', targetRiderId);
+    } catch {}
+    setMembers(prev => {
+      const next = new Map();
+      prev.forEach((val, key) => {
+        next.set(key, { ...val, isHost: key === targetRiderId });
+      });
+      return next;
+    });
+    broadcastPayload({
+      type: 'SET_LEADER',
+      payload: { leaderId: targetRiderId, leaderName: targetName },
+    });
+    playRegroupChime();
+    speakAlert(`${targetName} is now the ride leader.`);
+    postCrewNotification(`👑 ${targetName} designated as Ride Lead!`, 'info');
+  }, [broadcastPayload, postCrewNotification]);
+
+  const claimSquadLeader = useCallback(() => {
+    setSquadLeader(profileRef.current.id, profileRef.current.name);
+  }, [setSquadLeader]);
+
   const membersArray = useMemo(() => Array.from(members.values()), [members]);
   const squadFriendsArray = useMemo(() => getAllSquadFriends(), [getAllSquadFriends]);
 
@@ -911,7 +975,10 @@ export function useGroupRide() {
     riderId: profile.id,
     myColor: profile.color,
     bikeModel: profile.bikeModel,
-    isHost: false,
+    leaderId,
+    isHost: profile.id === leaderId,
+    setSquadLeader,
+    claimSquadLeader,
     isConnected,
     connectionStatus,
     statusMessage,

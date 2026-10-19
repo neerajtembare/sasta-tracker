@@ -31,6 +31,42 @@ import {
   Minus
 } from 'lucide-react';
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
+import { speakAlert } from '../utils/tts';
+
+function calcHaversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function calcBearingDegrees(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const lambda1 = (lon1 * Math.PI) / 180;
+  const lambda2 = (lon2 * Math.PI) / 180;
+  const y = Math.sin(lambda2 - lambda1) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda2 - lambda1);
+  const theta = Math.atan2(y, x);
+  return ((theta * 180) / Math.PI + 360) % 360;
+}
+
+function getDirectionArrow(angle: number): { arrow: string; label: string } {
+  if (angle >= 337.5 || angle < 22.5) return { arrow: '↑', label: 'AHEAD' };
+  if (angle >= 22.5 && angle < 67.5) return { arrow: '↗', label: 'HALF-RIGHT' };
+  if (angle >= 67.5 && angle < 112.5) return { arrow: '→', label: 'RIGHT' };
+  if (angle >= 112.5 && angle < 157.5) return { arrow: '↘', label: 'BEHIND-RIGHT' };
+  if (angle >= 157.5 && angle < 202.5) return { arrow: '↓', label: 'BEHIND' };
+  if (angle >= 202.5 && angle < 247.5) return { arrow: '↙', label: 'BEHIND-LEFT' };
+  if (angle >= 247.5 && angle < 292.5) return { arrow: '←', label: 'LEFT' };
+  return { arrow: '↖', label: 'HALF-LEFT' };
+}
 
 interface MyLocationData {
   lat: number;
@@ -44,6 +80,11 @@ interface CrewLiveMapProps {
   myRiderName: string;
   myColor: string;
   isHost: boolean;
+  leaderId?: string | null;
+  onSetSquadLeader?: (targetRiderId: string, targetName: string) => void;
+  onClaimSquadLeader?: () => void;
+  trailedRiderId?: string | null;
+  onTrailRider?: (targetRiderId: string | null) => void;
   members: GroupMemberInfo[];
   sosAlert: SosAlert | null;
   roomCode?: string;
@@ -86,6 +127,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   myRiderName,
   myColor,
   isHost,
+  leaderId = null,
+  onSetSquadLeader,
+  onClaimSquadLeader,
+  trailedRiderId = null,
+  onTrailRider,
   members,
   sosAlert,
   roomCode = '',
@@ -236,6 +282,116 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return dirs[idx];
   };
 
+  // Trailing polyline layers
+  const trailingPolylineRef = useRef<L.Polyline | null>(null);
+  const trailingGlowRef = useRef<L.Polyline | null>(null);
+
+  // Trailed member & live guidance metrics
+  const trailedMember = useMemo(() => {
+    if (!trailedRiderId) return null;
+    return members.find(m => m.riderId === trailedRiderId) || null;
+  }, [trailedRiderId, members]);
+
+  const trailingStats = useMemo(() => {
+    if (!trailedMember || !trailedMember.location || !myLocation) return null;
+    const distMeters = calcHaversineMeters(
+      myLocation.lat,
+      myLocation.lon,
+      trailedMember.location.lat,
+      trailedMember.location.lon
+    );
+    const targetBearing = calcBearingDegrees(
+      myLocation.lat,
+      myLocation.lon,
+      trailedMember.location.lat,
+      trailedMember.location.lon
+    );
+    const relativeAngle = ((targetBearing - (myHeading ?? 0)) + 360) % 360;
+    const direction = getDirectionArrow(relativeAngle);
+    return {
+      distMeters,
+      targetBearing,
+      relativeAngle,
+      direction,
+      speedKmh: trailedMember.location.speedKmh,
+      isStopped: trailedMember.location.status === 'stopped' || (trailedMember.location.speedKmh || 0) < 2.5,
+    };
+  }, [trailedMember, myLocation, myHeading]);
+
+  const squadLeader = useMemo(() => {
+    return members.find(m => (m.isHost || m.riderId === leaderId) && m.isOnline);
+  }, [members, leaderId]);
+
+  const selectedMember = useMemo(() => {
+    if (!selectedRiderId || selectedRiderId === 'me') return null;
+    return members.find(m => m.riderId === selectedRiderId) || null;
+  }, [selectedRiderId, members]);
+
+  // Trailing vector guidance polyline on Leaflet map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    const cleanup = () => {
+      if (trailingPolylineRef.current) {
+        trailingPolylineRef.current.remove();
+        trailingPolylineRef.current = null;
+      }
+      if (trailingGlowRef.current) {
+        trailingGlowRef.current.remove();
+        trailingGlowRef.current = null;
+      }
+    };
+
+    if (!trailedRiderId || !myLocation) {
+      cleanup();
+      return;
+    }
+
+    const target = members.find(m => m.riderId === trailedRiderId);
+    if (!target || !target.location || typeof target.location.lat !== 'number' || typeof target.location.lon !== 'number') {
+      cleanup();
+      return;
+    }
+
+    const latlngs: L.LatLngExpression[] = [
+      [myLocation.lat, myLocation.lon],
+      [target.location.lat, target.location.lon],
+    ];
+
+    if (!trailingPolylineRef.current) {
+      trailingGlowRef.current = L.polyline(latlngs, {
+        color: '#f59e0b',
+        weight: 8,
+        opacity: 0.35,
+        lineCap: 'round',
+      }).addTo(map);
+
+      trailingPolylineRef.current = L.polyline(latlngs, {
+        color: '#fbbf24',
+        weight: 3.5,
+        dashArray: '8, 8',
+        opacity: 0.95,
+        lineCap: 'round',
+      }).addTo(map);
+    } else {
+      trailingGlowRef.current?.setLatLngs(latlngs);
+      trailingPolylineRef.current.setLatLngs(latlngs);
+    }
+  }, [trailedRiderId, myLocation?.lat, myLocation?.lon, members]);
+
+  // Trailing separation distance audio watchdog (intercom TTS)
+  const lastTrailingLagRef = useRef<number>(0);
+  useEffect(() => {
+    if (!trailingStats || !trailedMember) return;
+    const now = Date.now();
+    if (trailingStats.distMeters > 1500 && now - lastTrailingLagRef.current > 180000) {
+      lastTrailingLagRef.current = now;
+      playWarningChime();
+      speakAlert(`Trailing alert: ${trailedMember.name} is ${formatDistance(trailingStats.distMeters)} ahead.`);
+    }
+  }, [trailingStats?.distMeters, trailedMember?.name]);
+
   // Focus specific rider when requested externally (e.g. from formation list)
   useEffect(() => {
     if (focusedRiderId) {
@@ -315,18 +471,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       playWarningChime();
       triggerHaptic([80, 50, 80]);
 
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          const laggingRider = (primaryStarredMember && primaryStarredMember.distanceFromMeMeters && primaryStarredMember.distanceFromMeMeters > 1200)
-            ? primaryStarredMember
-            : onlineOthers.reduce((prev, curr) => (curr.distanceFromMeMeters ?? 0) > (prev.distanceFromMeMeters ?? 0) ? curr : prev);
-          const distKm = (checkDist / 1000).toFixed(1);
-          const utterance = new SpeechSynthesisUtterance(`Squad alert: ${laggingRider.name} is ${distKm} kilometers behind`);
-          utterance.rate = 1.05;
-          utterance.volume = 1.0;
-          window.speechSynthesis.speak(utterance);
-        } catch {}
-      }
+      try {
+        const laggingRider = (primaryStarredMember && primaryStarredMember.distanceFromMeMeters && primaryStarredMember.distanceFromMeMeters > 1200)
+          ? primaryStarredMember
+          : onlineOthers.reduce((prev, curr) => (curr.distanceFromMeMeters ?? 0) > (prev.distanceFromMeMeters ?? 0) ? curr : prev);
+        const distKm = (checkDist / 1000).toFixed(1);
+        speakAlert(`Squad alert: ${laggingRider.name} is ${distKm} kilometers behind`, { rate: 1.05 });
+      } catch {}
     }
   }, [members, primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
 
@@ -410,24 +561,18 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         opacity: 0.85,
       }).addTo(map);
     } else if (mapLayer === 'sunlight') {
-      // High-contrast, maximum luminance CARTO Voyager base with contrast/saturation boost
-      tileLayerRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      // High-contrast, maximum luminance OSM base with contrast/saturation boost
+      tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd',
-        attribution: '&copy; CARTO &copy; OpenStreetMap',
+        attribution: '&copy; OpenStreetMap',
         className: 'sunlight-map-tiles',
       }).addTo(map);
     } else {
-      // Pristine Dark Mode Map (Esri Dark Gray with maxNativeZoom: 16 so street level 17-19 does not go blank)
-      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      // Pristine Dark Mode Map (High-performance, zero-key OSM with dark cockpit filter)
+      tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        maxNativeZoom: 16,
-        attribution: '&copy; Esri Dark Canvas',
-      }).addTo(map);
-      overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
-        maxNativeZoom: 16,
-        opacity: 0.85,
+        attribution: '&copy; OpenStreetMap Dark',
+        className: 'dark-map-tiles',
       }).addTo(map);
     }
 
@@ -1083,16 +1228,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       <div 
         ref={mapContainerRef} 
         style={{
-          transform: `rotate(${targetMapRotation}deg)`,
-          transformOrigin: 'center center',
-          transition: 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
-          width: orientationMode === 'course' || isFlipped180 ? '140%' : '100%',
-          height: orientationMode === 'course' || isFlipped180 ? '140%' : '100%',
-          top: orientationMode === 'course' || isFlipped180 ? '-20%' : '0',
-          left: orientationMode === 'course' || isFlipped180 ? '-20%' : '0',
+          width: '100%',
+          height: '100%',
           position: 'absolute',
+          inset: 0,
         }}
-        className="cursor-grab active:cursor-grabbing" 
+        className="cursor-grab active:cursor-grabbing w-full h-full" 
       />
 
       {/* Cold-Start Satellite Acquisition Pill */}
@@ -1340,9 +1481,233 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
+          TRAILING RIDER LIVE GUIDANCE HUD
+      ───────────────────────────────────────────────────────────── */}
+      {trailedMember && trailingStats && (
+        <div 
+          style={{ 
+            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-30 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-150"
+        >
+          <div className="pointer-events-auto w-full max-w-md px-3 py-2 rounded-2xl bg-slate-950/95 backdrop-blur-xl border-2 border-amber-500/80 text-white font-mono shadow-2xl flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black text-base flex items-center justify-center shrink-0 shadow-md">
+                {trailingStats.direction.arrow}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-heading font-black text-xs text-amber-300 truncate">
+                    {trailedMember.isHost || trailedMember.riderId === leaderId ? '👑 ' : '🧭 '}{trailedMember.name}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold">
+                    {trailingStats.direction.label}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 flex items-center gap-2">
+                  <span className="font-black text-cyan-400">
+                    {formatDistance(trailingStats.distMeters)}
+                  </span>
+                  <span>•</span>
+                  <span className="text-slate-400">
+                    {trailingStats.isStopped ? 'STOPPED' : `${Math.round(trailingStats.speedKmh || 0)} km/h`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {trailedMember.location && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(25);
+                    openGoogleMapsNavigation(trailedMember.location!.lat, trailedMember.location!.lon);
+                  }}
+                  className="p-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md"
+                  title="Open Google Maps navigation to rider"
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(30);
+                  onTrailRider?.(null);
+                  speakAlert('Stopped trailing rider');
+                }}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-rose-300 cursor-pointer transition-all active:scale-95"
+                title="Stop trailing"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          1-TAP FOLLOW SQUAD LEADER PILL (WHEN NOT TRAILING)
+      ───────────────────────────────────────────────────────────── */}
+      {!trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
+        <div 
+          style={{ 
+            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+          }}
+          className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in slide-in-from-top-1 duration-150"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(30);
+              onTrailRider?.(squadLeader.riderId);
+              speakAlert(`Now trailing ride leader ${squadLeader.name}`);
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-slate-950/92 hover:bg-slate-900 border border-amber-500/70 text-amber-300 font-mono text-xs font-black shadow-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 backdrop-blur-md"
+          >
+            <span>👑 Follow Leader ({squadLeader.name})</span>
+            {squadLeader.distanceFromMeMeters !== undefined && (
+              <span className="text-[10px] text-amber-400/80 bg-amber-500/20 px-1 rounded">
+                {formatDistance(squadLeader.distanceFromMeMeters)}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          FOCUSED RIDER BOTTOM ACTION CARD
+      ───────────────────────────────────────────────────────────── */}
+      {selectedMember && selectedMember.riderId !== 'me' && (
+        <div 
+          style={{ 
+            bottom: 'max(4.8rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-40 pointer-events-none flex justify-center animate-in slide-in-from-bottom-2 duration-150"
+        >
+          <div className={`pointer-events-auto w-full max-w-md p-3 sm:p-3.5 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 font-mono ${
+            isLight ? 'bg-white/98 border-slate-300 text-slate-900' : 'bg-slate-950/98 border-cyan-500/40 text-white'
+          }`}>
+            <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <span 
+                  className="w-3 h-3 rounded-full shrink-0" 
+                  style={{ backgroundColor: selectedMember.color || '#00f0ff' }} 
+                />
+                <div className="truncate">
+                  <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
+                    <span>{selectedMember.name}</span>
+                    {selectedMember.bikeModel && (
+                      <span className="text-[10px] text-slate-400 font-normal">({selectedMember.bikeModel})</span>
+                    )}
+                    {(selectedMember.isHost || selectedMember.riderId === leaderId) && (
+                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black">
+                        👑 LEAD
+                      </span>
+                    )}
+                    {trailedRiderId === selectedMember.riderId && (
+                      <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black animate-pulse">
+                        🧭 TRAILING
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                    <span>
+                      {selectedMember.isOnline 
+                        ? (selectedMember.location?.speedKmh && selectedMember.location.speedKmh >= 2.5 
+                            ? `Cruising at ${formatSpeed(selectedMember.location.speedKmh)}` 
+                            : 'Stopped')
+                        : 'Offline'}
+                    </span>
+                    {selectedMember.location?.batteryPct !== undefined && (
+                      <span>🔋 {selectedMember.location.batteryPct}%</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="text-right">
+                  <div className="font-black text-cyan-400 text-xs">
+                    {formatDistance(selectedMember.distanceFromMeMeters)}
+                  </div>
+                  <div className="text-[9px] text-slate-500">Separation</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRiderId('me')}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer ml-1"
+                  title="Close card"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(25);
+                  if (trailedRiderId === selectedMember.riderId) {
+                    onTrailRider?.(null);
+                    speakAlert(`Stopped trailing ${selectedMember.name}`);
+                  } else {
+                    onTrailRider?.(selectedMember.riderId);
+                    speakAlert(`Now trailing ${selectedMember.name}`);
+                  }
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md ${
+                  trailedRiderId === selectedMember.riderId
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-amber-500/30'
+                    : 'bg-cyan-600 hover:bg-cyan-500 text-slate-950'
+                }`}
+              >
+                <span>{trailedRiderId === selectedMember.riderId ? '✕ Stop Trailing' : '🧭 Trail This Rider'}</span>
+              </button>
+
+              {!(selectedMember.isHost || selectedMember.riderId === leaderId) && onSetSquadLeader && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(30);
+                    onSetSquadLeader(selectedMember.riderId, selectedMember.name);
+                  }}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-amber-950/60 border border-slate-700 hover:border-amber-500/50 text-slate-200 hover:text-amber-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                  title="Make this rider the squad leader"
+                >
+                  <span>👑 Make Lead</span>
+                </button>
+              )}
+
+              {selectedMember.location && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(30);
+                    openGoogleMapsNavigation(selectedMember.location!.lat, selectedMember.location!.lon);
+                  }}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                  title="Navigate directly to rider in Google Maps"
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
           GOOGLE MAPS-STYLE PROMINENT RE-CENTER BUTTON (WHEN FREE-PANNING)
       ───────────────────────────────────────────────────────────── */}
-      {selectedRiderId !== 'me' && myLocation && (
+      {selectedRiderId === null && myLocation && (
         <div 
           style={{ 
             bottom: 'max(4.8rem, calc(env(safe-area-inset-bottom) + 4.5rem))',

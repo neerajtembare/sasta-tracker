@@ -89,15 +89,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.1.0
-          name: "ThrottleLog Android APK v1.1.0"
+          tag_name: v1.2.0
+          name: "ThrottleLog Android APK v1.2.0"
           body: |
-            ### ThrottleLog Android Standalone APK (v1.1.0)
+            ### ThrottleLog Android Standalone APK (v1.2.0)
             Direct standalone motorcycle crew radar & blackbox tracker for Android:
-            - **Automatic Convoy Regroup Chime**: Triumphant ascending harmonic audio chime when all riders converge within 40m.
-            - **Offline Regional Map Pre-Download**: 1-tap 25km bounding-box tile pre-caching for signal-dead mountain ghats.
-            - **High-G Crash & Abrupt Stop Detection**: Sensor fusion (>6.5G peak + rapid deceleration) with 30s emergency SOS alert.
-            - **Zero Cloud Costs / No Logins**: Decentralized direct telemetry via public MQTT broker.
+            - **Native Android Intercom Audio (TTS)**: Direct text-to-speech audio bridge routing spoken milestone alerts, callouts, and SOS directly to Cardo, Sena, and BluArmor helmet communicators.
+            - **Named Emergency SOS Voice Broadcast**: Intercom announces the exact sender callsign ("Emergency! SOS alert from [Rider Name]! Pull over and check map immediately!").
+            - **Squad Lead Designation & Trailing Guidance**: Real-time relative bearing arrow, separation distance, and glowing vector guidance line to follow the squad leader or any chosen rider.
+            - **1-Tap PTT Voice Blast in Callout Alerts**: Embedded Push-To-Talk walkie-talkie directly inside the Quick Squad Callout sheet and incoming callout banners.
+            - **Offline Pune & Western Ghats Regional Download**: 1-tap pre-download of Pune, Mulshi, Lavasa, Lonavala, and Tamhini Ghat for zero-cellular coverage riding.
+            - **Instant Accidental Ride Stop & Discard**: Rides under 80m or 2 points stop cleanly without blocking alerts.
+            - **Fixed Handlebar Mount Landscape Compass**: True-north and heading calculations accurately synchronized when phone is mounted horizontally on bike handlebars.
           files: |
             throttlelog.apk
             throttlelog-debug.apk

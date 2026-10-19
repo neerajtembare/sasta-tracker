@@ -36,6 +36,9 @@ interface CrewDashboardProps {
     heading: number | null;
   } | null;
   isHost?: boolean;
+  leaderId?: string | null;
+  onSetSquadLeader?: (targetRiderId: string, targetName: string) => void;
+  onClaimSquadLeader?: () => void;
   isConnected: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   statusMessage: string;
@@ -86,6 +89,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   bikeModel = '',
   myLocation = null,
   isHost = false,
+  leaderId = null,
+  onSetSquadLeader,
+  onClaimSquadLeader,
   isConnected,
   connectionStatus,
   statusMessage,
@@ -183,6 +189,26 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   // Selected Rider for focused tracking
   const [focusedRiderId, setFocusedRiderId] = useState<string | null>(null);
 
+  // Active Trailing Rider Mode (draws live vector guidance polyline & HUD to followed rider)
+  const [trailedRiderId, setTrailedRiderId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('sasta_trailed_rider_id') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleTrailRider = (targetId: string | null) => {
+    setTrailedRiderId(targetId);
+    try {
+      if (targetId) {
+        localStorage.setItem('sasta_trailed_rider_id', targetId);
+      } else {
+        localStorage.removeItem('sasta_trailed_rider_id');
+      }
+    } catch {}
+  };
+
   // Online Squad Count (excluding self)
   const onlineCount = members.filter(m => m.isOnline).length;
 
@@ -203,6 +229,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           myRiderName={riderName}
           myColor={myColor}
           isHost={isHost}
+          leaderId={leaderId}
+          onSetSquadLeader={onSetSquadLeader}
+          onClaimSquadLeader={onClaimSquadLeader}
+          trailedRiderId={trailedRiderId}
+          onTrailRider={handleTrailRider}
           members={members}
           sosAlert={sosAlert}
           isConnected={isConnected}
@@ -252,6 +283,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       <CalloutBanner
         callout={activeCallout}
         onDismiss={onDismissCallout || (() => {})}
+        onSendVoiceBlast={onSendVoiceBlast}
         theme={theme}
       />
 
@@ -312,6 +344,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onSelectRider={(id) => setFocusedRiderId(id)}
         onShareWhatsApp={handleShareWhatsApp}
         onSendCallout={onSendCallout}
+        onSendVoiceBlast={onSendVoiceBlast}
+        leaderId={leaderId}
+        onSetSquadLeader={onSetSquadLeader}
+        trailedRiderId={trailedRiderId}
+        onTrailRider={handleTrailRider}
         theme={theme}
         unitSystem={unitSystem}
       />

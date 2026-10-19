@@ -8,6 +8,8 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -17,9 +19,29 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "ThrottleLogNative")
 public class ThrottleLogNativePlugin extends Plugin {
 
+    private TextToSpeech tts;
+    private boolean isTtsReady = false;
+
     @Override
     public void load() {
         super.load();
+
+        try {
+            tts = new TextToSpeech(getContext(), status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    try {
+                        int res = tts.setLanguage(Locale.US);
+                        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            tts.setLanguage(Locale.getDefault());
+                        }
+                        isTtsReady = true;
+                    } catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception e) {
+            android.util.Log.w("ThrottleLogNative", "TTS init exception: " + e.getMessage());
+        }
+
         ThrottleLogKeepAliveService.locationCallback = (location, totalDistanceMeters) -> {
             JSObject data = new JSObject();
             data.put("latitude", location.getLatitude());
@@ -115,6 +137,75 @@ public class ThrottleLogNativePlugin extends Plugin {
             } catch (Exception ex) {
                 call.resolve();
             }
+        }
+    }
+
+    @PluginMethod
+    public void speak(PluginCall call) {
+        String text = call.getString("text", "");
+        if (text == null || text.trim().isEmpty()) {
+            call.resolve();
+            return;
+        }
+
+        float rate = call.getFloat("rate", 1.0f);
+        float pitch = call.getFloat("pitch", 1.0f);
+
+        if (tts == null) {
+            tts = new TextToSpeech(getContext(), status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    try {
+                        tts.setLanguage(Locale.US);
+                        tts.setSpeechRate(rate);
+                        tts.setPitch(pitch);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_" + System.currentTimeMillis());
+                        } else {
+                            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                    } catch (Exception ignored) {}
+                }
+            });
+            call.resolve();
+            return;
+        }
+
+        try {
+            tts.setSpeechRate(rate);
+            tts.setPitch(pitch);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_" + System.currentTimeMillis());
+            } else {
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+            }
+            call.resolve();
+        } catch (Exception e) {
+            android.util.Log.w("ThrottleLogNative", "TTS speak failed: " + e.getMessage());
+            call.resolve();
+        }
+    }
+
+    @PluginMethod
+    public void stopSpeaking(PluginCall call) {
+        try {
+            if (tts != null) {
+                tts.stop();
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.resolve();
+        }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        super.handleOnDestroy();
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception ignored) {}
+            tts = null;
         }
     }
 }

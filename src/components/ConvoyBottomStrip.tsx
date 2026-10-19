@@ -19,6 +19,7 @@ import { GroupMemberInfo } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
 import { CALLOUT_PRESETS, CalloutPreset } from '../utils/callouts';
+import { VoiceBlastPttButton } from './VoiceBlastPtt';
 
 interface ConvoyBottomStripProps {
   members: GroupMemberInfo[];
@@ -36,6 +37,11 @@ interface ConvoyBottomStripProps {
   onSelectRider?: (riderId: string) => void;
   onShareWhatsApp?: () => void;
   onSendCallout?: (preset: CalloutPreset) => void;
+  onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
+  leaderId?: string | null;
+  onSetSquadLeader?: (targetRiderId: string, targetName: string) => void;
+  trailedRiderId?: string | null;
+  onTrailRider?: (targetRiderId: string | null) => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
 }
@@ -56,6 +62,11 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   onSelectRider,
   onShareWhatsApp,
   onSendCallout,
+  onSendVoiceBlast,
+  leaderId = null,
+  onSetSquadLeader,
+  trailedRiderId = null,
+  onTrailRider,
   theme = 'dark',
   unitSystem = 'metric',
 }) => {
@@ -206,6 +217,32 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               </button>
             </div>
 
+            {/* 1-Tap Follow Leader Pill if squad has a designated leader */}
+            {(() => {
+              const squadLead = otherRiders.find(r => r.isHost || r.riderId === leaderId);
+              if (squadLead && squadLead.riderId !== trailedRiderId) {
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(30);
+                      onTrailRider?.(squadLead.riderId);
+                    }}
+                    className="w-full py-1.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center justify-between cursor-pointer transition-all active:scale-98 shadow-sm"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>👑</span>
+                      <span>Follow Leader: {squadLead.name}</span>
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono bg-amber-500/20 px-1.5 py-0.5 rounded">
+                      {formatDistance(squadLead.distanceFromMeMeters)} ➔
+                    </span>
+                  </button>
+                );
+              }
+              return null;
+            })()}
+
             {/* Rider cards */}
             <div className="max-h-48 overflow-y-auto space-y-1.5 no-scrollbar pr-1">
               {/* Self card */}
@@ -214,7 +251,9 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   <span className="w-2 h-2 rounded-full bg-cyan-400" />
                   <span className="font-bold text-white truncate">{riderName} (You)</span>
                 </div>
-                <span className="text-[10px] text-cyan-300 font-bold">LEADER / YOU</span>
+                <span className="text-[10px] text-cyan-300 font-bold">
+                  {otherRiders.some(r => r.isHost || r.riderId === leaderId) ? 'RIDER / YOU' : '👑 SQUAD LEAD / YOU'}
+                </span>
               </div>
 
               {/* Other riders */}
@@ -223,53 +262,109 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   No other riders on radar yet. Tap invite to share with your crew.
                 </div>
               ) : (
-                otherRiders.map(rider => (
-                  <div
-                    key={rider.riderId}
-                    onClick={() => {
-                      triggerHaptic(25);
-                      onSelectRider?.(rider.riderId);
-                    }}
-                    className={`flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
-                      rider.isOnline 
-                        ? isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/50'
-                        : 'opacity-50 bg-black/30 border-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full shrink-0" 
-                        style={{ backgroundColor: rider.color || '#00f0ff' }} 
-                      />
-                      <div className="truncate">
-                        <div className="font-bold text-white truncate flex items-center gap-1.5">
-                          <span>{rider.name}</span>
-                          {rider.bikeModel && (
-                            <span className="text-[10px] text-slate-400 font-normal">({rider.bikeModel})</span>
-                          )}
+                otherRiders.map(rider => {
+                  const isLeader = rider.isHost || rider.riderId === leaderId;
+                  const isTrailed = trailedRiderId === rider.riderId;
+                  return (
+                    <div
+                      key={rider.riderId}
+                      onClick={() => {
+                        triggerHaptic(25);
+                        onSelectRider?.(rider.riderId);
+                      }}
+                      className={`flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition-all gap-1.5 ${
+                        isTrailed
+                          ? 'bg-amber-950/30 border-amber-500/70 shadow-md ring-1 ring-amber-500/40'
+                          : rider.isOnline 
+                          ? isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/50'
+                          : 'opacity-50 bg-black/30 border-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full shrink-0" 
+                            style={{ backgroundColor: rider.color || '#00f0ff' }} 
+                          />
+                          <div className="truncate">
+                            <div className="font-bold text-white truncate flex items-center gap-1.5">
+                              <span>{rider.name}</span>
+                              {rider.bikeModel && (
+                                <span className="text-[10px] text-slate-400 font-normal">({rider.bikeModel})</span>
+                              )}
+                              {isLeader && (
+                                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black">
+                                  👑 LEAD
+                                </span>
+                              )}
+                              {isTrailed && (
+                                <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black animate-pulse">
+                                  🧭 TRAILING
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                              <span>{rider.isOnline ? `${formatSpeed(rider.location?.speedKmh)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}` : 'Offline'}</span>
+                              {rider.location?.batteryPct !== undefined && (
+                                <span className="flex items-center gap-0.5 opacity-75">
+                                  <Battery className="w-2.5 h-2.5" />
+                                  <span>{rider.location.batteryPct}%</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                          <span>{rider.isOnline ? `${formatSpeed(rider.location?.speedKmh)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}` : 'Offline'}</span>
-                          {rider.location?.batteryPct !== undefined && (
-                            <span className="flex items-center gap-0.5 opacity-75">
-                              <Battery className="w-2.5 h-2.5" />
-                              <span>{rider.location.batteryPct}%</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="text-right shrink-0">
-                      <div className="font-black text-cyan-400 text-xs">
-                        {formatDistance(rider.distanceFromMeMeters)}
+                        <div className="text-right shrink-0">
+                          <div className="font-black text-cyan-400 text-xs">
+                            {formatDistance(rider.distanceFromMeMeters)}
+                          </div>
+                          <div className="text-[9px] text-slate-500">
+                            {rider.distanceFromMeMeters !== undefined && rider.distanceFromMeMeters < 50 ? 'Nearby' : 'Separation'}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-[9px] text-slate-500">
-                        {rider.distanceFromMeMeters !== undefined && rider.distanceFromMeMeters < 50 ? 'Nearby' : 'Separation'}
+
+                      {/* Glove-friendly action strip */}
+                      <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerHaptic(25);
+                            if (isTrailed) {
+                              onTrailRider?.(null);
+                            } else {
+                              onTrailRider?.(rider.riderId);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                            isTrailed
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-xs'
+                              : 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-slate-700'
+                          }`}
+                        >
+                          <span>{isTrailed ? '✕ Stop Trailing' : '🧭 Trail Rider'}</span>
+                        </button>
+
+                        {!isLeader && onSetSquadLeader && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic(30);
+                              onSetSquadLeader(rider.riderId, rider.name);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-amber-950/60 text-slate-300 hover:text-amber-300 border border-slate-700 hover:border-amber-500/50 transition-all cursor-pointer"
+                            title="Designate as Squad Lead"
+                          >
+                            👑 Make Lead
+                          </button>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -310,8 +405,29 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {/* Direct Walkie-Talkie Voice Option in Callout Popover */}
+            {onSendVoiceBlast && (
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/40 flex items-center justify-between gap-2 shadow-inner">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                    <span>🎙️ Live PTT Voice Blast</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-sans truncate">
+                    Tap to broadcast custom voice note to crew
+                  </div>
+                </div>
+                <VoiceBlastPttButton
+                  onSendVoiceBlast={(audioBase64, durationMs, mimeType) => {
+                    onSendVoiceBlast(audioBase64, durationMs, mimeType);
+                    setIsCalloutOpen(false);
+                  }}
+                  compact
+                />
+              </div>
+            )}
+
             <p className="text-[11px] text-slate-400 leading-tight font-sans">
-              One tap alerts all riders' screens & helmet Bluetooth intercoms:
+              Or 1-tap quick intent presets to broadcast speech:
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {CALLOUT_PRESETS.map((preset) => (
@@ -358,17 +474,19 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           </div>
         )}
 
-        {/* Accidental Stop Recording Confirmation Sheet */}
+        {/* Stop Recording Confirmation Sheet (with Accidental Start Safeguard) */}
         {isConfirmStopOpen && (
           <div className="p-3.5 rounded-2xl bg-[#0d131a]/98 border border-slate-700 text-white space-y-3 shadow-2xl animate-in slide-in-from-bottom-2 duration-150">
             <div className="flex items-center gap-2.5">
-              <span className="text-2xl">🏁</span>
+              <span className="text-2xl">{recordedDistanceMeters < 300 ? '⏱️' : '🏁'}</span>
               <div>
                 <div className="font-heading font-black text-xs uppercase text-white">
-                  Finish this ride session?
+                  {recordedDistanceMeters < 300 ? 'Stop Recording?' : 'Finish this ride session?'}
                 </div>
                 <div className="text-[11px] text-slate-400 font-sans">
-                  You have recorded {(recordedDistanceMeters / 1000).toFixed(1)} km so far.
+                  {recordedDistanceMeters < 300 
+                    ? `Only ${(recordedDistanceMeters / 1000).toFixed(2)} km tracked. Discard this accidental recording?`
+                    : `You have recorded ${(recordedDistanceMeters / 1000).toFixed(1)} km so far.`}
                 </div>
               </div>
             </div>
@@ -386,9 +504,13 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   setIsConfirmStopOpen(false);
                   onToggleRecording?.();
                 }}
-                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-900/30 transition-colors"
+                className={`py-2.5 rounded-xl text-white font-black text-xs cursor-pointer shadow-md transition-colors ${
+                  recordedDistanceMeters < 300
+                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/30'
+                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-900/30'
+                }`}
               >
-                Finish & Save
+                {recordedDistanceMeters < 300 ? 'Discard & Stop' : 'Finish & Save'}
               </button>
             </div>
           </div>

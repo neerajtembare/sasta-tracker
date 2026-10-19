@@ -523,15 +523,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           opacity: 0.85,
         }).addTo(map);
       } else if (mapStyle === 'dark') {
-        tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-          maxNativeZoom: 16,
+        tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
-          attribution: '&copy; Esri',
-        }).addTo(map);
-        overlayTileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-          maxNativeZoom: 16,
-          maxZoom: 19,
-          opacity: 0.85,
+          attribution: '&copy; OpenStreetMap Dark',
+          className: 'dark-map-tiles',
         }).addTo(map);
       }
       currentMapStyleRef.current = mapStyle;

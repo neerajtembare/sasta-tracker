@@ -511,13 +511,15 @@ export default function App() {
 
   const handleStopAndSaveRecording = useCallback(() => {
     triggerHaptic(50);
-    if (gps.pointsCount < 2) {
-      alert('Cannot save ride: At least 2 GPS coordinate points are required to plot a route. Move outdoors with an open sky view.');
-      return;
-    }
     const pts = controls.stopAndGetPoints();
     setIsRecordingLive(false);
-    if (pts.length < 2) return;
+
+    // If accidental recording, under 2 points, or less than 80 meters, cleanly discard without blocking
+    if (pts.length < 2 || gps.totalDistanceMeters < 80) {
+      setSessionNotice('Recording cancelled (track was too short to save).');
+      setTimeout(() => setSessionNotice(null), 3500);
+      return;
+    }
 
     const gpxString = exportPointsToGPX(
       `Motorcycle Ride — ${new Date().toLocaleDateString()}`,
@@ -526,7 +528,7 @@ export default function App() {
     );
     // Stay on map and present in-map ride summary
     handleLiveRideRecorded(gpxString, true);
-  }, [controls, gps.pointsCount, gps.markedWaypoints, handleLiveRideRecorded]);
+  }, [controls, gps.totalDistanceMeters, gps.markedWaypoints, handleLiveRideRecorded]);
 
   const triggerUploadClick = () => {
     globalFileInputRef.current?.click();
@@ -1157,6 +1159,9 @@ export default function App() {
               bikeModel={groupRide.bikeModel}
               myLocation={myLocation}
               isHost={groupRide.isHost}
+              leaderId={groupRide.leaderId}
+              onSetSquadLeader={groupRide.setSquadLeader}
+              onClaimSquadLeader={groupRide.claimSquadLeader}
               isConnected={groupRide.isConnected}
               connectionStatus={groupRide.connectionStatus}
               statusMessage={groupRide.statusMessage}

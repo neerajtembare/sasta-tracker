@@ -151,6 +151,7 @@ export class SimpleMqttClient {
         } else if (packetType === 3) {
           // PUBLISH packet received
           try {
+            const qos = (buf[0] & 0x06) >> 1;
             let offset = 1;
             let multiplier = 1;
             let remLen = 0;
@@ -161,11 +162,28 @@ export class SimpleMqttClient {
               multiplier *= 128;
             } while ((digit & 0x80) !== 0 && offset < buf.length);
 
+            const varHeaderStart = offset;
+            const endOfPacket = Math.min(buf.length, varHeaderStart + remLen);
+
             const topicLen = (buf[offset] << 8) | buf[offset + 1];
             offset += 2;
             const topic = this.decoder.decode(buf.subarray(offset, offset + topicLen));
             offset += topicLen;
-            const payloadBytes = buf.subarray(offset);
+
+            // If QoS > 0, MQTT 3.1.1 inserts a 2-byte Packet Identifier here
+            if (qos > 0 && offset + 2 <= endOfPacket) {
+              const packetId = (buf[offset] << 8) | buf[offset + 1];
+              offset += 2;
+              // Acknowledge QoS 1 to stop broker retry flood
+              if (qos === 1 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                const puback = new Uint8Array([0x40, 0x02, (packetId >> 8) & 0xff, packetId & 0xff]);
+                try {
+                  this.ws.send(puback);
+                } catch {}
+              }
+            }
+
+            const payloadBytes = buf.subarray(offset, endOfPacket);
             const payloadStr = this.decoder.decode(payloadBytes);
 
             let parsed: any;

@@ -12,6 +12,12 @@ export interface NativeLocationData {
   totalDistanceMeters: number;
 }
 
+export interface NativeCrashData {
+  peakG: number;
+  preImpactSpeedKmh: number;
+  timestamp: number;
+}
+
 interface ThrottleLogNativePlugin {
   startKeepAlive(): Promise<void>;
   stopKeepAlive(): Promise<void>;
@@ -22,8 +28,8 @@ interface ThrottleLogNativePlugin {
   stopSpeaking(): Promise<void>;
   requestMicrophonePermission(): Promise<{ granted: boolean }>;
   addListener(
-    eventName: 'onNativeLocation',
-    listenerFunc: (data: NativeLocationData) => void
+    eventName: 'onNativeLocation' | 'onNativeCrashDetected',
+    listenerFunc: (data: any) => void
   ): Promise<any>;
 }
 
@@ -121,6 +127,25 @@ export async function addNativeLocationListener(
       };
     } catch (e) {
       console.warn('Could not register native location listener:', e);
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function addNativeCrashListener(
+  callback: (data: NativeCrashData) => void
+): Promise<(() => void) | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const handle = await NativeBridge.addListener('onNativeCrashDetected', callback);
+      return () => {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      };
+    } catch (e) {
+      console.warn('Could not register native crash listener:', e);
       return null;
     }
   }

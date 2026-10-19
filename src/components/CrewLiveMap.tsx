@@ -795,7 +795,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const prev = prevMyPosRef.current as any;
     const isFirstTime = !myMarkerRef.current || !prev;
-    const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode);
+    const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode || prev.isHost !== isHost);
 
     // Google Maps-style forward headlight beam & navigation chevron
     const forwardIndicator = heading !== null 
@@ -847,14 +847,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           onOpenCrewManage('active');
         }
       });
-      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode } as any;
+      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost } as any;
     } else {
       myMarkerRef.current.setLatLng(pos);
 
       // In-place rotation or full re-render on profile/mode changes
       if (isFirstTime || profileChanged) {
         myMarkerRef.current.setIcon(icon);
-        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode } as any;
+        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost } as any;
       } else {
         const el = myMarkerRef.current.getElement();
         if (el && heading !== null) {

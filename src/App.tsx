@@ -34,7 +34,7 @@ import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
 import { exportAnalysisToGPX, exportPointsToGPX, downloadFile } from './utils/gpxExporter';
 import { triggerHaptic, playWaypointChime } from './utils/audioChimes';
-import { startNativeRadarKeepAlive, stopNativeRadarKeepAlive } from './utils/nativeKeepAlive';
+import { startNativeRadarKeepAlive, stopNativeRadarKeepAlive, addNativeCrashListener } from './utils/nativeKeepAlive';
 import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
 import { 
@@ -215,12 +215,29 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
   const [crashModalEvent, setCrashModalEvent] = useState<CrashEvent | null>(null);
 
-  // High-G Impact & Crash Detection Listener
+  // High-G Impact & Crash Detection Listener (DOM WebView sensors + Native Android Foreground Accelerometer)
   useEffect(() => {
     crashDetector.startListening((event) => {
       setCrashModalEvent(event);
     });
-    return () => crashDetector.stopListening();
+
+    let cleanupNative: (() => void) | null = null;
+    addNativeCrashListener((nativeData) => {
+      if (crashDetector.isEnabled()) {
+        setCrashModalEvent({
+          timestamp: nativeData.timestamp || Date.now(),
+          peakG: nativeData.peakG,
+          preImpactSpeedKmh: nativeData.preImpactSpeedKmh,
+        });
+      }
+    }).then((unsub) => {
+      if (unsub) cleanupNative = unsub;
+    });
+
+    return () => {
+      crashDetector.stopListening();
+      if (cleanupNative) cleanupNative();
+    };
   }, []);
 
   const handleConfirmCrashSos = useCallback(() => {
@@ -235,14 +252,15 @@ export default function App() {
     triggerHaptic(40);
   }, []);
 
-  // Native Android Foreground Service & Keep-Alive (guarantees GPS and WebSocket survive backgrounding to Google Maps/Spotify)
+  // Native Android Foreground Service & Keep-Alive (guarantees GPS, WebSocket survive backgrounding, & handlebar mount screen stays awake)
   useEffect(() => {
-    if (isRecordingLive || groupRide.isOnRadar) {
+    const shouldKeepAlive = isRecordingLive || groupRide.isOnRadar || currentTab === 'crew' || currentTab === 'cockpit';
+    if (shouldKeepAlive) {
       startNativeRadarKeepAlive();
     } else {
       stopNativeRadarKeepAlive();
     }
-  }, [isRecordingLive, groupRide.isOnRadar]);
+  }, [isRecordingLive, groupRide.isOnRadar, currentTab]);
 
   // Check URL query for room invite link (e.g. ?rider=Rahul or ?crew=SUNDAY)
   // Zero-friction 1-tap auto-join: joins immediately and switches to crew radar!

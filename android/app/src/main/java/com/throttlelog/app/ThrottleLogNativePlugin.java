@@ -134,6 +134,15 @@ public class ThrottleLogNativePlugin extends Plugin {
 
             notifyListeners("onNativeLocation", data);
         };
+
+        ThrottleLogKeepAliveService.crashCallback = (peakG, preSpeedKmh) -> {
+            JSObject data = new JSObject();
+            data.put("peakG", peakG);
+            data.put("preImpactSpeedKmh", preSpeedKmh);
+            data.put("timestamp", System.currentTimeMillis());
+
+            notifyListeners("onNativeCrashDetected", data);
+        };
     }
 
     @PluginMethod

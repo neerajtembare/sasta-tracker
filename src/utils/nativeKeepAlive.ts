@@ -18,8 +18,9 @@ interface ThrottleLogNativePlugin {
   setKeepScreenOn(options: { enabled: boolean }): Promise<void>;
   isBatteryOptimizationIgnored(): Promise<{ isIgnored: boolean }>;
   requestBatteryOptimizationExemption(): Promise<void>;
-  speak(options: { text: string; rate?: number; pitch?: number }): Promise<void>;
+  speak(options: { text: string; rate?: number; pitch?: number; queue?: 'flush' | 'add' }): Promise<void>;
   stopSpeaking(): Promise<void>;
+  requestMicrophonePermission(): Promise<{ granted: boolean }>;
   addListener(
     eventName: 'onNativeLocation',
     listenerFunc: (data: NativeLocationData) => void
@@ -54,6 +55,7 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     requestBatteryOptimizationExemption: async () => {},
     speak: async () => {},
     stopSpeaking: async () => {},
+    requestMicrophonePermission: async () => ({ granted: true }),
     addListener: async () => ({ remove: () => {} }),
   },
 });
@@ -125,10 +127,15 @@ export async function addNativeLocationListener(
   return null;
 }
 
-export async function nativeSpeak(text: string, rate: number = 1.05, pitch: number = 1.0): Promise<void> {
+export async function nativeSpeak(
+  text: string, 
+  rate: number = 1.05, 
+  pitch: number = 1.0,
+  queue: 'flush' | 'add' = 'flush'
+): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     try {
-      await NativeBridge.speak({ text, rate, pitch });
+      await NativeBridge.speak({ text, rate, pitch, queue });
     } catch (e) {
       console.warn('Native TTS speak warning:', e);
     }
@@ -143,5 +150,17 @@ export async function nativeStopSpeaking(): Promise<void> {
       console.warn('Native TTS stop warning:', e);
     }
   }
+}
+
+export async function requestNativeMicrophonePermission(): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.requestMicrophonePermission();
+      return !!res.granted;
+    } catch (e) {
+      return true;
+    }
+  }
+  return true;
 }
 

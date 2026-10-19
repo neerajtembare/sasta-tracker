@@ -22,6 +22,7 @@ class MotorcycleCrashDetector {
   private onCrashCallback: ((event: CrashEvent) => void) | null = null;
   private recentSpeeds: Array<{ speedKmh: number; time: number }> = [];
   private potentialImpact: { peakG: number; time: number; preSpeed: number } | null = null;
+  private impactTimer: any = null;
   private impactCooldownUntil = 0;
   private currentSpeedKmh = 0;
 
@@ -44,12 +45,54 @@ class MotorcycleCrashDetector {
       localStorage.setItem(this.STORAGE_KEY, String(enabled));
     } catch {}
     if (!enabled) {
-      this.potentialImpact = null;
+      this.cancelPotentialImpact();
     }
   }
 
   public isSupported(): boolean {
     return typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
+  }
+
+  private cancelPotentialImpact() {
+    if (this.impactTimer) {
+      clearTimeout(this.impactTimer);
+      this.impactTimer = null;
+    }
+    this.potentialImpact = null;
+  }
+
+  private verifyImpactOutcome() {
+    if (!this.potentialImpact) return;
+    const now = Date.now();
+    const impact = this.potentialImpact;
+
+    // Check if rider is stationary (speed <= 3.5 km/h or no movement detected)
+    const recentSpeedsSinceImpact = this.recentSpeeds.filter(s => s.time >= impact.time);
+    const maxSpeedSinceImpact = recentSpeedsSinceImpact.length > 0
+      ? Math.max(...recentSpeedsSinceImpact.map(s => s.speedKmh))
+      : this.currentSpeedKmh;
+
+    if (maxSpeedSinceImpact <= 3.5 || this.currentSpeedKmh <= 3.5) {
+      // Confirmed crash: Severe impact + rider stopped and remained stationary
+      const event: CrashEvent = {
+        timestamp: impact.time,
+        peakG: impact.peakG,
+        preImpactSpeedKmh: impact.preSpeed,
+      };
+      this.cancelPotentialImpact();
+      this.impactCooldownUntil = now + 60000; // 60s cooldown to prevent double firing
+
+      if (this.onCrashCallback) {
+        try {
+          this.onCrashCallback(event);
+        } catch (e) {
+          console.error('Crash callback error:', e);
+        }
+      }
+    } else {
+      // False alarm: rider hit a bump/pothole and continued riding at speed
+      this.cancelPotentialImpact();
+    }
   }
 
   public updateGpsSpeed(speedKmh: number) {
@@ -60,24 +103,9 @@ class MotorcycleCrashDetector {
     // Prune speeds older than 6 seconds
     this.recentSpeeds = this.recentSpeeds.filter(s => now - s.time <= 6000);
 
-    // If an impact was recorded, check if bike remained stopped for 4 seconds
+    // If an impact was recorded and more than 4 seconds elapsed, verify immediately
     if (this.potentialImpact && now - this.potentialImpact.time >= 4000) {
-      if (speedKmh <= 3.5) {
-        // Confirmed crash: Severe impact + speed dropped to 0 and stayed stopped
-        const event: CrashEvent = {
-          timestamp: this.potentialImpact.time,
-          peakG: this.potentialImpact.peakG,
-          preImpactSpeedKmh: this.potentialImpact.preSpeed,
-        };
-        this.potentialImpact = null;
-        this.impactCooldownUntil = now + 60000; // 60s cooldown
-        if (this.onCrashCallback) {
-          this.onCrashCallback(event);
-        }
-      } else {
-        // False alarm: rider hit a bump and kept riding at speed
-        this.potentialImpact = null;
-      }
+      this.verifyImpactOutcome();
     }
   }
 
@@ -114,6 +142,13 @@ class MotorcycleCrashDetector {
               time: now,
               preSpeed: Number(maxPreSpeed.toFixed(0)),
             };
+
+            // Start internal autonomous watchdog timer for 4.2 seconds
+            // This guarantees verification even if the phone lies still and GPS stops sending fixes!
+            if (this.impactTimer) clearTimeout(this.impactTimer);
+            this.impactTimer = setTimeout(() => {
+              this.verifyImpactOutcome();
+            }, 4200);
           }
         }
       }
@@ -129,7 +164,7 @@ class MotorcycleCrashDetector {
 
   public stopListening() {
     this.isListening = false;
-    this.potentialImpact = null;
+    this.cancelPotentialImpact();
   }
 }
 

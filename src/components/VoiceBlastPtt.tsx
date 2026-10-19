@@ -3,6 +3,7 @@ import { Mic, MicOff, Square, Send, X, Volume2, Radio } from 'lucide-react';
 import { pttRecorder, VoiceRecordingResult } from '../utils/voiceBlast';
 import { triggerHaptic } from '../utils/audioChimes';
 import { ActiveVoiceBlast } from '../hooks/useGroupRide';
+import { requestNativeMicrophonePermission } from '../utils/nativeKeepAlive';
 
 interface VoiceBlastPttButtonProps {
   onSendVoiceBlast: (audioBase64: string, durationMs: number, mimeType?: string) => void;
@@ -41,6 +42,7 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
     pressStartTimeRef.current = Date.now();
 
     try {
+      await requestNativeMicrophonePermission();
       const started = await pttRecorder.start((result: VoiceRecordingResult) => {
         // Auto-stop at 8s limit
         setIsRecording(false);

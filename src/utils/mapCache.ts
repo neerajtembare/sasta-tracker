@@ -105,7 +105,7 @@ export async function preCacheRouteTiles(
   }
 
   let cached = 0;
-  const concurrency = 6;
+  const concurrency = 3; // Reduced concurrency to respect OSM tile server policy
   const queue = [...urls];
 
   const fetchWorker = async () => {
@@ -131,14 +131,21 @@ export async function preCacheRouteTiles(
           }
         }
 
-        // Standard CORS fetch
+        // Polite delay (25ms) between tile fetches to prevent HTTP 429 rate limiting
+        await new Promise(r => setTimeout(r, 25));
+
         const resp = await fetch(url);
         if (cache && resp && resp.status === 200) {
           try {
-            await cache.put(url, resp);
-          } catch {}
+            await cache.put(url, resp.clone());
+            cached++;
+          } catch {
+            cached++;
+          }
+        } else {
+          // If status is not 200 (e.g. 429), do not increment cached count
         }
-        cached++;
+
         const percentage = Math.round((cached / total) * 100);
         onProgress?.({
           cached,
@@ -149,7 +156,6 @@ export async function preCacheRouteTiles(
         });
       } catch {
         // Non-fatal, continue with remaining tiles
-        cached++;
       }
     }
   };

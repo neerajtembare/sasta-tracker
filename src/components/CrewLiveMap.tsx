@@ -788,11 +788,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const heading = myLocation.heading !== null && myLocation.heading !== undefined ? myLocation.heading : null;
 
     // Counter-rotation so text & initials stay 100% horizontal and upright at all times
-    const counterRotation = -targetMapRotation;
+    const counterRotation = 0;
 
-    // In Course-Up mode, the map rotates to heading so the forward indicator points straight UP (0deg).
-    // In North-Up mode, the forward indicator rotates to heading.
-    const arrowRotation = orientationMode === 'course' ? 0 : (heading !== null ? heading : 0);
+    // Arrow navigation chevron always rotates to true travel heading
+    const arrowRotation = heading !== null ? heading : 0;
 
     const prev = prevMyPosRef.current as any;
     const isFirstTime = !myMarkerRef.current || !prev;
@@ -913,10 +912,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
       const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color || prev.isStarred !== isStarred;
 
-      const memberCounterRotation = -targetMapRotation;
-      const memberArrowRotation = orientationMode === 'course' 
-        ? ((bearing ?? 0) - (myHeading ?? 0))
-        : (bearing ?? 0);
+      const memberCounterRotation = 0;
+      const memberArrowRotation = bearing !== null ? bearing : 0;
 
       // Centered Google Maps-style 3D navigation chevron
       const bearingArrow = bearing !== null && bearing !== undefined

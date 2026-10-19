@@ -232,10 +232,10 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     setShowFinishModal(false);
     triggerHaptic(50);
     if (gps.pointsCount < 2) {
-      setShortRideWarning(
-        `Cannot save ride: Only ${gps.pointsCount} GPS fix recorded so far. At least 2 coordinate points are required to plot a route and calculate speeds. Move outdoors with an open sky view.`
-      );
-      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+      controls.stopAndGetPoints();
+      _externalSetIsRecording(false);
+      setShortRideWarning(null);
+      showToast('Recording cancelled (track was too short to save).');
       return;
     }
 

@@ -177,11 +177,11 @@ export const TrackComparisonModal: React.FC<TrackComparisonModalProps> = ({
         attributionControl: false,
       }).setView([18.5204, 73.8567], 12);
 
-      const tileUrl = isLight 
-        ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-        : 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
-
-      L.tileLayer(tileUrl, { maxZoom: isLight ? 19 : 16 }).addTo(map);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap',
+        className: isLight ? '' : 'dark-map-tiles',
+      }).addTo(map);
       mapInstanceRef.current = map;
     }
 

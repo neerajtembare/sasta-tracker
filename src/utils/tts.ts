@@ -5,6 +5,7 @@ export interface SpeakOptions {
   rate?: number;
   pitch?: number;
   volume?: number;
+  queue?: 'flush' | 'add';
   onEnd?: () => void;
 }
 
@@ -22,10 +23,11 @@ export function speakAlert(text: string, options: SpeakOptions = {}): void {
 
   const rate = options.rate ?? 1.05;
   const pitch = options.pitch ?? 1.0;
+  const queue = options.queue ?? 'flush';
 
   // 1. Native Android APK execution
   if (Capacitor.isNativePlatform()) {
-    nativeSpeak(text.trim(), rate, pitch);
+    nativeSpeak(text.trim(), rate, pitch, queue);
     if (options.onEnd) {
       // Estimate duration based on word count (approx 130 words/min = ~460ms/word)
       const words = text.trim().split(/\s+/).length;

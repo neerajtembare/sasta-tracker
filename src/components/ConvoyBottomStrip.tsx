@@ -562,6 +562,16 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             </button>
           )}
 
+          {/* Direct 1-Tap Push-to-Talk (PTT) Walkie-Talkie Button */}
+          {onSendVoiceBlast && (
+            <div className="shrink-0">
+              <VoiceBlastPttButton
+                onSendVoiceBlast={onSendVoiceBlast}
+                compact
+              />
+            </div>
+          )}
+
           {/* Center: Glanceable Convoy Buddy Distances or Solo Tracker */}
           <div 
             onClick={() => {

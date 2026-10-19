@@ -137,18 +137,42 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
         }
     }
 
+    private long lastGpsFixTimestamp = 0;
+
     @Override
     public void onLocationChanged(@NonNull Location location) {
-        if (lastLocation != null) {
-            float dist = lastLocation.distanceTo(location);
-            if (dist > 1.5f && dist < 1500f) {
-                totalDistanceMeters += dist;
+        String provider = location.getProvider();
+        boolean isGps = LocationManager.GPS_PROVIDER.equals(provider);
+        long now = System.currentTimeMillis();
+
+        if (isGps) {
+            lastGpsFixTimestamp = now;
+        } else if (LocationManager.NETWORK_PROVIDER.equals(provider)) {
+            // Discard cellular/Wi-Fi triangulation if hardware GPS satellite fix was received recently (< 4500ms)
+            if (now - lastGpsFixTimestamp < 4500) {
+                return;
+            }
+            // Discard coarse network fixes with accuracy worse than 35m to eliminate cell-tower jumps
+            if (location.hasAccuracy() && location.getAccuracy() > 35.0f) {
+                return;
             }
         }
-        lastLocation = location;
+
+        // Accuracy check for distance accumulation to prevent phantom mileage
+        boolean hasGoodAccuracy = !location.hasAccuracy() || location.getAccuracy() <= 45.0f;
+
+        if (hasGoodAccuracy) {
+            if (lastLocation != null) {
+                float dist = lastLocation.distanceTo(location);
+                // Valid motorcycle motion: > 1.5m (avoid jitter while parked) and < 800m (reject anomalous teleports)
+                if (dist > 1.5f && dist < 800f) {
+                    totalDistanceMeters += dist;
+                }
+            }
+            lastLocation = location;
+        }
 
         // Throttle notification updates to at most once every 2 seconds
-        long now = System.currentTimeMillis();
         if (now - lastNotificationUpdateTs >= 2000) {
             lastNotificationUpdateTs = now;
             updateNotificationWithLocation(location);

@@ -292,6 +292,7 @@ export default function App() {
   const handleUpdateMyLocation = useCallback((lat: number, lon: number, kmh: number, bearing: number | null) => {
     setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
     groupRide.updateMyLocation(lat, lon, kmh, bearing);
+    crashDetector.updateGpsSpeed(kmh);
   }, [groupRide.updateMyLocation]);
 
   const isLocallyInitiatedRouteRef = useRef<boolean>(true);

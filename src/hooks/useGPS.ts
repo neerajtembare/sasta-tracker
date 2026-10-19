@@ -172,6 +172,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const unitSystemRef = useRef<UnitSystem>(unitSystem);
   const isRecordingRef = useRef<boolean>(isRecording);
   const isPausedRef = useRef<boolean>(isPaused);
+  const lastStorageSnapshotTsRef = useRef<number>(0);
 
   isRecordingRef.current = isRecording;
   isPausedRef.current = isPaused;
@@ -569,20 +570,24 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       const count = recordedPointsRef.current.length;
       setPointsCount(count);
 
-      // Continuous Persistent Session snapshot on EVERY point for zero data loss
-      try {
-        const snapshot = JSON.stringify({
-          points: recordedPointsRef.current,
-          elapsedSeconds: elapsedSecondsRef.current,
-          movingSeconds: movingSecondsRef.current,
-          stoppedSeconds: stoppedSecondsRef.current,
-          totalDistanceMeters: totalDistanceMetersRef.current,
-          waypoints: markedWaypointsRef.current,
-          timestamp: Date.now(),
-        });
-        localStorage.setItem('sasta_live_recovery_v1', snapshot);
-        sessionStorage.setItem('sasta_live_recovery', snapshot);
-      } catch {}
+      // Throttled Persistent Session snapshot: every 15 seconds (or during initial 3 points)
+      // Eliminates 1Hz synchronous JSON.stringify blocking on multi-hour rides and prevents QuotaExceededError
+      if (count <= 3 || nowTs - lastStorageSnapshotTsRef.current >= 15000) {
+        lastStorageSnapshotTsRef.current = nowTs;
+        try {
+          const snapshot = JSON.stringify({
+            points: recordedPointsRef.current,
+            elapsedSeconds: elapsedSecondsRef.current,
+            movingSeconds: movingSecondsRef.current,
+            stoppedSeconds: stoppedSecondsRef.current,
+            totalDistanceMeters: totalDistanceMetersRef.current,
+            waypoints: markedWaypointsRef.current,
+            timestamp: Date.now(),
+          });
+          localStorage.setItem('sasta_live_recovery_v1', snapshot);
+          sessionStorage.setItem('sasta_live_recovery', snapshot);
+        } catch {}
+      }
 
       // Voice milestones using universal TTS engine (Native Android + Web fallback)
       if (voiceFeedbackEnabledRef.current) {

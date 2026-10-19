@@ -386,15 +386,16 @@ export function useGroupRide() {
       }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
-      if (alert && alert.fromName) {
+      if (alert) {
+        const senderName = alert.fromName && alert.fromName.trim() ? alert.fromName.trim() : 'a squad member';
         setSosAlert(alert);
         playSosChime();
-        triggerHaptic([100, 50, 100, 50, 150]);
-        speakAlert(`Emergency! S O S alert from ${alert.fromName}! Pull over and check map immediately!`, {
+        triggerHaptic([150, 60, 150, 60, 300]);
+        speakAlert(`Emergency! S O S alert from ${senderName}! Pull over and check map immediately!`, {
           rate: 1.0,
           pitch: 1.05,
         });
-        postCrewNotification(`🚨 EMERGENCY SOS from ${alert.fromName}!`, 'alert');
+        postCrewNotification(`🚨 EMERGENCY SOS from ${senderName}!`, 'alert');
       }
     } else if (data.type === 'OFFLINE') {
       const riderId = data.riderId;
@@ -772,10 +773,10 @@ export function useGroupRide() {
   }, [broadcastPayload, postCrewNotification]);
 
   const triggerSos = useCallback(() => {
-    const loc = myLocationRef.current;
-    if (!loc) return;
+    const loc = myLocationRef.current || { lat: 18.5204, lon: 73.8567 };
+    const senderName = profile.name && profile.name.trim() ? profile.name.trim() : 'Rider';
     const alert: SosAlert = {
-      fromName: profile.name,
+      fromName: senderName,
       lat: loc.lat,
       lon: loc.lon,
       timestamp: Date.now(),
@@ -785,8 +786,10 @@ export function useGroupRide() {
       type: 'SOS_PING',
       payload: alert,
     });
-    playWarningChime();
-    postCrewNotification(`🚨 You broadcast an EMERGENCY REGROUP alert!`, 'alert');
+    playSosChime();
+    triggerHaptic([200, 100, 200, 100, 400]);
+    speakAlert(`Emergency S O S alert broadcast to squad for ${senderName}.`);
+    postCrewNotification(`🚨 You broadcast an EMERGENCY S O S alert!`, 'alert');
   }, [profile.name, broadcastPayload, postCrewNotification]);
 
   const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {

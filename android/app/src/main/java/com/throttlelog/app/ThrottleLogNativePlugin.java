@@ -1,14 +1,21 @@
 package com.throttlelog.app;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.view.WindowManager;
-import androidx.core.content.ContextCompat;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.view.WindowManager;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import java.util.Locale;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -21,6 +28,69 @@ public class ThrottleLogNativePlugin extends Plugin {
 
     private TextToSpeech tts;
     private boolean isTtsReady = false;
+    private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+
+    private void requestTransientAudioFocus() {
+        try {
+            if (audioManager == null && getContext() != null) {
+                audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (audioManager == null) return;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build();
+
+                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(playbackAttributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener(focusChange -> {})
+                    .build();
+
+                audioManager.requestAudioFocus(audioFocusRequest);
+            } else {
+                audioManager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                );
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void abandonTransientAudioFocus() {
+        try {
+            if (audioManager == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            } else {
+                audioManager.abandonAudioFocus(null);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void setupTtsListener() {
+        if (tts == null) return;
+        try {
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) {}
+
+                @Override
+                public void onDone(String utteranceId) {
+                    abandonTransientAudioFocus();
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    abandonTransientAudioFocus();
+                }
+            });
+        } catch (Exception ignored) {}
+    }
 
     @Override
     public void load() {
@@ -34,6 +104,14 @@ public class ThrottleLogNativePlugin extends Plugin {
                         if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
                             tts.setLanguage(Locale.getDefault());
                         }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build();
+                            tts.setAudioAttributes(audioAttributes);
+                        }
+                        setupTtsListener();
                         isTtsReady = true;
                     } catch (Exception ignored) {}
                 }
@@ -141,6 +219,29 @@ public class ThrottleLogNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void requestMicrophonePermission(PluginCall call) {
+        try {
+            boolean hasPermission = ContextCompat.checkSelfPermission(
+                getContext(),
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED;
+
+            if (!hasPermission && getActivity() != null) {
+                ActivityCompat.requestPermissions(
+                    getActivity(),
+                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    1002
+                );
+            }
+            JSObject ret = new JSObject();
+            ret.put("granted", hasPermission);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.resolve(new JSObject().put("granted", true));
+        }
+    }
+
+    @PluginMethod
     public void speak(PluginCall call) {
         String text = call.getString("text", "");
         if (text == null || text.trim().isEmpty()) {
@@ -148,8 +249,13 @@ public class ThrottleLogNativePlugin extends Plugin {
             return;
         }
 
-        float rate = call.getFloat("rate", 1.0f);
+        float rate = call.getFloat("rate", 1.05f);
         float pitch = call.getFloat("pitch", 1.0f);
+        String queueMode = call.getString("queue", "flush");
+        int queueConstant = "add".equalsIgnoreCase(queueMode) ? TextToSpeech.QUEUE_ADD : TextToSpeech.QUEUE_FLUSH;
+
+        // Request audio focus ducking so helmet intercom music is lowered during alert
+        requestTransientAudioFocus();
 
         if (tts == null) {
             tts = new TextToSpeech(getContext(), status -> {
@@ -158,12 +264,19 @@ public class ThrottleLogNativePlugin extends Plugin {
                         tts.setLanguage(Locale.US);
                         tts.setSpeechRate(rate);
                         tts.setPitch(pitch);
+                        setupTtsListener();
+                        isTtsReady = true;
+                        String utteranceId = "tts_" + System.currentTimeMillis();
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_" + System.currentTimeMillis());
+                            tts.speak(text, queueConstant, null, utteranceId);
                         } else {
-                            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                            tts.speak(text, queueConstant, null);
                         }
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        abandonTransientAudioFocus();
+                    }
+                } else {
+                    abandonTransientAudioFocus();
                 }
             });
             call.resolve();
@@ -173,14 +286,16 @@ public class ThrottleLogNativePlugin extends Plugin {
         try {
             tts.setSpeechRate(rate);
             tts.setPitch(pitch);
+            String utteranceId = "tts_" + System.currentTimeMillis();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_" + System.currentTimeMillis());
+                tts.speak(text, queueConstant, null, utteranceId);
             } else {
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                tts.speak(text, queueConstant, null);
             }
             call.resolve();
         } catch (Exception e) {
             android.util.Log.w("ThrottleLogNative", "TTS speak failed: " + e.getMessage());
+            abandonTransientAudioFocus();
             call.resolve();
         }
     }
@@ -191,8 +306,10 @@ public class ThrottleLogNativePlugin extends Plugin {
             if (tts != null) {
                 tts.stop();
             }
+            abandonTransientAudioFocus();
             call.resolve();
         } catch (Exception e) {
+            abandonTransientAudioFocus();
             call.resolve();
         }
     }
@@ -200,6 +317,7 @@ public class ThrottleLogNativePlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
+        abandonTransientAudioFocus();
         if (tts != null) {
             try {
                 tts.stop();

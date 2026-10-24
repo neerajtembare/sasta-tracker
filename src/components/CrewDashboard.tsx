@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { 
   GroupMemberInfo, 
@@ -34,6 +34,7 @@ interface CrewDashboardProps {
     lon: number;
     speedKmh: number;
     heading: number | null;
+    accuracy?: number | null;
   } | null;
   isHost?: boolean;
   leaderId?: string | null;
@@ -222,6 +223,35 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   // Online Squad Count (excluding self)
   const onlineCount = members.filter(m => m.isOnline).length;
 
+  // Google Maps-style clean riding view: Auto-hide top bar while cruising, wake on tap or slow speeds
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetActivityTimer = useCallback(() => {
+    setIsTopBarVisible(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+
+    const speed = myLocation?.speedKmh || 0;
+    if (speed > 15) {
+      hideTimerRef.current = setTimeout(() => {
+        setIsTopBarVisible(false);
+      }, 5000);
+    }
+  }, [myLocation?.speedKmh]);
+
+  useEffect(() => {
+    const speed = myLocation?.speedKmh || 0;
+    if (speed <= 10) {
+      setIsTopBarVisible(true);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    } else {
+      resetActivityTimer();
+    }
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [myLocation?.speedKmh, resetActivityTimer]);
+
   const handleShareWhatsApp = () => {
     const inviteUrl = getFriendInviteUrl ? getFriendInviteUrl() : window.location.href;
     const text = `🏍️ Join our live motorcycle ride on ThrottleLog! Real-time GPS radar across all phones (zero setup): ${inviteUrl}`;
@@ -229,7 +259,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[100dvh] overflow-hidden select-none bg-[#080c10]">
+    <div 
+      onClick={resetActivityTimer}
+      onTouchStart={resetActivityTimer}
+      className="relative w-full h-[100dvh] overflow-hidden select-none bg-[#080c10]"
+    >
       {/* ─────────────────────────────────────────────────────────────
           1. FULLSCREEN LEAFLET CREW MAP (BASE LAYER)
       ───────────────────────────────────────────────────────────── */}
@@ -272,6 +306,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           onJoinSharedRoute={onJoinSharedRoute}
           externalMapLayer={mapLayer}
           onChangeMapLayer={handleChangeMapLayer}
+          onSendCallout={onSendCallout}
         />
       </div>
 
@@ -292,6 +327,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onShareInvite={handleShareWhatsApp}
         onTriggerRollCall={onTriggerRollCall}
         theme={theme}
+        isVisible={isTopBarVisible || !!gpsError || !isTrackingActive || !isOnRadar}
       />
 
       {/* ─────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ interface TopMapCapsuleProps {
   onShareInvite?: () => void;
   onTriggerRollCall?: () => void;
   theme?: AppTheme;
+  isVisible?: boolean;
 }
 
 export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
@@ -33,6 +34,7 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
   onShareInvite,
   onTriggerRollCall,
   theme = 'dark',
+  isVisible = true,
 }) => {
   const isLight = theme === 'light';
   const initial = riderName && riderName.trim() ? riderName.trim().charAt(0).toUpperCase() : 'R';
@@ -46,7 +48,9 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}
-      className="absolute z-30 pointer-events-none flex justify-center"
+      className={`absolute z-30 pointer-events-none flex justify-center transition-all duration-300 ease-out ${
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0'
+      }`}
     >
       <div 
         className={`pointer-events-auto w-full max-w-xl h-11 px-2 sm:px-2.5 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-1.5 sm:gap-2 shadow-2xl transition-all font-mono ${

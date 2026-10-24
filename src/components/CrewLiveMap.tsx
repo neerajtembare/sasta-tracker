@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
+import { CALLOUT_PRESETS, CalloutPreset } from '../utils/callouts';
 import { AppTheme, UnitSystem, RideAnalysis, PitStop, TrackPoint } from '../types';
 import { openGoogleMapsNavigation, openGoogleMapsRoute } from '../utils/navigation';
 import { preCacheRouteTiles, preCacheRegionalArea, CacheProgress, LatLngBounds } from '../utils/mapCache';
@@ -83,6 +84,7 @@ interface MyLocationData {
   lon: number;
   speedKmh: number;
   heading: number | null;
+  accuracy?: number | null;
 }
 
 interface CrewLiveMapProps {
@@ -132,6 +134,7 @@ interface CrewLiveMapProps {
   starredRiderIds?: string[];
   externalMapLayer?: MapLayerType;
   onChangeMapLayer?: (layer: MapLayerType) => void;
+  onSendCallout?: (preset: CalloutPreset) => void;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
@@ -148,13 +151,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   onTrailRider,
   members,
   sosAlert,
-  roomCode = '',
-  lastRoomCode = '',
+  roomCode,
+  lastRoomCode,
   isConnected = false,
   theme = 'dark',
   unitSystem = 'metric',
-  externalMapLayer,
-  onChangeMapLayer,
   onTriggerSos,
   onCancelSos,
   onDismissSos,
@@ -181,17 +182,29 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   onToggleRadar,
   onJoinSharedRoute,
   starredRiderIds = [],
+  externalMapLayer,
+  onChangeMapLayer,
+  onSendCallout,
 }) => {
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const overlayTileLayerRef = useRef<L.TileLayer | null>(null);
 
   const myMarkerRef = useRef<L.Marker | null>(null);
+  const accuracyCircleRef = useRef<L.Circle | null>(null);
   const prevMyPosRef = useRef<{ lat: number; lon: number; speedKmh: number; heading: number | null } | null>(null);
   const memberMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const memberCacheRef = useRef<Map<string, { lat: number; lon: number; speedText: string; bearing: number | null; isOnline: boolean; isStopped: boolean; isHost: boolean; color: string; isStarred?: boolean }>>(new Map());
   const sosMarkerRef = useRef<L.Marker | null>(null);
+
+  // Highway speed adaptive zoom & Smart Stop Intent
+  const lastAutoZoomTsRef = useRef<number>(0);
+  const hadMovingSpeedRef = useRef<boolean>(false);
+  const stopTimestampRef = useRef<number | null>(null);
+  const lastStopPromptTsRef = useRef<number>(0);
+  const [stopIntentActive, setStopIntentActive] = useState<boolean>(false);
 
   // Active Route layers
   const routePolylineRef = useRef<L.Polyline | null>(null);
@@ -487,6 +500,60 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     starredList.sort((a, b) => (a.distanceFromMeMeters ?? 999999) - (b.distanceFromMeMeters ?? 999999));
     return starredList[0];
   }, [members, starredRiderIds]);
+
+  // inRoads-style Convoy Pack Spread & Shape Intelligence
+  const convoySpreadData = useMemo(() => {
+    const onlineMembers = members.filter(m => m.isOnline !== false && m.location);
+    if (onlineMembers.length === 0) return null;
+
+    const totalRiders = onlineMembers.length + 1;
+    let maxDist = 0;
+    let farthestMember: GroupMemberInfo = onlineMembers[0];
+
+    onlineMembers.forEach(m => {
+      const d = m.distanceFromMeMeters ?? 0;
+      if (d > maxDist) {
+        maxDist = d;
+        farthestMember = m;
+      }
+    });
+
+    let state: 'tight' | 'stretched' | 'separated' = 'tight';
+    if (maxDist > 1800) {
+      state = 'separated';
+    } else if (maxDist > 400) {
+      state = 'stretched';
+    }
+
+    return {
+      totalRiders,
+      maxDist,
+      farthestMember,
+      state,
+    };
+  }, [members]);
+
+  // Smart Stop Intent Watcher ("Tell, Don't Poll" - Auto-prompts Chai/Fuel when halted after cruising)
+  useEffect(() => {
+    if (!myLocation) return;
+    const speed = myLocation.speedKmh || 0;
+    const now = Date.now();
+
+    if (speed > 25) {
+      hadMovingSpeedRef.current = true;
+      stopTimestampRef.current = null;
+    } else if (speed < 2.5 && hadMovingSpeedRef.current) {
+      if (!stopTimestampRef.current) {
+        stopTimestampRef.current = now;
+      } else if (now - stopTimestampRef.current > 45000 && now - lastStopPromptTsRef.current > 180000) {
+        // Stopped for > 45s after cruising, prompt to pin Fuel / Chai stop
+        lastStopPromptTsRef.current = now;
+        setStopIntentActive(true);
+        // Auto-dismiss after 12s if rider ignores it
+        setTimeout(() => setStopIntentActive(false), 12000);
+      }
+    }
+  }, [myLocation?.speedKmh]);
 
   // Note: Convoy safety, battery, runaway, separation & roll call watchdogs run globally in App.tsx via convoyWatchdog
 
@@ -785,6 +852,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         myMarkerRef.current = null;
         prevMyPosRef.current = null;
       }
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.remove();
+        accuracyCircleRef.current = null;
+      }
       return;
     }
 
@@ -804,6 +875,22 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const prev = prevMyPosRef.current as any;
     const isFirstTime = !myMarkerRef.current || !prev;
     const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode || prev.isHost !== isHost || prev.targetMapRotation !== targetMapRotation);
+
+    // Google Maps-style GPS Accuracy Halo Circle
+    const accuracyRadius = Math.max(6, Math.min(myLocation.accuracy || 15, 60));
+    if (!accuracyCircleRef.current) {
+      accuracyCircleRef.current = L.circle(pos, {
+        radius: accuracyRadius,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.08,
+        weight: 1,
+        dashArray: '3, 4',
+      }).addTo(map);
+    } else {
+      accuracyCircleRef.current.setLatLng(pos);
+      accuracyCircleRef.current.setRadius(accuracyRadius);
+    }
 
     // Google Maps-style forward headlight beam & navigation chevron
     const forwardIndicator = heading !== null 
@@ -874,8 +961,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       }
     }
 
-    // Google Maps-style look-ahead horizon camera follow
+    // Google Maps-style look-ahead horizon camera follow & Highway Speed Adaptive Zoom
     if (selectedRiderId === 'me') {
+      const now = Date.now();
+      if (now - lastAutoZoomTsRef.current > 12000) {
+        const curZoom = map.getZoom();
+        if (myLocation.speedKmh > 65 && curZoom > 14) {
+          lastAutoZoomTsRef.current = now;
+          map.setZoom(14, { animate: true });
+        } else if (myLocation.speedKmh < 22 && curZoom < 16) {
+          lastAutoZoomTsRef.current = now;
+          map.setZoom(16, { animate: true });
+        }
+      }
+
       if (orientationMode === 'course' && heading !== null && myLocation.speedKmh >= 5) {
         // Forward look-ahead: offset camera ~100m ahead along heading
         const offsetMeters = 100;
@@ -1212,9 +1311,56 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          CONVOY PROXIMITY PILL (Shows primary starred buddy distance & speed)
+          INROADS-STYLE CONVOY PACK SPREAD HUD (1-TAP FIT ALL RIDERS)
       ───────────────────────────────────────────────────────────── */}
-      {!trailedRiderId && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
+      {!trailedRiderId && convoySpreadData && (
+        <div 
+          onClick={handleFitAllRiders}
+          style={{
+            top: sosAlert 
+              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
+              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+          }}
+          className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3.5 py-1.5 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
+            convoySpreadData.state === 'separated'
+              ? 'bg-rose-950/95 border-rose-500 text-rose-200 animate-pulse shadow-rose-950/60'
+              : convoySpreadData.state === 'stretched'
+              ? 'bg-amber-950/95 border-amber-500/70 text-amber-200 shadow-amber-950/40'
+              : 'bg-slate-950/95 border-emerald-500/60 text-white shadow-emerald-950/30'
+          }`}
+          title="Tap to fit all convoy riders into map view"
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${
+            convoySpreadData.state === 'separated'
+              ? 'bg-rose-400 animate-ping'
+              : convoySpreadData.state === 'stretched'
+              ? 'bg-amber-400'
+              : 'bg-emerald-400'
+          }`} />
+          {convoySpreadData.state === 'separated' ? (
+            <span>
+              <span className="text-rose-400 font-black">PACK SPREAD</span>
+              <span className="mx-1 text-slate-500">•</span>
+              <span>{convoySpreadData.farthestMember.name} {formatDistance(convoySpreadData.maxDist)} behind</span>
+            </span>
+          ) : convoySpreadData.state === 'stretched' ? (
+            <span>
+              <span className="text-amber-400 font-black">CONVOY STRETCHED</span>
+              <span className="mx-1 text-slate-500">•</span>
+              <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
+            </span>
+          ) : (
+            <span>
+              <span className="text-emerald-400 font-black">CONVOY TIGHT</span>
+              <span className="mx-1 text-slate-500">•</span>
+              <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Solo Rider / Starred Buddy fallback when no full pack spread */}
+      {!trailedRiderId && !convoySpreadData && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
         <div 
           onClick={() => {
             triggerHaptic(20);
@@ -1236,16 +1382,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         >
           <span className="text-amber-400">⭐</span>
           <span className="font-black text-amber-300">{primaryStarredMember.name}:</span>
-          <span>
-            {formatDistance(primaryStarredMember.distanceFromMeMeters)}
-          </span>
+          <span>{formatDistance(primaryStarredMember.distanceFromMeMeters)}</span>
           {primaryStarredMember.location?.speedKmh !== undefined && (
             <span className="text-cyan-400 text-[10px]">
               ({formatSpeed(primaryStarredMember.location.speedKmh)})
             </span>
-          )}
-          {primaryStarredMember.distanceFromMeMeters > 2500 && (
-            <span className="text-amber-400 font-black text-[10px] ml-0.5">• LAGGING</span>
           )}
         </div>
       )}
@@ -1327,43 +1468,68 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          GOOGLE MAPS-STYLE FLOATING LIVE SPEEDOMETER HUD (BOTTOM-LEFT)
+          SMART STOP INTENT PROMPT ("Tell, Don't Poll" One-Tap FYIs)
       ───────────────────────────────────────────────────────────── */}
-      <div 
-        style={{ 
-          bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
-          left: 'max(0.75rem, env(safe-area-inset-left))',
-        }}
-        className="absolute z-30 pointer-events-auto animate-in fade-in duration-200"
-      >
+      {stopIntentActive && (
         <div 
-          onClick={() => triggerHaptic(20)}
-          className={`px-2.5 py-1.5 rounded-2xl backdrop-blur-xl border shadow-2xl flex flex-col items-center justify-center font-mono cursor-pointer transition-all active:scale-95 ${
-          isLight 
-            ? 'bg-white/95 border-slate-300 text-slate-800' 
-            : 'bg-[#0d131a]/95 border-[#1e2a38] text-white shadow-black/80'
-        }`}>
-          <div className="flex items-baseline gap-1">
-            <span className="font-heading font-black text-2xl tracking-tighter text-cyan-400">
-              {myLocation ? Math.round(unitSystem === 'imperial' ? myLocation.speedKmh * 0.621371 : myLocation.speedKmh) : '0'}
-            </span>
-            <span className="text-[9px] font-bold text-slate-400 uppercase">
-              {unitSystem === 'imperial' ? 'mph' : 'km/h'}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-[8px] font-bold text-slate-400">
-            <span className={`w-1.5 h-1.5 rounded-full ${myLocation && myLocation.speedKmh > 2.5 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-            <span>{myLocation && myLocation.speedKmh > 2.5 ? 'CRUISING' : 'IDLE'}</span>
-          </div>
-          {isRecording && totalDistanceMeters !== undefined && totalDistanceMeters > 0 && (
-            <div className="text-[8px] font-bold text-rose-400 mt-0.5 border-t border-slate-800/80 pt-0.5 w-full text-center">
-              REC • {unitSystem === 'imperial'
-                ? `${((totalDistanceMeters / 1000) * 0.621371).toFixed(1)} mi`
-                : `${(totalDistanceMeters / 1000).toFixed(1)} km`}
+          style={{ 
+            bottom: 'max(5.5rem, calc(env(safe-area-inset-bottom) + 5.2rem))',
+            left: 'max(1rem, env(safe-area-inset-left))',
+            right: 'max(1rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-40 flex justify-center pointer-events-none animate-in slide-in-from-bottom-2 duration-200"
+        >
+          <div className="pointer-events-auto max-w-sm w-full p-2.5 rounded-2xl bg-slate-950/95 border border-cyan-500/60 shadow-2xl backdrop-blur-md font-mono text-xs flex flex-col gap-2">
+            <div className="flex items-center justify-between text-slate-300">
+              <span className="font-heading font-black text-[11px] uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                <span>🛑</span>
+                <span>Cruising Paused • Broadcast Stop?</span>
+              </span>
+              <button 
+                onClick={() => setStopIntentActive(false)}
+                className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
-          )}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  triggerHaptic(30);
+                  const preset = CALLOUT_PRESETS.find(p => p.type === 'fuel') || CALLOUT_PRESETS[0];
+                  if (onSendCallout) onSendCallout(preset);
+                  setStopIntentActive(false);
+                }}
+                className="flex-1 py-1.5 px-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+              >
+                <span>⛽</span> Fuel
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic(30);
+                  const preset = CALLOUT_PRESETS.find(p => p.type === 'chai') || CALLOUT_PRESETS[1];
+                  if (onSendCallout) onSendCallout(preset);
+                  setStopIntentActive(false);
+                }}
+                className="flex-1 py-1.5 px-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+              >
+                <span>☕</span> Chai
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic(30);
+                  const preset = CALLOUT_PRESETS.find(p => p.type === 'regroup') || CALLOUT_PRESETS[2];
+                  if (onSendCallout) onSendCallout(preset);
+                  setStopIntentActive(false);
+                }}
+                className="flex-1 py-1.5 px-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+              >
+                <span>🛑</span> Regroup
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           1-TAP OFFLINE ROUTE MAP CACHE BUTTON (WHEN ROUTE LOADED)
@@ -1372,7 +1538,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         <div 
           style={{ 
             bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
-            left: 'max(5.8rem, calc(env(safe-area-inset-left) + 5.5rem))',
+            left: 'max(0.75rem, env(safe-area-inset-left))',
           }}
           className="absolute z-30 pointer-events-auto animate-in fade-in duration-200"
         >

@@ -219,6 +219,7 @@ export default function App() {
     lon: number;
     speedKmh: number;
     heading: number | null;
+    accuracy?: number | null;
   } | null>(null);
   const [currentRideId, setCurrentRideId] = useState<string | null>(null);
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('map');
@@ -431,6 +432,7 @@ export default function App() {
         lon: gps.currentCoords.lon,
         speedKmh: gps.currentSpeedKmh,
         heading: gps.currentHeading,
+        accuracy: gps.gpsAccuracy,
       });
       groupRide.updateMyLocation(
         gps.currentCoords.lat,

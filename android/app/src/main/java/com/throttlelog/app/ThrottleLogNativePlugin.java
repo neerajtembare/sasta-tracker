@@ -251,6 +251,91 @@ public class ThrottleLogNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void checkLocationPermission(PluginCall call) {
+        try {
+            boolean hasFine = ContextCompat.checkSelfPermission(
+                getContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+            boolean hasCoarse = ContextCompat.checkSelfPermission(
+                getContext(),
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+
+            JSObject ret = new JSObject();
+            ret.put("fine", hasFine);
+            ret.put("coarse", hasCoarse);
+            ret.put("granted", hasFine);
+            call.resolve(ret);
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("fine", false);
+            ret.put("coarse", false);
+            ret.put("granted", false);
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void requestLocationPermission(PluginCall call) {
+        try {
+            boolean hasFine = ContextCompat.checkSelfPermission(
+                getContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+
+            if (!hasFine && getActivity() != null) {
+                ActivityCompat.requestPermissions(
+                    getActivity(),
+                    new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    },
+                    1001
+                );
+            }
+            JSObject ret = new JSObject();
+            ret.put("granted", hasFine);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.resolve(new JSObject().put("granted", false));
+        }
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+            intent.setData(uri);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                call.resolve();
+            } catch (Exception ex) {
+                call.resolve();
+            }
+        }
+    }
+
+    @PluginMethod
+    public void openLocationSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.resolve();
+        }
+    }
+
+    @PluginMethod
     public void speak(PluginCall call) {
         String text = call.getString("text", "");
         if (text == null || text.trim().isEmpty()) {

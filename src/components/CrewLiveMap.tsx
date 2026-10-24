@@ -1470,10 +1470,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </span>
         </button>
 
-        {/* Recenter FAB */}
+        {/* Recenter FAB (Single Google Maps location button) */}
         <button
           onClick={handleRecenterMe}
-          className={`w-12 h-12 rounded-full backdrop-blur-md border shadow-2xl flex items-center justify-center cursor-pointer transition-all active:scale-90 ${
+          className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full backdrop-blur-md border shadow-2xl flex items-center justify-center cursor-pointer transition-all active:scale-90 relative ${
             selectedRiderId === 'me'
               ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40 ring-2 ring-cyan-400/50'
               : 'bg-slate-950/90 border-slate-700 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
@@ -1481,7 +1481,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           title="Recenter on My Location (GPS)"
           aria-label="Recenter Map"
         >
-          <Crosshair className="w-5 h-5 stroke-[2.2]" />
+          <Crosshair className={`w-5 h-5 ${selectedRiderId === 'me' ? 'stroke-[2.6]' : 'stroke-[2.2]'}`} />
+          {selectedRiderId !== 'me' && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          )}
         </button>
       </div>
 
@@ -1712,27 +1715,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          GOOGLE MAPS-STYLE PROMINENT RE-CENTER BUTTON (WHEN FREE-PANNING)
-      ───────────────────────────────────────────────────────────── */}
-      {selectedRiderId === null && myLocation && (
-        <div 
-          style={{ 
-            bottom: 'max(4.8rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
-          }}
-          className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-auto animate-in slide-in-from-bottom-2 duration-150"
-        >
-          <button
-            type="button"
-            onClick={handleRecenterMe}
-            className="px-4 py-2 rounded-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs font-mono shadow-2xl flex items-center gap-2 cursor-pointer transition-all active:scale-95 ring-2 ring-cyan-300 shadow-cyan-500/40"
-            title="Snap back to current motorcycle location & resume direction follow"
-          >
-            <Crosshair className="w-4 h-4 stroke-[2.8]" />
-            <span>Re-center</span>
-          </button>
-        </div>
-      )}
 
       {/* Offline Caching Progress / Success Pill */}
       {(cacheProgress || cacheSuccessMsg) && (

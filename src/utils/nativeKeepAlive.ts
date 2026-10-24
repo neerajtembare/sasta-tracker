@@ -29,6 +29,10 @@ interface ThrottleLogNativePlugin {
   requestAudioFocus(): Promise<void>;
   abandonAudioFocus(): Promise<void>;
   requestMicrophonePermission(): Promise<{ granted: boolean }>;
+  checkLocationPermission(): Promise<{ fine: boolean; coarse: boolean; granted: boolean }>;
+  requestLocationPermission(): Promise<{ granted: boolean }>;
+  openAppSettings(): Promise<void>;
+  openLocationSettings(): Promise<void>;
   addListener(
     eventName: 'onNativeLocation' | 'onNativeCrashDetected',
     listenerFunc: (data: any) => void
@@ -66,6 +70,10 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     requestAudioFocus: async () => {},
     abandonAudioFocus: async () => {},
     requestMicrophonePermission: async () => ({ granted: true }),
+    checkLocationPermission: async () => ({ fine: true, coarse: true, granted: true }),
+    requestLocationPermission: async () => ({ granted: true }),
+    openAppSettings: async () => {},
+    openLocationSettings: async () => {},
     addListener: async () => ({ remove: () => {} }),
   },
 });
@@ -209,6 +217,54 @@ export async function nativeAbandonAudioFocus(): Promise<void> {
       await NativeBridge.abandonAudioFocus();
     } catch (e) {
       console.warn('Native abandon audio focus warning:', e);
+    }
+  }
+}
+
+export async function checkNativeLocationPermission(): Promise<{ fine: boolean; coarse: boolean; granted: boolean }> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.checkLocationPermission();
+      return {
+        fine: !!res.fine,
+        coarse: !!res.coarse,
+        granted: !!res.granted,
+      };
+    } catch {
+      return { fine: false, coarse: false, granted: false };
+    }
+  }
+  return { fine: true, coarse: true, granted: true };
+}
+
+export async function requestNativeLocationPermission(): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.requestLocationPermission();
+      return !!res.granted;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function openNativeAppSettings(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.openAppSettings();
+    } catch (e) {
+      console.warn('Open app settings error:', e);
+    }
+  }
+}
+
+export async function openNativeLocationSettings(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.openLocationSettings();
+    } catch (e) {
+      console.warn('Open location settings error:', e);
     }
   }
 }

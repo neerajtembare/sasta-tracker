@@ -470,12 +470,20 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       }
     }
 
-    // Clear any previous transient GPS error when a fix is successfully acquired
-    setGpsError(null);
+    // Clear or update transient GPS error based on signal accuracy
+    if (accuracy && accuracy > 45) {
+      setGpsError(`Weak satellite lock (±${Math.round(accuracy)}m). Searching for precise GNSS...`);
+    } else {
+      setGpsError(null);
+    }
 
-    // 1. Accuracy filter: if satellite fix is already locked (> 3 points) and current accuracy is poor (> 65m),
-    // drop this fix to eliminate false cell-tower triangulation or Wi-Fi jumps.
-    if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 65) {
+    // 1. Accuracy filter:
+    // Drop coarse network fixes (> 65m) if we already have an established accurate lock,
+    // preventing false cell-tower jumps whether recording or browsing live map.
+    if (lastFixCoordsRef.current && accuracy && accuracy > 65) {
+      return;
+    }
+    if (isRecordingRef.current && recordedPointsRef.current.length > 3 && accuracy && accuracy > 45) {
       return;
     }
 
@@ -699,7 +707,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           setGpsError(userMsg);
         }
       },
-      { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 },
     );
   }, [enabled, isTrackingActive, processLocationFix]);
 

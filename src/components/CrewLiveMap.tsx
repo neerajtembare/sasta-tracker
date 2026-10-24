@@ -940,6 +940,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       const opacity = isOnline ? '1' : '0.65';
 
+      // Speed/status tag styling: green for cruising, amber for stopped, slate for offline
+      const statusColor = !isOnline ? '#64748b' : isStopped ? '#f59e0b' : '#10b981';
+      const statusBg = !isOnline ? '#0f172a' : isStopped ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)';
+
       const html = `
         <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
           ${haloRing}
@@ -951,6 +955,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </div>
           <div class="upright-counter-rotate" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
             ${isStarred ? '⭐ ' : ''}${m.name}
+          </div>
+          <div class="upright-counter-rotate live-rider-speed" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:${statusBg}; border:1px solid ${statusColor}; color:${statusColor}; font-family:monospace; font-size:7px; font-weight:900; padding:0.5px 3.5px; border-radius:3px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.7); transition:transform 0.3s ease; letter-spacing:0.3px;">
+            ${statusTag}
           </div>
         </div>
       `;
@@ -1007,6 +1014,15 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               upEl.style.transform = `rotate(${memberCounterRotation}deg)`;
             }
           });
+
+          // In-place speed/status tag text and color update (avoids full icon rebuild for speed changes)
+          const speedEl = el.querySelector('.live-rider-speed') as HTMLElement | null;
+          if (speedEl && prev && prev.speedText !== statusTag) {
+            speedEl.textContent = statusTag;
+            speedEl.style.color = statusColor;
+            speedEl.style.borderColor = statusColor;
+            speedEl.style.backgroundColor = statusBg;
+          }
         }
 
         // Only rebuild DOM icon if identity, host status, online state or star status changed
@@ -1354,7 +1370,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
           left: 'max(0.75rem, env(safe-area-inset-left))',
         }}
-        className="absolute z-20 pointer-events-auto animate-in fade-in duration-200"
+        className="absolute z-30 pointer-events-auto animate-in fade-in duration-200"
       >
         <div 
           onClick={() => triggerHaptic(20)}
@@ -1365,7 +1381,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         }`}>
           <div className="flex items-baseline gap-1">
             <span className="font-heading font-black text-2xl tracking-tighter text-cyan-400">
-              {myLocation ? Math.round(myLocation.speedKmh) : '0'}
+              {myLocation ? Math.round(unitSystem === 'imperial' ? myLocation.speedKmh * 0.621371 : myLocation.speedKmh) : '0'}
             </span>
             <span className="text-[9px] font-bold text-slate-400 uppercase">
               {unitSystem === 'imperial' ? 'mph' : 'km/h'}
@@ -1377,7 +1393,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </div>
           {isRecording && totalDistanceMeters !== undefined && totalDistanceMeters > 0 && (
             <div className="text-[8px] font-bold text-rose-400 mt-0.5 border-t border-slate-800/80 pt-0.5 w-full text-center">
-              REC • {(totalDistanceMeters / 1000).toFixed(1)} km
+              REC • {(totalDistanceMeters / 1000).toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}
             </div>
           )}
         </div>
@@ -1391,7 +1407,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
           right: 'max(0.75rem, env(safe-area-inset-right))',
         }}
-        className="absolute z-20 flex flex-col items-center gap-2 pointer-events-auto"
+        className="absolute z-30 flex flex-col items-center gap-2 pointer-events-auto"
       >
         {/* Glove-friendly Zoom In / Out & Layer Quick Toggle */}
         <div className="flex flex-col gap-1.5 mb-0.5">
@@ -1548,11 +1564,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       {/* ─────────────────────────────────────────────────────────────
           1-TAP FOLLOW SQUAD LEADER PILL (WHEN NOT TRAILING)
+          Positioned below the trailing HUD / callout banner zone to avoid overlap
       ───────────────────────────────────────────────────────────── */}
       {!trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
         <div 
           style={{ 
-            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            top: 'max(6.5rem, calc(env(safe-area-inset-top) + 6.2rem))',
           }}
           className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in slide-in-from-top-1 duration-150"
         >

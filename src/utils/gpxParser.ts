@@ -91,8 +91,17 @@ export function calculateHysteresisElevation(
   return { gain: Math.round(gain), loss: Math.round(loss) };
 }
 export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAnalysis {
+  if (!xmlText || typeof xmlText !== 'string' || xmlText.trim().length === 0) {
+    throw new Error('GPX content is empty or unreadable.');
+  }
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
+
+  const parserError = doc.querySelector('parsererror');
+  if (parserError) {
+    throw new Error('Invalid GPX format: XML is malformed or unreadable.');
+  }
 
   let trackName = 'Track Ride';
   const nameEl = doc.querySelector('trk > name') || doc.querySelector('name');
@@ -682,15 +691,18 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     splitStartKm = splitEndKm;
   }
 
-  // Calculate bounding box
-  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-  for (const p of allPoints) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
+  // Calculate bounding box safely
+  let boundingBox: RideAnalysis['boundingBox'] = undefined;
+  if (allPoints.length > 0) {
+    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+    for (const p of allPoints) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+    }
+    boundingBox = { minLat, maxLat, minLon, maxLon };
   }
-  const boundingBox = { minLat, maxLat, minLon, maxLon };
 
   const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh);
 
@@ -709,8 +721,8 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     elevLossM,
     elevMinM,
     elevMaxM,
-    elevStartM: allPoints[0].ele,
-    elevEndM: allPoints[allPoints.length - 1].ele,
+    elevStartM: allPoints.length > 0 ? (allPoints[0].ele ?? null) : null,
+    elevEndM: allPoints.length > 0 ? (allPoints[allPoints.length - 1].ele ?? null) : null,
     startTime,
     endTime,
     avgSatellites,

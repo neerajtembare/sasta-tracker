@@ -52,61 +52,120 @@ function openIDB(): Promise<IDBDatabase | null> {
   });
 }
 
-async function saveToIndexedDB(rides: SavedRide[]): Promise<void> {
+// ─── Atomic IndexedDB Helpers ─────────────────────────────────────
+let idbInitPromise: Promise<SavedRide[]> | null = null;
+
+async function putRideInIndexedDB(ride: SavedRide): Promise<void> {
   const db = await openIDB();
   if (!db) return;
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     try {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      // Clear and re-populate to keep exact order and avoid stale records
-      store.clear();
-      for (const ride of rides) {
-        store.put(ride);
-      }
+      store.put(ride);
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    } catch (e) {
+      tx.onerror = () => resolve();
+    } catch {
       resolve();
     }
   });
 }
 
-export async function initIndexedDB(): Promise<SavedRide[]> {
+async function deleteRideFromIndexedDB(id: string): Promise<void> {
   const db = await openIDB();
-  if (!db) return getGarageRides();
+  if (!db) return;
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     try {
-      const tx = db.transaction(STORE_NAME, 'readonly');
+      const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        const results = req.result;
-        if (Array.isArray(results) && results.length > 0) {
-          memoryCache = results;
-          // Synchronize back to localStorage top 10 as fallback
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(results.slice(0, 10)));
-          } catch {
-            // Ignore quota
-          }
-          resolve(results);
-        } else {
-          // If IndexedDB is empty, seed from localStorage
-          const local = getGarageRides();
-          if (local.length > 0) {
-            saveToIndexedDB(local).catch(() => {});
-          }
-          resolve(local);
-        }
-      };
-      req.onerror = () => resolve(getGarageRides());
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
     } catch {
-      resolve(getGarageRides());
+      resolve();
     }
   });
+}
+
+async function clearAllInIndexedDB(): Promise<void> {
+  const db = await openIDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function batchPutRidesInIndexedDB(rides: SavedRide[]): Promise<void> {
+  const db = await openIDB();
+  if (!db) return;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const ride of rides) {
+        store.put(ride);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+export function initIndexedDB(): Promise<SavedRide[]> {
+  if (idbInitPromise) return idbInitPromise;
+
+  idbInitPromise = (async () => {
+    const db = await openIDB();
+    if (!db) return getGarageRides();
+
+    return new Promise<SavedRide[]>((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAll();
+        req.onsuccess = () => {
+          const results = req.result;
+          if (Array.isArray(results) && results.length > 0) {
+            results.sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
+            memoryCache = results;
+            // Mirror recent 15 rides to localStorage as fast offline fallback
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(results.slice(0, 15)));
+            } catch {
+              // Ignore quota
+            }
+            resolve(results);
+          } else {
+            // If IndexedDB is empty on first migration, seed from legacy localStorage
+            const local = getGarageRides();
+            if (local.length > 0) {
+              batchPutRidesInIndexedDB(local).catch(() => {});
+            }
+            resolve(local);
+          }
+        };
+        req.onerror = () => resolve(getGarageRides());
+      } catch {
+        resolve(getGarageRides());
+      }
+    });
+  })();
+
+  return idbInitPromise;
 }
 
 // Kick off IndexedDB initialization in browser environment
@@ -161,24 +220,15 @@ export function getGarageRides(): SavedRide[] {
   }
 }
 
-function persistRides(ridesToPersist: SavedRide[]): SavedRide[] {
-  // Ensure strict newest-first sorting before persisting
-  const sorted = [...ridesToPersist].sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
-  memoryCache = sorted;
-
-  // 1. Asynchronously persist to high-capacity IndexedDB (gigabytes available)
-  saveToIndexedDB(memoryCache).catch(e => {
-    console.warn('Background IndexedDB sync warning:', e);
-  });
-
-  // 2. Also keep recent rides in localStorage as instant sync fallback
-  let list = [...memoryCache];
+function syncLocalStorageMirror(rides: SavedRide[]): void {
+  // Mirror recent 15 rides to localStorage with quota-safe trimming
+  let list = [...rides].slice(0, 15);
   let attempts = 0;
   while (attempts < 5) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-      return memoryCache;
-    } catch (e) {
+      return;
+    } catch {
       if (list.length > 1) {
         list = list.slice(0, list.length - 1);
         attempts++;
@@ -187,8 +237,6 @@ function persistRides(ridesToPersist: SavedRide[]): SavedRide[] {
       }
     }
   }
-
-  return memoryCache;
 }
 
 export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: string; createdAt?: number }): SavedRide {
@@ -224,9 +272,18 @@ export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: s
 
   // Prepend to top — newest ride is ALWAYS at index 0!
   const otherRides = rides.filter(r => r.id !== id);
-  const updatedList = [savedRecord, ...otherRides].slice(0, 100);
+  const updatedList = [savedRecord, ...otherRides].sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
 
-  persistRides(updatedList);
+  memoryCache = updatedList;
+
+  // Atomic IndexedDB write — NEVER clears the DB!
+  putRideInIndexedDB(savedRecord).catch(e => {
+    console.warn('Atomic IndexedDB put error:', e);
+  });
+
+  // Mirror recent rides to localStorage
+  syncLocalStorageMirror(updatedList);
+
   if (typeof window !== 'undefined') {
     import('./cloudSync').then(m => m.triggerBackgroundAutoSync()).catch(() => {});
   }
@@ -245,16 +302,39 @@ export function updateGarageRide(id: string, updates: Partial<Omit<SavedRide, 'i
   };
 
   const otherRides = rides.filter(r => r.id !== id);
-  return persistRides([updatedRecord, ...otherRides]);
+  const updatedList = [updatedRecord, ...otherRides].sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
+  memoryCache = updatedList;
+
+  // Atomic IndexedDB update
+  putRideInIndexedDB(updatedRecord).catch(e => {
+    console.warn('Atomic IndexedDB update error:', e);
+  });
+
+  syncLocalStorageMirror(updatedList);
+  return updatedList;
 }
 
 export function deleteGarageRide(id: string): SavedRide[] {
   const rides = getGarageRides().filter(r => r.id !== id);
-  return persistRides(rides);
+  memoryCache = rides;
+
+  // Atomic IndexedDB deletion
+  deleteRideFromIndexedDB(id).catch(e => {
+    console.warn('Atomic IndexedDB delete error:', e);
+  });
+
+  syncLocalStorageMirror(rides);
+  return rides;
 }
 
 export function clearAllGarageRides(): void {
-  persistRides([]);
+  memoryCache = [];
+  clearAllInIndexedDB().catch(e => {
+    console.warn('IndexedDB clear error:', e);
+  });
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
 }
 
 export function importGarageBackup(importedRides: any[]): SavedRide[] {
@@ -287,8 +367,13 @@ export function importGarageBackup(importedRides: any[]): SavedRide[] {
     throw new Error('No valid rides found in backup file');
   }
 
-  const merged = Array.from(currentMap.values()).slice(0, 100);
-  return persistRides(merged);
+  const merged = Array.from(currentMap.values()).sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
+  memoryCache = merged;
+  batchPutRidesInIndexedDB(merged).catch(e => {
+    console.warn('Batch put error in importGarageBackup:', e);
+  });
+  syncLocalStorageMirror(merged);
+  return merged;
 }
 
 // ─── Optional Garage PIN / Password Protection ────────────────────

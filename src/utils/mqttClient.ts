@@ -38,6 +38,7 @@ export class SimpleMqttClient {
 
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
+  private pendingCriticalQueue: Array<{ topic: string; payload: any; timestamp: number }> = [];
 
   constructor(options: MqttClientOptions = {}) {
     this.brokerUrls = options.brokerUrls && options.brokerUrls.length > 0
@@ -145,6 +146,14 @@ export class SimpleMqttClient {
             this.startPing();
             // Re-subscribe all active topics
             this.subscribedTopics.forEach(topic => this.sendSubscribe(topic));
+
+            // Flush queued critical messages that were blocked during temporary blackout
+            const now = Date.now();
+            const toFlush = this.pendingCriticalQueue.filter(m => (now - m.timestamp) < 90000);
+            this.pendingCriticalQueue = [];
+            toFlush.forEach(item => {
+              this.publish(item.topic, item.payload, false);
+            });
           } else {
             this.onStatusChange('error', `Connection rejected (code ${returnCode})`);
           }
@@ -251,8 +260,19 @@ export class SimpleMqttClient {
     this.subscribedTopics.delete(topic);
   }
 
-  public publish(topic: string, payload: any): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+  public publish(topic: string, payload: any, isCritical?: boolean): void {
+    const isCriticalMessage = isCritical !== undefined ? isCritical : 
+      (typeof payload === 'object' && payload !== null && (payload.type === 'SOS_PING' || payload.type === 'CALLOUT' || payload.type === 'ROUTE_SHARE'));
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (isCriticalMessage) {
+        this.pendingCriticalQueue.push({ topic, payload, timestamp: Date.now() });
+        if (this.pendingCriticalQueue.length > 10) {
+          this.pendingCriticalQueue.shift();
+        }
+      }
+      return;
+    }
 
     try {
       const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
@@ -273,6 +293,9 @@ export class SimpleMqttClient {
       this.ws.send(packet);
     } catch (err) {
       console.warn('Failed publishing MQTT packet', err);
+      if (isCriticalMessage) {
+        this.pendingCriticalQueue.push({ topic, payload, timestamp: Date.now() });
+      }
     }
   }
 

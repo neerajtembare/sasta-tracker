@@ -111,12 +111,30 @@ class MotorcycleCrashDetector {
     }
   }
 
+  private motionHandler: ((event: DeviceMotionEvent) => void) | null = null;
+
+  public async requestMotionPermission(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    if (typeof (DeviceMotionEvent as any)?.requestPermission === 'function') {
+      try {
+        const response = await (DeviceMotionEvent as any).requestPermission();
+        return response === 'granted';
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
   public startListening(onCrashDetected: (event: CrashEvent) => void) {
-    if (typeof window === 'undefined' || this.isListening) return;
+    if (typeof window === 'undefined') return;
+    if (this.isListening) {
+      this.stopListening();
+    }
     this.onCrashCallback = onCrashDetected;
 
     const handleMotion = (event: DeviceMotionEvent) => {
-      if (!this.isEnabled()) return;
+      if (!this.isListening || !this.isEnabled()) return;
       const now = Date.now();
       if (now < this.impactCooldownUntil) return;
 
@@ -157,7 +175,8 @@ class MotorcycleCrashDetector {
     };
 
     try {
-      window.addEventListener('devicemotion', handleMotion, { passive: true });
+      this.motionHandler = handleMotion;
+      window.addEventListener('devicemotion', this.motionHandler, { passive: true });
       this.isListening = true;
     } catch (err) {
       console.warn('Crash detection motion listener warning:', err);
@@ -167,6 +186,12 @@ class MotorcycleCrashDetector {
   public stopListening() {
     this.isListening = false;
     this.cancelPotentialImpact();
+    if (this.motionHandler && typeof window !== 'undefined') {
+      try {
+        window.removeEventListener('devicemotion', this.motionHandler);
+      } catch {}
+      this.motionHandler = null;
+    }
   }
 }
 

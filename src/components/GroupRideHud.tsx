@@ -9,6 +9,7 @@ interface GroupRideHudProps {
   sosAlert: SosAlert | null;
   onOpenModal: () => void;
   onTriggerSos: () => void;
+  onCancelSos?: () => void;
   onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
   unitSystem?: 'metric' | 'imperial';
 }
@@ -19,6 +20,7 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
   sosAlert,
   onOpenModal,
   onTriggerSos,
+  onCancelSos,
   onSendVoiceBlast,
   unitSystem = 'metric',
 }) => {
@@ -107,14 +109,24 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
             compact={true}
           />
         )}
-        <button
-          onClick={onTriggerSos}
-          className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
-          title="Call crew to regroup"
-        >
-          <AlertTriangle className="w-3 h-3 text-rose-400" />
-          <span className="hidden sm:inline">Regroup</span>
-        </button>
+        {sosAlert ? (
+          <button
+            onClick={() => onCancelSos ? onCancelSos() : onTriggerSos()}
+            className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shrink-0 cursor-pointer shadow-md shadow-emerald-950/60 transition-colors animate-pulse"
+            title="Cancel Emergency SOS and notify squad you are safe"
+          >
+            <span>🟢 Safe</span>
+          </button>
+        ) : (
+          <button
+            onClick={onTriggerSos}
+            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-[10px] flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+            title="Call crew to regroup"
+          >
+            <AlertTriangle className="w-3 h-3 text-rose-400" />
+            <span className="hidden sm:inline">Regroup</span>
+          </button>
+        )}
       </div>
     </div>
   );

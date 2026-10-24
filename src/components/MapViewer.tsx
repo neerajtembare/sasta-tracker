@@ -37,6 +37,14 @@ import {
 } from 'lucide-react';
 import { preCacheRouteTiles, getOfflineTileCount } from '../utils/mapCache';
 import { GroupMemberInfo } from '../hooks/useGroupRide';
+import { 
+  UnitSystem, 
+  formatSpeed, 
+  formatDistance, 
+  formatElevation, 
+  convertSpeed, 
+  convertDistance 
+} from '../utils/units';
 
 interface MapViewerProps {
   analysis: RideAnalysis;
@@ -48,6 +56,7 @@ interface MapViewerProps {
   theme?: AppTheme;
   onOpenDiagnostics?: () => void;
   groupMembers?: GroupMemberInfo[];
+  unitSystem?: UnitSystem;
 }
 
 // Speed to color function for map and YouTube-style scrubber
@@ -71,6 +80,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
   theme = 'dark',
   onOpenDiagnostics,
   groupMembers,
+  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -267,14 +277,22 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
     const areaPath = `0,${svgHeight} ` + pointsStr + ` 100,${svgHeight}`;
 
+    const isImperial = unitSystem === 'imperial';
+    const elevGain = isImperial ? Math.round(analysis.elevGainM * 3.28084) : Math.round(analysis.elevGainM);
+    const elevUnit = isImperial ? 'ft' : 'm';
+    const minEleVal = isImperial ? Math.round(minEle * 3.28084) : Math.round(minEle);
+    const maxEleVal = isImperial ? Math.round(maxEle * 3.28084) : Math.round(maxEle);
+
     return {
-      minEle: Math.round(minEle),
-      maxEle: Math.round(maxEle),
+      minEle: minEleVal,
+      maxEle: maxEleVal,
+      elevGain,
+      elevUnit,
       pointsStr,
       areaPath,
       sampled
     };
-  }, [activePoints]);
+  }, [activePoints, analysis.elevGainM, unitSystem]);
 
   // Format seconds to HH:MM:SS
   const formatTime = (seconds: number) => {
@@ -366,15 +384,21 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
     const areaPath = `0,${svgHeight} ` + pointsStr + ` 100,${svgHeight}`;
 
+    const isImperial = unitSystem === 'imperial';
+    const maxSpeedVal = Math.round(isImperial ? maxSpeed * 0.621371 : maxSpeed);
+    const avgSpeedVal = Math.round(isImperial ? analysis.movingAvgSpeedKmh * 0.621371 : analysis.movingAvgSpeedKmh);
+    const speedUnit = isImperial ? 'mph' : 'km/h';
+
     return {
       minSpeed: 0,
-      maxSpeed: Math.round(maxSpeed),
-      avgSpeed: Math.round(analysis.movingAvgSpeedKmh),
+      maxSpeed: maxSpeedVal,
+      avgSpeed: avgSpeedVal,
+      speedUnit,
       pointsStr,
       areaPath,
       sampled,
     };
-  }, [activePoints, analysis.maxSpeedKmh, analysis.movingAvgSpeedKmh]);
+  }, [activePoints, analysis.maxSpeedKmh, analysis.movingAvgSpeedKmh, unitSystem]);
 
   // Proportional pit-stop notches for timeline chapter marks
   const pitStopNotches = useMemo(() => {
@@ -748,8 +772,8 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
           poly.bindTooltip(
             `<div style="font-family:monospace; font-size:11px; padding:3px 6px; background:${isLight ? '#ffffff' : '#0d131a'}; color:${isLight ? '#0f172a' : '#ffffff'}; border:1px solid ${chunk.color}; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">
-              <strong style="color:${chunk.color}; font-size:12px;">~${chunk.avgSpeed.toFixed(0)} km/h</strong><br/>
-              <span style="opacity:0.8; font-size:10px;">km ${chunk.startDist.toFixed(1)} – ${chunk.endDist.toFixed(1)}</span>
+              <strong style="color:${chunk.color}; font-size:12px;">~${formatSpeed(chunk.avgSpeed, unitSystem, 0)}</strong><br/>
+              <span style="opacity:0.8; font-size:10px;">${formatDistance(chunk.startDist, unitSystem, 1)} – ${formatDistance(chunk.endDist, unitSystem, 1)}</span>
             </div>`,
             { sticky: true }
           );
@@ -881,23 +905,28 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       });
     }
 
-    // 7. Distance Milestone Markers (every 10km or 25km)
+    // 7. Distance Milestone Markers (every 10km/mi or 25km/mi)
     if (showMilestones && pts.length > 1) {
-      const stepKm = analysis.totalDistanceKm > 60 ? 25 : 10;
-      let nextMilestone = stepKm;
+      const isImperial = unitSystem === 'imperial';
+      const totalDist = isImperial ? analysis.totalDistanceKm * 0.621371 : analysis.totalDistanceKm;
+      const stepDist = totalDist > 60 ? 25 : 10;
+      let nextMilestone = stepDist;
       for (let i = 1; i < pts.length; i++) {
-        const ptDist = pts[i].distanceFromStartKm ?? 0;
-        if (ptDist >= nextMilestone && ptDist < analysis.totalDistanceKm - 1) {
+        const ptDistKm = pts[i].distanceFromStartKm ?? 0;
+        const ptDist = isImperial ? ptDistKm * 0.621371 : ptDistKm;
+        if (ptDist >= nextMilestone && ptDist < totalDist - 1) {
+          const unitTag = isImperial ? 'mi' : 'k';
+          const unitWord = isImperial ? 'miles' : 'km';
           const msIcon = L.divIcon({
             className: 'custom-milestone-marker',
-            html: `<div style="padding:2px 6px; background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; border-radius:6px; font-family:monospace; font-weight:800; font-size:10px; box-shadow:0 2px 6px rgba(0,0,0,0.6); white-space:nowrap;">🚩 ${Math.round(nextMilestone)}k</div>`,
-            iconSize: [42, 20],
-            iconAnchor: [21, 10],
+            html: `<div style="padding:2px 6px; background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; border-radius:6px; font-family:monospace; font-weight:800; font-size:10px; box-shadow:0 2px 6px rgba(0,0,0,0.6); white-space:nowrap;">🚩 ${Math.round(nextMilestone)}${unitTag}</div>`,
+            iconSize: [46, 20],
+            iconAnchor: [23, 10],
           });
           L.marker([pts[i].lat, pts[i].lon], { icon: msIcon })
             .addTo(map)
-            .bindTooltip(`Milestone: ${Math.round(nextMilestone)} km reached`, { direction: 'top', offset: [0, -10] });
-          nextMilestone += stepKm;
+            .bindTooltip(`Milestone: ${Math.round(nextMilestone)} ${unitWord} reached`, { direction: 'top', offset: [0, -10] });
+          nextMilestone += stepDist;
         }
       }
     }
@@ -908,7 +937,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       }
     }, 150);
 
-  }, [analysis, mapStyle, showPitStops, showPointDots, routeMode, turnaroundIndex, isLight, showMilestones]);
+  }, [analysis, mapStyle, showPitStops, showPointDots, routeMode, turnaroundIndex, isLight, showMilestones, unitSystem]);
 
   // Clean up Leaflet map instance on component unmount
   useEffect(() => {
@@ -935,7 +964,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     if (pt) {
       const scrubPos: L.LatLngTuple = [pt.lat, pt.lon];
       const heading = pt.bearing !== null ? pt.bearing : 0;
-      const speed = pt.speedKmh.toFixed(0);
+      const speed = formatSpeed(pt.speedKmh, unitSystem, 0);
 
       const markerHtml = `
         <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
@@ -947,7 +976,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           </div>
           <!-- Floating live speed tag -->
           <div style="position:absolute; top:-24px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid #38bdf8; color:#38bdf8; font-family:monospace; font-size:10px; font-weight:900; padding:1px 6px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.8);">
-            ${speed} km/h
+            ${speed}
           </div>
         </div>
       `;
@@ -970,7 +999,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         traveledPolylineRef.current.setLatLngs(activeCoords.slice(0, currentIndex + 1));
       }
     }
-  }, [currentIndex, activePoints, activeCoords]);
+  }, [currentIndex, activePoints, activeCoords, unitSystem]);
 
   // Center and highlight stop / coordinate when selected by user from list
   useEffect(() => {
@@ -1028,7 +1057,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
       const pos: L.LatLngTuple = [m.location.lat, m.location.lon];
       const initial = m.name.slice(0, 1).toUpperCase();
       const color = m.color || '#ffe600';
-      const speed = m.location.speedKmh.toFixed(0);
+      const speedText = formatSpeed(m.location.speedKmh, unitSystem, 0);
 
       const html = `
         <div style="position:relative; width:32px; height:32px; display:flex; align-items:center; justify-content:center;">
@@ -1036,7 +1065,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             ${initial}
           </div>
           <div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%); background:#0f172a; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:9px; font-weight:bold; padding:0 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.8);">
-            ${m.name}: ${speed}k
+            ${m.name}: ${speedText}
           </div>
         </div>
       `;
@@ -1064,7 +1093,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         friendMarkersRef.current.delete(id);
       }
     });
-  }, [groupMembers]);
+  }, [groupMembers, unitSystem]);
 
   // Recenter map bounds
   const recenterMap = () => {
@@ -1324,15 +1353,15 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             <span className="font-bold text-slate-300">Speed:</span>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shadow-xs" />
-              <span className="text-slate-300">&le; {Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.55)}</span>
+              <span className="text-slate-300">&le; {formatSpeed(Math.max(analysis.maxSpeedKmh, 40) * 0.55, unitSystem, 0)}</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block shadow-xs" />
-              <span className="text-slate-300">{Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.55)}–{Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.80)}</span>
+              <span className="text-slate-300">{convertSpeed(Math.max(analysis.maxSpeedKmh, 40) * 0.55, unitSystem).value.toFixed(0)}–{formatSpeed(Math.max(analysis.maxSpeedKmh, 40) * 0.80, unitSystem, 0)}</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block shadow-xs" />
-              <span className="text-slate-300">&gt; {Math.round(Math.max(analysis.maxSpeedKmh, 40) * 0.80)} km/h</span>
+              <span className="text-slate-300">&gt; {formatSpeed(Math.max(analysis.maxSpeedKmh, 40) * 0.80, unitSystem, 0)}</span>
             </div>
             <button
               onClick={() => setShowHeatmapLegend(false)}
@@ -1402,7 +1431,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             {/* Live Readout Pill */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 font-mono text-xs">
               <span className="text-sky-400 font-black">
-                {currentPoint.speedKmh.toFixed(0)} <span className="text-[10px] font-normal">km/h</span>
+                {convertSpeed(currentPoint.speedKmh, unitSystem).value.toFixed(0)} <span className="text-[10px] font-normal">{convertSpeed(currentPoint.speedKmh, unitSystem).unit}</span>
               </span>
               <span className={`text-[11px] ${subText} hidden sm:inline`}>•</span>
               <span className={`text-[11px] font-bold ${currentGradient > 2 ? 'text-emerald-400' : currentGradient < -2 ? 'text-amber-400' : subText} hidden sm:inline`}>
@@ -1410,7 +1439,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               </span>
               <span className={`text-[11px] ${subText} hidden sm:inline`}>•</span>
               <span className={`text-[11px] ${subText} hidden sm:inline`}>
-                {currentPoint.distanceFromStartKm.toFixed(1)} km
+                {formatDistance(currentPoint.distanceFromStartKm, unitSystem, 1)}
               </span>
             </div>
 
@@ -1435,9 +1464,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 : 'bg-sky-500/10 border-sky-500/20 text-sky-300'
             }`}>
               <div className="flex items-center gap-2 font-bold truncate">
-                <span className="text-sky-400">⚡ {currentPoint.speedKmh.toFixed(1)} km/h</span>
+                <span className="text-sky-400">⚡ {formatSpeed(currentPoint.speedKmh, unitSystem, 1)}</span>
                 <span className="opacity-30">|</span>
-                <span>⛰️ {currentPoint.ele !== null ? `${Math.round(currentPoint.ele)}m` : '—'}</span>
+                <span>⛰️ {formatElevation(currentPoint.ele, unitSystem)}</span>
                 <span className="opacity-30">|</span>
                 <span className={currentGradient > 2 ? 'text-emerald-400 font-bold' : currentGradient < -2 ? 'text-amber-400 font-bold' : 'text-slate-400'}>
                   {currentGradient > 0 ? `+${currentGradient.toFixed(1)}%` : `${currentGradient.toFixed(1)}%`}
@@ -1449,7 +1478,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                 </span>
                 <span className="opacity-30">|</span>
                 <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>
-                  📍 {currentPoint.distanceFromStartKm.toFixed(1)} km
+                  📍 {formatDistance(currentPoint.distanceFromStartKm, unitSystem, 1)}
                 </span>
                 <button
                   id="btn-scrubber-hud-collapse"
@@ -1475,10 +1504,10 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                       className="w-2 h-2 rounded-full shrink-0" 
                       style={{ background: getSpeedColor(hoverScrub.pt.speedKmh, analysis.maxSpeedKmh) }} 
                     />
-                    <span className="text-sky-400">{hoverScrub.pt.speedKmh.toFixed(1)} km/h</span>
+                    <span className="text-sky-400">{formatSpeed(hoverScrub.pt.speedKmh, unitSystem, 1)}</span>
                   </div>
                   <span className="text-slate-500">|</span>
-                  <span>{hoverScrub.pt.distanceFromStartKm.toFixed(1)} km</span>
+                  <span>{formatDistance(hoverScrub.pt.distanceFromStartKm, unitSystem, 1)}</span>
                   <span className="text-slate-500">|</span>
                   <span>{formatTime(getElapsedTime(hoverScrub.idx))}</span>
                 </div>
@@ -1544,7 +1573,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
                 <div className="flex items-center gap-1.5 sm:gap-3 truncate text-right">
                   <span className="truncate">
-                    {currentPoint.distanceFromStartKm.toFixed(1)} / {analysis.totalDistanceKm.toFixed(1)} km
+                    {formatDistance(currentPoint.distanceFromStartKm, unitSystem, 1)} / {formatDistance(analysis.totalDistanceKm, unitSystem, 1)}
                   </span>
                   <span className={`shrink-0 ${subText}`}>
                     ({Math.round((currentIndex / Math.max(1, activePoints.length - 1)) * 100)}%)
@@ -1560,14 +1589,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-0.5 px-1">
                       <span className="flex items-center gap-1 text-slate-400">
                         <span>⚡ Min:</span>
-                        <strong className="text-emerald-400">{speedProfileData.minSpeed} km/h</strong>
+                        <strong className="text-emerald-400">{speedProfileData.minSpeed} {speedProfileData.speedUnit}</strong>
                       </span>
                       <span className="text-[10px] text-emerald-400 font-bold tracking-wider uppercase flex items-center gap-1">
-                        Speed Profile <span className="text-slate-500 font-normal hidden sm:inline">(Avg: {speedProfileData.avgSpeed} km/h)</span>
+                        Speed Profile <span className="text-slate-500 font-normal hidden sm:inline">(Avg: {speedProfileData.avgSpeed} {speedProfileData.speedUnit})</span>
                       </span>
                       <span className="flex items-center gap-1 text-slate-400">
                         <span>🚀 Peak:</span>
-                        <strong className="text-emerald-400">{speedProfileData.maxSpeed} km/h</strong>
+                        <strong className="text-emerald-400">{speedProfileData.maxSpeed} {speedProfileData.speedUnit}</strong>
                       </span>
                     </div>
                     <div 
@@ -1620,14 +1649,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pb-0.5 px-1">
                       <span className="flex items-center gap-1 text-slate-400">
                         <span>📉 Min:</span>
-                        <strong className="text-sky-300">{elevationProfileData.minEle}m</strong>
+                        <strong className="text-sky-300">{elevationProfileData.minEle}{elevationProfileData.elevUnit}</strong>
                       </span>
                       <span className="text-[10px] text-sky-400 font-bold tracking-wider uppercase flex items-center gap-1">
-                        Elevation Profile <span className="text-slate-500 font-normal hidden sm:inline">(+{analysis.elevGainM.toFixed(0)}m Gain)</span>
+                        Elevation Profile <span className="text-slate-500 font-normal hidden sm:inline">(+{elevationProfileData.elevGain}{elevationProfileData.elevUnit} Gain)</span>
                       </span>
                       <span className="flex items-center gap-1 text-slate-400">
                         <span>📈 Max:</span>
-                        <strong className="text-sky-300">{elevationProfileData.maxEle}m</strong>
+                        <strong className="text-sky-300">{elevationProfileData.maxEle}{elevationProfileData.elevUnit}</strong>
                       </span>
                     </div>
                     <div 

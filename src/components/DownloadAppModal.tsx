@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Download, Smartphone, Share2, Check, X, ShieldCheck, Copy, Sparkles, ExternalLink, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Smartphone, Share2, Check, X, ShieldCheck, Copy, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
+import { checkAppForUpdates, CURRENT_APP_VERSION, AppUpdateCheckResult, DIRECT_APK_DOWNLOAD_URL } from '../utils/appUpdater';
 
-export const APK_DIRECT_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog.apk';
+export const APK_DIRECT_URL = DIRECT_APK_DOWNLOAD_URL;
 export const APK_DEBUG_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest/download/throttlelog-debug.apk';
 export const APK_RELEASE_URL = 'https://github.com/neerajtembare/sasta-tracker/releases/latest';
 
@@ -25,6 +26,26 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeTab, setActiveTab] = useState<'apk' | 'pwa'>('apk');
   const [showInstallSteps, setShowInstallSteps] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateCheckResult | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      handleCheckUpdates();
+    }
+  }, [isOpen]);
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const res = await checkAppForUpdates();
+      setUpdateInfo(res);
+    } catch {
+      // ignore
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -121,10 +142,39 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
                   <Sparkles className="w-2.5 h-2.5" />
                   Recommended for Android
                 </span>
-                <span className="text-[10px] text-emerald-400 font-bold">
-                  v1.1.0 • ~4.0 MB
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-emerald-400 font-bold">
+                    v{CURRENT_APP_VERSION} • ~4.0 MB
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdates}
+                    disabled={isCheckingUpdate}
+                    title="Check for newly released APK"
+                    className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-colors"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isCheckingUpdate ? 'animate-spin text-emerald-400' : ''}`} />
+                  </button>
+                </div>
               </div>
+
+              {/* In-App Update Notice if Newer Build Available */}
+              {updateInfo?.updateAvailable ? (
+                <div className="p-2.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[11px] space-y-1 animate-pulse">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>New Version Available: v{updateInfo.latestVersion}</span>
+                  </div>
+                  <p className="text-[10px] leading-tight text-amber-200/90">
+                    Upgrades your app in-place. Your recorded rides, garage bikes, and settings will not be erased.
+                  </p>
+                </div>
+              ) : updateInfo ? (
+                <div className="text-[10px] text-emerald-400/80 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>You have the latest version installed (v{CURRENT_APP_VERSION})</span>
+                </div>
+              ) : null}
 
               <div className="space-y-1">
                 <div className="font-heading font-black text-sm text-white flex items-center gap-1.5">
@@ -137,13 +187,17 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
 
               <div className="pt-1">
                 <a
-                  href={APK_DIRECT_URL}
+                  href={updateInfo?.updateAvailable ? updateInfo.downloadUrl : APK_DIRECT_URL}
                   download="throttlelog.apk"
                   onClick={() => triggerHaptic(40)}
                   className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer transition-all active:scale-95 no-underline"
                 >
                   <Download className="w-4 h-4 stroke-[2.5]" />
-                  <span>Download Android APK (.apk)</span>
+                  <span>
+                    {updateInfo?.updateAvailable
+                      ? `⚡ Download & Upgrade to v${updateInfo.latestVersion} (.apk)`
+                      : `Download Android APK v${CURRENT_APP_VERSION} (.apk)`}
+                  </span>
                 </a>
               </div>
             </div>

@@ -58,6 +58,7 @@ interface LiveCockpitLoggerProps {
   controls?: GPSControls;
   onOpenGroupRideModal?: () => void;
   onTriggerSos?: () => void;
+  onCancelSos?: () => void;
   onUpdateMyLocation?: (lat: number, lon: number, speedKmh: number, bearing: number | null) => void;
   activeVoiceBlast?: ActiveVoiceBlast | null;
   onDismissVoiceBlast?: () => void;
@@ -78,6 +79,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   controls: externalControls,
   onOpenGroupRideModal,
   onTriggerSos,
+  onCancelSos,
   onUpdateMyLocation,
   activeVoiceBlast = null,
   onDismissVoiceBlast,
@@ -548,6 +550,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   onTriggerSos?.();
                 }
               }}
+              onCancelSos={onCancelSos}
               unitSystem={unitSystem}
             />
           </div>

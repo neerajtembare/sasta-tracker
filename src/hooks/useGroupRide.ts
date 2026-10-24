@@ -64,6 +64,7 @@ export interface CrewNotification {
 }
 
 export interface SosAlert {
+  fromId?: string;
   fromName: string;
   lat: number;
   lon: number;
@@ -429,6 +430,13 @@ export function useGroupRide() {
         });
         postCrewNotification(`🚨 EMERGENCY SOS from ${senderName}!`, 'alert');
       }
+    } else if (data.type === 'SOS_CANCEL') {
+      const clearerName = (data.payload && data.payload.fromName) || 'Squad Member';
+      setSosAlert(null);
+      playWaypointChime();
+      triggerHaptic(50);
+      speakAlert(`Emergency alert cleared by ${clearerName}. All riders safe.`);
+      postCrewNotification(`🟢 Emergency SOS cleared by ${clearerName}. All safe!`, 'info');
     } else if (data.type === 'OFFLINE') {
       const riderId = data.riderId;
       if (riderId && riderId !== currentMyId) {
@@ -814,6 +822,7 @@ export function useGroupRide() {
     const loc = myLocationRef.current || { lat: 18.5204, lon: 73.8567 };
     const senderName = profile.name && profile.name.trim() ? profile.name.trim() : 'Rider';
     const alert: SosAlert = {
+      fromId: profile.id,
       fromName: senderName,
       lat: loc.lat,
       lon: loc.lon,
@@ -828,7 +837,33 @@ export function useGroupRide() {
     triggerHaptic([200, 100, 200, 100, 400]);
     speakAlert(`Emergency S O S alert broadcast to squad for ${senderName}.`);
     postCrewNotification(`🚨 You broadcast an EMERGENCY S O S alert!`, 'alert');
-  }, [profile.name, broadcastPayload, postCrewNotification]);
+  }, [profile.id, profile.name, broadcastPayload, postCrewNotification]);
+
+  const cancelSos = useCallback(() => {
+    const senderName = profile.name && profile.name.trim() ? profile.name.trim() : 'Rider';
+    broadcastPayload({
+      type: 'SOS_CANCEL',
+      payload: {
+        fromId: profile.id,
+        fromName: senderName,
+        timestamp: Date.now(),
+      },
+    });
+    setSosAlert(null);
+    triggerHaptic([100, 50, 100]);
+    postCrewNotification(`🟢 You cancelled the emergency SOS alert. Squad notified.`, 'info');
+    speakAlert(`Emergency S O S cancelled. Squad notified you are safe.`);
+  }, [profile.id, profile.name, broadcastPayload, postCrewNotification]);
+
+  const dismissSos = useCallback(() => {
+    // If the alert was triggered by this rider, broadcast cancel to entire squad
+    const isMine = sosAlert?.fromName === profile.name || (sosAlert?.fromId && sosAlert.fromId === profile.id);
+    if (isMine) {
+      cancelSos();
+    } else {
+      setSosAlert(null);
+    }
+  }, [sosAlert, profile.name, profile.id, cancelSos]);
 
   const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {
     const cleanName = (name && name.trim()) || 'Rider';
@@ -1049,7 +1084,8 @@ export function useGroupRide() {
     isConvoyRegrouped,
     updateMyLocation,
     triggerSos,
-    dismissSos: () => setSosAlert(null),
+    cancelSos,
+    dismissSos,
     isOnRadar,
     toggleOnRadar,
     myBattery,

@@ -28,6 +28,7 @@ import { CalloutBanner } from './components/CalloutBanner';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { DownloadAppModal } from './components/DownloadAppModal';
 import { CrashAlertModal } from './components/CrashAlertModal';
+import { PermissionsModal, BackgroundTrackingMode } from './components/PermissionsModal';
 import { crashDetector, CrashEvent } from './utils/crashDetection';
 import { useGroupRide, SharedRouteInfo } from './hooks/useGroupRide';
 import { useGPS } from './hooks/useGPS';
@@ -139,10 +140,18 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState<boolean>(false);
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundTrackingMode>(() => {
+    try {
+      return (localStorage.getItem('throttlelog_background_mode') as BackgroundTrackingMode) || 'keep_running';
+    } catch {
+      return 'keep_running';
+    }
+  });
 
   const isAnyModalOpen = isGarageOpen || isDiagnosticsOpen || isDownloadModalOpen || 
     isStopEditorOpen || isRideNameEditorOpen || isCalibrationOpen || 
-    isShareModalOpen || isReportModalOpen || isCompareModalOpen || isCloudSyncOpen;
+    isShareModalOpen || isReportModalOpen || isCompareModalOpen || isCloudSyncOpen || isPermissionsModalOpen;
 
   const modalHistoryPushedRef = useRef(false);
 
@@ -157,6 +166,7 @@ export default function App() {
     setIsReportModalOpen(false);
     setIsCompareModalOpen(false);
     setIsCloudSyncOpen(false);
+    setIsPermissionsModalOpen(false);
   }, []);
 
   // Sync browser / Android back gesture with open modals
@@ -337,6 +347,35 @@ export default function App() {
       stopNativeRadarKeepAlive();
     }
   }, [isRecordingLive, groupRide.isOnRadar, gps.isTrackingActive]);
+
+  // First-Launch Permissions & Background Mode Setup Onboarding Prompt
+  useEffect(() => {
+    try {
+      const setupCompleted = localStorage.getItem('throttlelog_permissions_setup_completed');
+      if (!setupCompleted) {
+        setIsPermissionsModalOpen(true);
+      }
+    } catch {}
+  }, []);
+
+  // Background Tracking Mode Visibility Watcher (Gracefully halts background GPS service if user chose stop_on_exit)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (backgroundMode === 'stop_on_exit' && !isRecordingLive) {
+          stopNativeRadarKeepAlive();
+        }
+      } else if (document.visibilityState === 'visible') {
+        const isGpsActive = gps.isTrackingActive ?? true;
+        if (isGpsActive && (isRecordingLive || groupRide.isOnRadar)) {
+          startNativeRadarKeepAlive();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [backgroundMode, isRecordingLive, gps.isTrackingActive, groupRide.isOnRadar]);
 
   // Unified Privacy & Stop Tracking Handler (zero-battery standby, stops GPS watch, kills native keep-alive & MQTT broadcasts)
   const handleToggleTracking = useCallback((enable?: boolean) => {
@@ -685,6 +724,8 @@ export default function App() {
   };
 
   const handleCloseTrack = () => {
+    isLocallyInitiatedRouteRef.current = true;
+    groupRide.broadcastActiveRoute(null);
     setAnalysis(null);
     setCurrentRideId(null);
     setScrubIndex(null);
@@ -1218,6 +1259,7 @@ export default function App() {
                   theme={theme}
                   onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
                   groupMembers={groupRide.members}
+                  unitSystem={unitSystem}
                 />
               </div>
             )}
@@ -1318,6 +1360,7 @@ export default function App() {
             sosAlert={groupRide.sosAlert}
             onOpenGroupRideModal={() => setCurrentTab('crew')}
             onTriggerSos={groupRide.triggerSos}
+            onCancelSos={groupRide.cancelSos}
             onUpdateMyLocation={handleUpdateMyLocation}
             activeVoiceBlast={groupRide.activeVoiceBlast}
             onDismissVoiceBlast={groupRide.dismissVoiceBlast}
@@ -1347,6 +1390,7 @@ export default function App() {
               crewNotification={groupRide.crewNotification}
               onDismissCrewNotification={groupRide.dismissCrewNotification}
               onTriggerSos={groupRide.triggerSos}
+              onCancelSos={groupRide.cancelSos}
               onDismissSos={groupRide.dismissSos}
               onUpdateRiderName={groupRide.updateRiderName}
               onAddSquadFriend={groupRide.addSquadFriend}
@@ -1387,6 +1431,7 @@ export default function App() {
               onSendCallout={groupRide.sendCallout}
               gpsError={gps.gpsError}
               onTriggerRollCall={handleManualRollCall}
+              onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
             />
           </div>
         )}
@@ -1639,6 +1684,14 @@ export default function App() {
         onCancel={handleCancelCrashSos}
         onConfirmSos={handleConfirmCrashSos}
         unitSystem={unitSystem}
+      />
+
+      {/* Permissions Onboarding & Background Tracking Preference Modal */}
+      <PermissionsModal
+        isOpen={isPermissionsModalOpen}
+        onClose={() => setIsPermissionsModalOpen(false)}
+        theme={theme}
+        onApplyBackgroundMode={(mode) => setBackgroundMode(mode)}
       />
     </div>
   );

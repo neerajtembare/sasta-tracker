@@ -11,6 +11,7 @@ import { triggerHaptic } from './audioChimes';
 import { nativeRequestAudioFocus, nativeAbandonAudioFocus } from './nativeKeepAlive';
 
 let audioCtx: AudioContext | null = null;
+let audioContextUnlocked = false;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -23,6 +24,39 @@ function getAudioContext(): AudioContext | null {
     audioCtx.resume().catch(() => {});
   }
   return audioCtx;
+}
+
+/**
+ * Prime audio playback pipeline on first user interaction so incoming
+ * squad voice blasts can autoplay through helmet intercom without NotAllowedError.
+ */
+export function unlockAudio(): void {
+  if (typeof window === 'undefined') return;
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  if (!audioContextUnlocked) {
+    try {
+      // 10ms silent WAV buffer to satisfy mobile browser user-gesture requirement
+      const silentAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+      silentAudio.volume = 0.01;
+      silentAudio.play().then(() => {
+        silentAudio.pause();
+        silentAudio.remove();
+        audioContextUnlocked = true;
+      }).catch(() => {});
+    } catch {}
+  }
+}
+
+if (typeof window !== 'undefined') {
+  const unlockEvents = ['touchstart', 'pointerdown', 'keydown', 'click'];
+  const handleUserInteraction = () => {
+    unlockAudio();
+    unlockEvents.forEach(evt => window.removeEventListener(evt, handleUserInteraction, true));
+  };
+  unlockEvents.forEach(evt => window.addEventListener(evt, handleUserInteraction, { capture: true, once: true }));
 }
 
 /**
@@ -101,19 +135,30 @@ class PttVoiceRecorder {
         },
       });
 
-      let chosenMime = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(chosenMime)) {
-        chosenMime = MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-          ? 'audio/mp4'
-          : 'audio/ogg';
+      let chosenMime = '';
+      const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/aac',
+        'audio/ogg;codecs=opus',
+        'audio/ogg'
+      ];
+      for (const cand of candidates) {
+        if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(cand)) {
+          chosenMime = cand;
+          break;
+        }
       }
 
-      this.mediaRecorder = new MediaRecorder(this.stream, {
-        mimeType: chosenMime,
-        audioBitsPerSecond: 16000, // 16kbps: crystal-clear voice while keeping payload under ~10 KB
-      });
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: 16000,
+      };
+      if (chosenMime) {
+        recorderOptions.mimeType = chosenMime;
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.stream, recorderOptions);
 
       this.chunks = [];
       this.startTime = Date.now();
@@ -251,7 +296,13 @@ export async function playVoiceBlastAudio(audioBase64: string, mimeType: string 
 
     audio.volume = 1.0;
 
-    await audio.play();
+    try {
+      await audio.play();
+    } catch (playErr) {
+      nativeAbandonAudioFocus().catch(() => {});
+      console.warn('Voice blast autoplay blocked or deferred by browser policy:', playErr);
+      return;
+    }
 
     audio.onended = () => {
       nativeAbandonAudioFocus().catch(() => {});

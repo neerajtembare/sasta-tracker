@@ -2,7 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { LiveGpsPoint, UnitSystem } from '../types';
 import { convertDistance } from '../utils/units';
 import { playChime } from '../utils/audioChimes';
-import { addNativeLocationListener, NativeLocationData } from '../utils/nativeKeepAlive';
+import { 
+  addNativeLocationListener, 
+  NativeLocationData,
+  startNativeRadarKeepAlive,
+  stopNativeRadarKeepAlive
+} from '../utils/nativeKeepAlive';
 import {
   calculate3DOrientation,
   createZeroCalibration,
@@ -13,6 +18,7 @@ import {
 } from '../utils/gyro3d';
 import { calculateForwardBearing } from '../utils/gpxParser';
 import { speakAlert } from '../utils/tts';
+import { crashDetector } from '../utils/crashDetection';
 
 export interface GPSState {
   // Position & motion
@@ -491,6 +497,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       return { lat: latitude, lon: longitude };
     });
     setCurrentSpeedKmh(kmh);
+    // Directly feed crash detector sensor fusion pipeline at hardware fix rate
+    crashDetector.updateGpsSpeed(kmh);
 
     // 3. Multi-tier heading determination:
     // Tier 1: Hardware GNSS reported heading (if moving >= 2.0 km/h)
@@ -978,6 +986,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       watchIdRef.current = null;
     }
     pauseSilentAudio();
+    stopNativeRadarKeepAlive().catch(() => {});
     setCurrentCoords(null);
     setCurrentSpeedKmh(0);
     setCurrentHeading(null);
@@ -990,6 +999,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       localStorage.setItem('throttlelog_gps_tracking_enabled', 'true');
       localStorage.setItem('sasta_gps_tracking_enabled', 'true');
     } catch {}
+    startNativeRadarKeepAlive().catch(() => {});
   }, []);
 
   const toggleGpsTracking = useCallback((enable?: boolean) => {

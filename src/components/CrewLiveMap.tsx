@@ -103,6 +103,7 @@ interface CrewLiveMapProps {
   theme?: AppTheme;
   unitSystem?: UnitSystem;
   onTriggerSos?: () => void;
+  onCancelSos?: () => void;
   onDismissSos?: () => void;
   onLeaveRoom?: () => void;
   onRejoinRoom?: () => void;
@@ -155,6 +156,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   externalMapLayer,
   onChangeMapLayer,
   onTriggerSos,
+  onCancelSos,
   onDismissSos,
   onLeaveRoom,
   onRejoinRoom,
@@ -273,22 +275,43 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return () => window.removeEventListener('keydown', handleKey);
   }, [isLeaveModalOpen, isLayerPopoverOpen]);
 
-  // Current heading from myLocation
+  // Current heading from myLocation with persistence when stationary
   const myHeading = myLocation?.heading !== null && myLocation?.heading !== undefined ? myLocation.heading : null;
+  const lastKnownHeadingRef = useRef<number | null>(null);
+  if (myHeading !== null) {
+    lastKnownHeadingRef.current = myHeading;
+  }
+  const effectiveCourseHeading = myHeading !== null ? myHeading : lastKnownHeadingRef.current;
 
   const isFreePanning = selectedRiderId === null;
 
   // Calculate rotation for map container
   // North-up: 0° (or 180° if flipped by user).
-  // Course-up: rotated by -myHeading so bike's forward path is ALWAYS UP on phone screen!
+  // Course-up: rotated by -effectiveCourseHeading so bike's forward path is ALWAYS UP on phone screen!
   // In Free Exploration mode (user dragging/browsing): keep North-Up (0°) so pan gestures match finger movement 1:1!
   const targetMapRotation = useMemo(() => {
     let base = 0;
-    if (orientationMode === 'course' && myHeading !== null && !isFreePanning) {
-      base = -myHeading;
+    if (orientationMode === 'course' && effectiveCourseHeading !== null && !isFreePanning) {
+      base = -effectiveCourseHeading;
     }
     return (isFlipped180 ? 180 : 0) + base;
-  }, [orientationMode, myHeading, isFlipped180, isFreePanning]);
+  }, [orientationMode, effectiveCourseHeading, isFlipped180, isFreePanning]);
+
+  // Synchronize CSS rotation on map container & counter-rotate all marker text/badges
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    mapContainerRef.current.style.transform = `rotate(${targetMapRotation}deg)`;
+
+    const counterRotateEls = mapContainerRef.current.querySelectorAll<HTMLElement>('.upright-counter-rotate');
+    counterRotateEls.forEach(el => {
+      if (el.dataset.translateX === 'center' || el.style.transform.includes('translateX(-50%)')) {
+        el.dataset.translateX = 'center';
+        el.style.transform = `translateX(-50%) rotate(${-targetMapRotation}deg)`;
+      } else {
+        el.style.transform = `rotate(${-targetMapRotation}deg)`;
+      }
+    });
+  }, [targetMapRotation]);
 
   // Cardinal direction helper
   const getCardinal = (deg: number | null) => {
@@ -773,14 +796,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const heading = myLocation.heading !== null && myLocation.heading !== undefined ? myLocation.heading : null;
 
     // Counter-rotation so text & initials stay 100% horizontal and upright at all times
-    const counterRotation = 0;
+    const counterRotation = -targetMapRotation;
 
     // Arrow navigation chevron always rotates to true travel heading
     const arrowRotation = heading !== null ? heading : 0;
 
     const prev = prevMyPosRef.current as any;
     const isFirstTime = !myMarkerRef.current || !prev;
-    const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode || prev.isHost !== isHost);
+    const profileChanged = prev && (prev.name !== myRiderName || prev.color !== color || prev.orientationMode !== orientationMode || prev.isHost !== isHost || prev.targetMapRotation !== targetMapRotation);
 
     // Google Maps-style forward headlight beam & navigation chevron
     const forwardIndicator = heading !== null 
@@ -797,7 +820,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       : '';
 
     const myLeaderCrown = isHost
-      ? `<div style="position:absolute; top:-20px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8);">👑 LEADER</div>`
+      ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-20px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
       : '';
 
     const html = `
@@ -807,11 +830,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         <!-- Pulsing radar halo -->
         <div style="position:absolute; width:40px; height:40px; border-radius:50%; background:${color}; opacity:0.2; border:1.5px solid ${color};"></div>
         <!-- Center initial badge (Counter-rotated to always be upright) -->
-        <div style="position:relative; width:28px; height:28px; border-radius:50%; background:${color}; border:2.5px solid #080c10; box-shadow:0 0 12px ${color}, 0 2px 6px rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:12px; transform:rotate(${counterRotation}deg); transition:transform 0.3s ease;">
+        <div class="upright-counter-rotate" style="position:relative; width:28px; height:28px; border-radius:50%; background:${color}; border:2.5px solid #080c10; box-shadow:0 0 12px ${color}, 0 2px 6px rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:12px; transform:rotate(${counterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
           ${initial}
         </div>
         <!-- Upright label below -->
-        <div style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:900; padding:1px 5px; border-radius:4px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.9); transition:transform 0.3s ease;">
+        <div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); transform-origin:center center; background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:900; padding:1px 5px; border-radius:4px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.9); transition:transform 0.3s ease;">
           YOU
         </div>
       </div>
@@ -832,14 +855,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           onOpenCrewManage('active');
         }
       });
-      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost } as any;
+      prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost, targetMapRotation } as any;
     } else {
       myMarkerRef.current.setLatLng(pos);
 
       // In-place rotation or full re-render on profile/mode changes
       if (isFirstTime || profileChanged) {
         myMarkerRef.current.setIcon(icon);
-        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost } as any;
+        prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost, targetMapRotation } as any;
       } else {
         const el = myMarkerRef.current.getElement();
         if (el && heading !== null) {
@@ -864,7 +887,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         map.panTo(pos, { animate: true, duration: 0.5 });
       }
     }
-  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost, orientationMode]);
+  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost, orientationMode, targetMapRotation]);
 
   // ─── Update Member Markers (Optimized Delta Cache, Lag-Free) ───
   useEffect(() => {
@@ -897,7 +920,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
       const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color || prev.isStarred !== isStarred;
 
-      const memberCounterRotation = 0;
+      const memberCounterRotation = -targetMapRotation;
       const memberArrowRotation = bearing !== null ? bearing : 0;
 
       // Centered Google Maps-style 3D navigation chevron
@@ -912,7 +935,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         : '';
 
       const leaderCrown = m.isHost
-        ? `<div class="upright-counter-rotate" style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
+        ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
         : '';
 
       const starBadge = isStarred
@@ -938,10 +961,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <div class="upright-counter-rotate" style="width:28px; height:28px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
             ${escapeHtml(initial)}
           </div>
-          <div class="upright-counter-rotate" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
+          <div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
             ${isStarred ? '⭐ ' : ''}${escapeHtml(m.name)}
           </div>
-          <div class="upright-counter-rotate live-rider-speed" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:${statusBg}; border:1px solid ${statusColor}; color:${statusColor}; font-family:monospace; font-size:7px; font-weight:900; padding:0.5px 3.5px; border-radius:3px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.7); transition:transform 0.3s ease; letter-spacing:0.3px;">
+          <div class="upright-counter-rotate live-rider-speed" data-translate-x="center" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:${statusBg}; border:1px solid ${statusColor}; color:${statusColor}; font-family:monospace; font-size:7px; font-weight:900; padding:0.5px 3.5px; border-radius:3px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.7); transition:transform 0.3s ease; letter-spacing:0.3px;">
             ${statusTag}
           </div>
         </div>
@@ -1161,18 +1184,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     <div className={`relative flex flex-col w-full h-full flex-1 overflow-hidden select-none ${isLight ? 'bg-slate-100' : 'bg-[#080c10]'}`}>
 
       {/* ─────────────────────────────────────────────────────────────
-          LEAFLET MAP CANVAS
+          LEAFLET MAP CANVAS (Oversized & Centered for Zero-Clip Rotation)
       ───────────────────────────────────────────────────────────── */}
-      <div 
-        ref={mapContainerRef} 
-        style={{
-          width: '100%',
-          height: '100%',
-          position: 'absolute',
-          inset: 0,
-        }}
-        className="cursor-grab active:cursor-grabbing w-full h-full" 
-      />
+      <div className="absolute inset-0 overflow-hidden pointer-events-auto">
+        <div 
+          ref={mapContainerRef} 
+          style={{
+            position: 'absolute',
+            width: '150%',
+            height: '150%',
+            top: '-25%',
+            left: '-25%',
+            transform: `rotate(${targetMapRotation}deg)`,
+            transformOrigin: '50% 50%',
+            transition: 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
+          }}
+          className="cursor-grab active:cursor-grabbing" 
+        />
+      </div>
 
       {/* Cold-Start Satellite Acquisition Pill */}
       {!myLocation && (
@@ -1337,6 +1366,30 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
+          1-TAP OFFLINE ROUTE MAP CACHE BUTTON (WHEN ROUTE LOADED)
+      ───────────────────────────────────────────────────────────── */}
+      {activeRoute && activeRoute.points && activeRoute.points.length > 0 && (
+        <div 
+          style={{ 
+            bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
+            left: 'max(5.8rem, calc(env(safe-area-inset-left) + 5.5rem))',
+          }}
+          className="absolute z-30 pointer-events-auto animate-in fade-in duration-200"
+        >
+          <button
+            type="button"
+            onClick={handleCacheOfflineRoute}
+            disabled={isCachingRoute}
+            className="h-10 px-3 rounded-2xl backdrop-blur-xl border border-cyan-500/50 bg-[#0d131a]/95 text-cyan-300 font-mono text-[10px] font-bold shadow-2xl flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 transition-all hover:bg-cyan-950/60 hover:border-cyan-400"
+            title="Download map tiles along this route for offline riding in mountain passes"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{isCachingRoute ? 'Caching...' : 'Cache Route Offline'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
           GOOGLE MAPS-STYLE FLOATING MAP CONTROLS (BOTTOM-RIGHT)
       ───────────────────────────────────────────────────────────── */}
       <div 
@@ -1354,7 +1407,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               triggerHaptic(15);
               mapInstanceRef.current?.zoomIn();
             }}
-            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-lg font-black"
+            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-xl font-black"
             title="Zoom In (Map)"
             aria-label="Zoom In"
           >
@@ -1366,7 +1419,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               triggerHaptic(15);
               mapInstanceRef.current?.zoomOut();
             }}
-            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-lg font-black"
+            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-xl font-black"
             title="Zoom Out (Map)"
             aria-label="Zoom Out"
           >
@@ -1380,11 +1433,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
               setMapLayer(next);
               onChangeMapLayer?.(next);
             }}
-            className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500"
+            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500"
             title={`Map Theme: ${mapLayer.toUpperCase()} • Tap to cycle Dark / Sunlight / Satellite`}
             aria-label="Toggle Map Theme"
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-5 h-5" />
           </button>
         </div>
 
@@ -1392,7 +1445,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         <button
           type="button"
           onClick={handleToggleOrientation}
-          className={`w-11 h-11 rounded-full backdrop-blur-md border shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-90 ${
+          className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full backdrop-blur-md border shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-90 ${
             orientationMode === 'course'
               ? 'bg-slate-950/95 border-cyan-400 text-cyan-300 ring-2 ring-cyan-400/30'
               : 'bg-slate-950/90 border-slate-700 text-slate-400 hover:border-slate-500'
@@ -1402,17 +1455,17 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         >
           <div 
             style={{ 
-              transform: `rotate(${orientationMode === 'course' && myHeading !== null ? -myHeading : 0}deg)`,
+              transform: `rotate(${orientationMode === 'course' && effectiveCourseHeading !== null ? -effectiveCourseHeading : 0}deg)`,
               transition: 'transform 0.25s ease'
             }}
             className="flex flex-col items-center justify-center pointer-events-none"
           >
             {/* Red North Needle */}
-            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-b-[8px] border-b-rose-500" />
+            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[9px] border-b-rose-500" />
             {/* Silver South Needle */}
-            <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-t-[8px] border-t-slate-300" />
+            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[9px] border-t-slate-300" />
           </div>
-          <span className="text-[7.5px] font-black tracking-tighter mt-0.5 leading-none text-slate-400">
+          <span className="text-[8px] font-black tracking-tighter mt-0.5 leading-none text-slate-400">
             {orientationMode === 'course' ? 'HDG' : 'N'}
           </span>
         </button>
@@ -1702,55 +1755,79 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)
       ───────────────────────────────────────────────────────────── */}
-      {sosAlert && (
-        <div 
-          style={{
-            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
-            left: 'max(0.6rem, env(safe-area-inset-left))',
-            right: 'max(0.6rem, env(safe-area-inset-right))',
-          }}
-          className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
-        >
-          <div className="pointer-events-auto w-full max-w-md p-2.5 rounded-2xl bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-base animate-pulse">🚨</span>
-              <span className="font-bold text-rose-300 truncate text-[11px]">
-                EMERGENCY SOS: {sosAlert.fromName}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-                title="Send WhatsApp emergency confirmation to rider"
-              >
-                <Share2 className="w-3 h-3" />
-                <span>WhatsApp</span>
-              </a>
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-              >
-                <Navigation className="w-3 h-3" />
-                <span>Navigate</span>
-              </a>
-              {onDismissSos && (
-                <button
-                  type="button"
-                  onClick={onDismissSos}
-                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] cursor-pointer transition-all active:scale-95"
-                >
-                  ✕
-                </button>
-              )}
+      {sosAlert && (() => {
+        const isMySos = (sosAlert.fromId && sosAlert.fromId === myRiderName) || 
+                        (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (myRiderName || '').trim().toLowerCase());
+        return (
+          <div 
+            style={{
+              top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              left: 'max(0.6rem, env(safe-area-inset-left))',
+              right: 'max(0.6rem, env(safe-area-inset-right))',
+            }}
+            className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
+          >
+            <div className={`pointer-events-auto w-full max-w-md p-2.5 rounded-2xl backdrop-blur-md border-2 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2 ${
+              isMySos ? 'bg-amber-950/95 border-amber-500' : 'bg-rose-950/95 border-rose-500'
+            }`}>
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="text-base animate-pulse">🚨</span>
+                <span className={`font-bold truncate text-[11px] ${isMySos ? 'text-amber-300' : 'text-rose-300'}`}>
+                  {isMySos ? 'YOU BROADCAST EMERGENCY SOS' : `EMERGENCY SOS: ${sosAlert.fromName}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isMySos ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(50);
+                      if (onCancelSos) onCancelSos();
+                      else if (onDismissSos) onDismissSos();
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95 animate-pulse"
+                    title="Notify entire squad that you are safe"
+                  >
+                    <span>🟢 I'M SAFE / CANCEL SOS</span>
+                  </button>
+                ) : (
+                  <>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                      title="Send WhatsApp emergency confirmation to rider"
+                    >
+                      <Share2 className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </a>
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Navigation className="w-3 h-3" />
+                      <span>Navigate</span>
+                    </a>
+                    {onDismissSos && (
+                      <button
+                        type="button"
+                        onClick={onDismissSos}
+                        title="Dismiss alert locally"
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] cursor-pointer transition-all active:scale-95"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );

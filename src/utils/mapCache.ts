@@ -66,8 +66,8 @@ export function getTileUrlsForBounds(
     }
   }
 
-  // Deduplicate and cap at 900 tiles for practical phone storage (~25 MB)
-  return Array.from(new Set(urls)).slice(0, 900);
+  // Deduplicate and cap at 1500 tiles (matches sw.js MAX_TILES limit, ~38 MB)
+  return Array.from(new Set(urls)).slice(0, 1500);
 }
 
 // Calculate LatLngBounds for a given center coordinate and radius in kilometers
@@ -104,8 +104,20 @@ export async function preCacheRouteTiles(
     } catch {}
   }
 
+  if (!cache) {
+    onProgress?.({
+      cached: 0,
+      total,
+      percentage: 0,
+      isComplete: true,
+      error: 'Offline cache storage is not available in this environment.',
+      sizeMb: '0.0 MB',
+    });
+    return { cached: 0, total };
+  }
+
   let cached = 0;
-  const concurrency = 3; // Reduced concurrency to respect OSM tile server policy
+  const concurrency = 3; // Polite concurrency to respect OSM tile server policy
   const queue = [...urls];
 
   const fetchWorker = async () => {
@@ -115,35 +127,31 @@ export async function preCacheRouteTiles(
 
       try {
         // Check if already in cache first
-        if (cache) {
-          const match = await cache.match(url);
-          if (match) {
-            cached++;
-            const pct = Math.round((cached / total) * 100);
-            onProgress?.({
-              cached,
-              total,
-              percentage: pct,
-              isComplete: cached === total,
-              sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
-            });
-            continue;
-          }
+        const match = await cache.match(url);
+        if (match) {
+          cached++;
+          const pct = Math.round((cached / total) * 100);
+          onProgress?.({
+            cached,
+            total,
+            percentage: pct,
+            isComplete: cached === total,
+            sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
+          });
+          continue;
         }
 
         // Polite delay (25ms) between tile fetches to prevent HTTP 429 rate limiting
         await new Promise(r => setTimeout(r, 25));
 
         const resp = await fetch(url);
-        if (cache && resp && resp.status === 200) {
+        if (resp && resp.status === 200) {
           try {
             await cache.put(url, resp.clone());
             cached++;
           } catch {
             cached++;
           }
-        } else {
-          // If status is not 200 (e.g. 429), do not increment cached count
         }
 
         const percentage = Math.round((cached / total) * 100);
@@ -163,10 +171,11 @@ export async function preCacheRouteTiles(
   const workers = Array.from({ length: concurrency }, () => fetchWorker());
   await Promise.all(workers);
 
+  const finalPercentage = total > 0 ? Math.round((cached / total) * 100) : 100;
   onProgress?.({
     cached,
     total,
-    percentage: 100,
+    percentage: finalPercentage,
     isComplete: true,
     sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
   });

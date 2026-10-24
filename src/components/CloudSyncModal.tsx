@@ -7,6 +7,8 @@ import {
   pullGarageFromGist, 
   exportEncryptedGarage, 
   importEncryptedGarage,
+  exportPlainGarageJson,
+  importPlainGarageJson,
   GistSyncConfig 
 } from '../utils/cloudSync';
 import { getGarageRides } from '../utils/storage';
@@ -26,7 +28,10 @@ import {
   RefreshCw, 
   ShieldCheck, 
   FileText,
-  Sparkles
+  Sparkles,
+  HardDrive,
+  FolderDown,
+  FolderUp
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 
@@ -60,6 +65,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [vaultSuccess, setVaultSuccess] = useState<string | null>(null);
   const encryptedFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // 1-Tap Direct Plain JSON Vault
+  const [plainVaultStatus, setPlainVaultStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const plainFileInputRef = React.useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (isOpen) {
       const current = getCloudSyncConfig();
@@ -71,6 +80,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setVaultPassword('');
       setVaultError(null);
       setVaultSuccess(null);
+      setPlainVaultStatus(null);
     }
   }, [isOpen]);
 
@@ -195,6 +205,36 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setVaultError(err.message || 'Decryption failed. Check password.');
     } finally {
       if (encryptedFileInputRef.current) encryptedFileInputRef.current.value = '';
+    }
+  };
+
+  const handleExportPlainJson = () => {
+    triggerHaptic(50);
+    try {
+      const jsonStr = exportPlainGarageJson();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      downloadFile(jsonStr, `ThrottleLog_Garage_Backup_${dateStr}.json`, 'application/json');
+      setPlainVaultStatus({ type: 'success', text: `Downloaded backup containing ${ridesCount} rides!` });
+    } catch (err: any) {
+      setPlainVaultStatus({ type: 'error', text: err.message || 'Failed to export backup.' });
+    }
+  };
+
+  const handleImportPlainFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPlainVaultStatus(null);
+
+    try {
+      const text = await file.text();
+      const restored = importPlainGarageJson(text);
+      triggerHaptic([50, 40, 50]);
+      setPlainVaultStatus({ type: 'success', text: `Successfully restored ${restored.length} rides into your garage!` });
+      if (onRidesUpdated) onRidesUpdated();
+    } catch (err: any) {
+      setPlainVaultStatus({ type: 'error', text: err.message || 'Failed to parse JSON backup.' });
+    } finally {
+      if (plainFileInputRef.current) plainFileInputRef.current.value = '';
     }
   };
 
@@ -369,6 +409,59 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               >
                 Save Credentials
               </button>
+            </div>
+          </div>
+
+          {/* 1-Tap Direct Plain JSON Vault Section */}
+          <div className={`p-4 rounded-xl border space-y-3 ${cardBg}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-sky-400" />
+                <span className="font-bold text-xs uppercase tracking-wider">
+                  1-Tap Local Vault File (.json)
+                </span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                NO ACCOUNT REQUIRED
+              </span>
+            </div>
+
+            <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
+              Export your entire ride history to a single portable file. Perfect for phone-to-phone migration, Google Drive saving, or local backups.
+            </p>
+
+            {plainVaultStatus && (
+              <p className={`text-[11px] flex items-center gap-1.5 ${plainVaultStatus.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {plainVaultStatus.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                <span>{plainVaultStatus.text}</span>
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <button
+                onClick={handleExportPlainJson}
+                disabled={ridesCount === 0}
+                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-sky-500/40 hover:bg-sky-500/10 text-sky-400 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-40"
+              >
+                <FolderDown className="w-3.5 h-3.5" />
+                <span>Download JSON Backup</span>
+              </button>
+
+              <button
+                onClick={() => plainFileInputRef.current?.click()}
+                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <FolderUp className="w-3.5 h-3.5" />
+                <span>Import JSON Backup</span>
+              </button>
+
+              <input
+                type="file"
+                ref={plainFileInputRef}
+                onChange={handleImportPlainFile}
+                accept=".json"
+                className="hidden"
+              />
             </div>
           </div>
 

@@ -15,7 +15,7 @@ import {
   Radio
 } from 'lucide-react';
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
-import { GroupMemberInfo } from '../hooks/useGroupRide';
+import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
 import { CALLOUT_PRESETS, CalloutPreset } from '../utils/callouts';
@@ -30,7 +30,9 @@ interface ConvoyBottomStripProps {
   isRecording?: boolean;
   onToggleRecording?: () => void;
   recordedDistanceMeters?: number;
+  sosAlert?: SosAlert | null;
   onTriggerSos: () => void;
+  onCancelSos?: () => void;
   activeRoute?: RideAnalysis | null;
   onClearActiveRoute?: () => void;
   onOpenSquadDrawer?: () => void;
@@ -55,7 +57,9 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   isRecording = false,
   onToggleRecording,
   recordedDistanceMeters = 0,
+  sosAlert = null,
   onTriggerSos,
+  onCancelSos,
   activeRoute,
   onClearActiveRoute,
   onOpenSquadDrawer,
@@ -532,21 +536,36 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             ? 'bg-white/95 border-slate-300 text-slate-800'
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white'
         }`}>
-          {/* Left: Emergency SOS Button (Glove-Friendly & Direct with 3s abort) */}
-          <button
-            id="btn-emergency-sos"
-            type="button"
-            onClick={handleStartSosCountdown}
-            title={sosCountdown !== null ? 'Click to cancel SOS' : 'Hold to broadcast emergency SOS (3s countdown)'}
-            className={`h-10 px-3 min-w-[54px] rounded-xl text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0 ${
-              sosCountdown !== null
-                ? 'bg-rose-700 ring-2 ring-white animate-pulse'
-                : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/60'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4 fill-current animate-pulse" />
-            <span>{sosCountdown !== null ? `${sosCountdown}s` : 'SOS'}</span>
-          </button>
+          {/* Left: Emergency SOS Button (Or I'm Safe / Cancel SOS if active) */}
+          {Boolean(sosAlert && (sosAlert.fromName === riderName || (sosAlert as any).fromId === riderName)) ? (
+            <button
+              id="btn-cancel-my-sos"
+              type="button"
+              onClick={() => {
+                triggerHaptic(50);
+                onCancelSos?.();
+              }}
+              title="Cancel your broadcasted Emergency SOS and notify squad you are safe"
+              className="h-10 px-3 min-w-[62px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all active:scale-95 shrink-0 animate-pulse"
+            >
+              <span>🟢 SAFE</span>
+            </button>
+          ) : (
+            <button
+              id="btn-emergency-sos"
+              type="button"
+              onClick={handleStartSosCountdown}
+              title={sosCountdown !== null ? 'Click to cancel SOS countdown' : 'Hold to broadcast emergency SOS (3s countdown)'}
+              className={`h-10 px-3 min-w-[54px] rounded-xl text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0 ${
+                sosCountdown !== null
+                  ? 'bg-rose-700 ring-2 ring-white animate-pulse'
+                  : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/60'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4 fill-current animate-pulse" />
+              <span>{sosCountdown !== null ? `${sosCountdown}s` : 'SOS'}</span>
+            </button>
+          )}
 
           {/* Quick Callout Intent Button (Fuel, Chai, Regroup) */}
           {onSendCallout && (

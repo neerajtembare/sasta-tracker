@@ -89,18 +89,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.2.0
-          name: "ThrottleLog Android APK v1.2.0"
+          tag_name: v1.3.0
+          name: "ThrottleLog Android APK v1.3.0"
           body: |
-            ### ThrottleLog Android Standalone APK (v1.2.0)
+            ### ThrottleLog Android Standalone APK (v1.3.0)
             Direct standalone motorcycle crew radar & blackbox tracker for Android:
-            - **Native Android Intercom Audio (TTS)**: Direct text-to-speech audio bridge routing spoken milestone alerts, callouts, and SOS directly to Cardo, Sena, and BluArmor helmet communicators.
-            - **Named Emergency SOS Voice Broadcast**: Intercom announces the exact sender callsign ("Emergency! SOS alert from [Rider Name]! Pull over and check map immediately!").
-            - **Squad Lead Designation & Trailing Guidance**: Real-time relative bearing arrow, separation distance, and glowing vector guidance line to follow the squad leader or any chosen rider.
-            - **1-Tap PTT Voice Blast in Callout Alerts**: Embedded Push-To-Talk walkie-talkie directly inside the Quick Squad Callout sheet and incoming callout banners.
+            - **Emergency SOS 2-Way Clearance**: Senders now have a prominent "🟢 I'm Safe / Cancel SOS" action button that broadcasts cancellation across the squad. Peers receive instant clearance notifications and spoken audio announcements.
+            - **Permissions & Background Tracking Setup**: Complete onboarding checklist for GPS, Motion sensors, Microphone, and user choice between 100% background keep-alive or exit-stop.
+            - **Immediate Privacy & Stop Tracking**: Stops all background GPS watches, releases CPU wake-locks, and shuts down the native Android Foreground Service for zero-battery standby.
+            - **PTT Push-to-Talk Walkie-Talkie & Bluetooth Intercom Ducking**: Automatic music volume lowering in Sena, Cardo, and AirPods during incoming voice blasts and squad callouts.
+            - **High-G Impact Crash Detection**: 100Hz gyroscope and accelerometer fusion with audible abort countdown and automatic squad distress ping.
             - **Offline Pune & Western Ghats Regional Download**: 1-tap pre-download of Pune, Mulshi, Lavasa, Lonavala, and Tamhini Ghat for zero-cellular coverage riding.
-            - **Instant Accidental Ride Stop & Discard**: Rides under 80m or 2 points stop cleanly without blocking alerts.
-            - **Fixed Handlebar Mount Landscape Compass**: True-north and heading calculations accurately synchronized when phone is mounted horizontally on bike handlebars.
+            - **In-App Update Checker**: 1-tap update verification to download the latest APK without losing stored rides or settings.
           files: |
             throttlelog.apk
             throttlelog-debug.apk

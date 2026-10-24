@@ -47,6 +47,7 @@ interface CrewDashboardProps {
   crewNotification?: CrewNotification | null;
   onDismissCrewNotification?: () => void;
   onTriggerSos: () => void;
+  onCancelSos?: () => void;
   onDismissSos?: () => void;
   onUpdateRiderName: (newName: string, bikeModel?: string, color?: string) => void;
   onAddSquadFriend?: (name: string, bikeModel?: string) => void;
@@ -84,6 +85,7 @@ interface CrewDashboardProps {
   isTrackingActive?: boolean;
   onToggleTracking?: (enable?: boolean) => void;
   onTriggerRollCall?: () => void;
+  onOpenPermissionsModal?: () => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -103,6 +105,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   crewNotification = null,
   onDismissCrewNotification,
   onTriggerSos,
+  onCancelSos,
   onDismissSos,
   onUpdateRiderName,
   getFriendInviteUrl,
@@ -139,6 +142,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   isTrackingActive = true,
   onToggleTracking,
   onTriggerRollCall,
+  onOpenPermissionsModal,
 }) => {
   // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
   // When user goes Offline and is not recording, WakeLock is released to conserve battery
@@ -246,6 +250,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           theme={theme}
           unitSystem={unitSystem}
           onTriggerSos={onTriggerSos}
+          onCancelSos={onCancelSos}
           onDismissSos={onDismissSos}
           crewNotification={crewNotification}
           onDismissCrewNotification={onDismissCrewNotification}
@@ -394,7 +399,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           }
         }}
         recordedDistanceMeters={totalDistanceMeters}
+        sosAlert={sosAlert}
         onTriggerSos={onTriggerSos}
+        onCancelSos={onCancelSos}
         activeRoute={activeRoute}
         onClearActiveRoute={onClearActiveRoute}
         onOpenSquadDrawer={() => setIsDrawerOpen(true)}
@@ -521,6 +528,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         isTrackingActive={isTrackingActive}
         onToggleTracking={onToggleTracking}
         onTriggerRollCall={onTriggerRollCall}
+        onOpenPermissionsModal={onOpenPermissionsModal}
       />
 
       {/* ─────────────────────────────────────────────────────────────

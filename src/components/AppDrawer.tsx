@@ -27,12 +27,14 @@ import {
   HardDrive,
   Shield,
   ShieldOff,
+  ShieldCheck,
   Volume2
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
 import { checkBatteryOptimizationStatus, requestBatteryOptimizationExemption } from '../utils/nativeKeepAlive';
 import { downloadPuneOfflineMap, getOfflineTileCount, clearOfflineTileCache, CacheProgress } from '../utils/mapCache';
+import { CURRENT_APP_VERSION } from '../utils/appUpdater';
 
 interface AppDrawerProps {
   isOpen: boolean;
@@ -59,6 +61,7 @@ interface AppDrawerProps {
   orientationMode?: 'north' | 'course';
   onToggleOrientation?: () => void;
   onTriggerRollCall?: () => void;
+  onOpenPermissionsModal?: () => void;
 }
 
 const COLOR_OPTIONS = [
@@ -97,6 +100,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   orientationMode = 'course',
   onToggleOrientation,
   onTriggerRollCall,
+  onOpenPermissionsModal,
 }) => {
   const isLight = theme === 'light';
 
@@ -758,6 +762,21 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 <span>⚡ Grant Unrestricted Battery for Long Rides</span>
               </button>
             )}
+
+            {onOpenPermissionsModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(20);
+                  onClose();
+                  onOpenPermissionsModal();
+                }}
+                className="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Configure Permissions & Background Tracking</span>
+              </button>
+            )}
           </div>
 
           {/* Download App APK Link */}
@@ -775,7 +794,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             }`}
           >
             <Smartphone className="w-4 h-4 text-emerald-400" />
-            <span>Download ThrottleLog Android APK (v1.1.0)</span>
+            <span>Download / Update APK (v{CURRENT_APP_VERSION})</span>
           </button>
         </div>
 
@@ -783,7 +802,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         <div className={`px-4 py-2.5 border-t text-[10px] flex items-center justify-between shrink-0 ${
           isLight ? 'border-slate-200 text-slate-500' : 'border-slate-800/80 text-slate-500'
         }`}>
-          <span>ThrottleLog • v1.1.0</span>
+          <span>ThrottleLog • v{CURRENT_APP_VERSION}</span>
           {onOpenFaq && (
             <button
               type="button"

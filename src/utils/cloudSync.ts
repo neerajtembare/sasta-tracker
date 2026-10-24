@@ -357,3 +357,38 @@ export async function importEncryptedGarage(jsonString: string, password: string
     throw new Error('Incorrect password or corrupted encrypted backup file.');
   }
 }
+
+/**
+ * 1-Tap Direct Unencrypted Local JSON Vault Backup
+ */
+export function exportPlainGarageJson(): string {
+  const rides = getGarageRides();
+  const payload = {
+    app: 'ThrottleLog',
+    version: '1.0.0',
+    exportTimestamp: new Date().toISOString(),
+    rideCount: rides.length,
+    rides,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+/**
+ * 1-Tap Direct Unencrypted Local JSON Vault Import
+ */
+export function importPlainGarageJson(jsonString: string): SavedRide[] {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    throw new Error('Invalid JSON format.');
+  }
+
+  // Handle both { rides: [...] } wrap or direct array [...]
+  const ridesArray = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.rides) ? parsed.rides : null);
+  if (!ridesArray) {
+    throw new Error('No valid ride records found in file.');
+  }
+
+  return importGarageBackup(ridesArray);
+}

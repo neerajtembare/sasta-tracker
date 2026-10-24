@@ -97,13 +97,13 @@ export const GarageModal: React.FC<GarageModalProps> = ({
       return;
     }
     const backupPayload = {
-      app: 'sasta-tracker',
+      app: 'throttlelog',
       version: '1.0',
       exportedAt: new Date().toISOString(),
       count: rides.length,
       rides: rides,
     };
-    downloadFile(JSON.stringify(backupPayload, null, 2), `sasta_tracker_garage_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    downloadFile(JSON.stringify(backupPayload, null, 2), `throttlelog_garage_backup_${new Date().toISOString().slice(0, 10)}.json`);
     setBackupFeedback({ type: 'success', message: `Exported ${rides.length} rides to JSON backup!` });
     setTimeout(() => setBackupFeedback(null), 3500);
   };

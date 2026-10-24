@@ -376,7 +376,7 @@ export const RideReportModal: React.FC<RideReportModalProps> = ({
               <span>Verified Motorcycle Telemetry Record • ThrottleLog</span>
             </div>
             <div className="text-[11px] text-slate-400">
-              Generated: {new Date().toLocaleString()} • sasta-tracker.vercel.app
+              Generated: {new Date().toLocaleString()} • throttlelog.vercel.app
             </div>
           </div>
         </div>

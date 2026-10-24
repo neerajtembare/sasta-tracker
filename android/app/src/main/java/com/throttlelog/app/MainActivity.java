@@ -24,4 +24,14 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception ignored) {}
     }
+
+    @Override
+    public void onBackPressed() {
+        if (getBridge() != null && getBridge().getWebView() != null && getBridge().getWebView().canGoBack()) {
+            getBridge().getWebView().goBack();
+        } else {
+            // Keep app and ride tracking alive in background instead of destroying Activity
+            moveTaskToBack(true);
+        }
+    }
 }

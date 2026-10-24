@@ -33,6 +33,16 @@ import {
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
 import { speakAlert } from '../utils/tts';
 
+function escapeHtml(str?: string | null): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function calcHaversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // meters
   const phi1 = (lat1 * Math.PI) / 180;
@@ -640,7 +650,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const finishMarker = L.marker([endPt.lat, endPt.lon], { icon: finishIcon, zIndexOffset: 700 }).addTo(map);
     const finishPopup = `
       <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
-        <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">🏁 ${activeRoute.name || 'Destination'}</div>
+        <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">🏁 ${escapeHtml(activeRoute.name || 'Destination')}</div>
         <div style="font-size:10px; color:#38bdf8; margin-bottom:8px;">${activeRoute.totalDistanceKm.toFixed(1)} km Total</div>
         <button onclick="window.__navTo(${endPt.lat}, ${endPt.lon})" style="width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:6px; border-radius:6px; border:none; cursor:pointer;">
           🧭 Google Maps Nav
@@ -656,14 +666,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         const emoji = stop.category === 'chai' ? '☕' : stop.category === 'fuel' ? '⛽' : stop.category === 'dhaba' ? '🍛' : '📍';
         const stopHtml = `
           <div style="background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; font-family:monospace; font-size:9px; font-weight:bold; padding:2px 5px; border-radius:10px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.7); display:flex; align-items:center; gap:2px;">
-            <span>${emoji}</span> <span>${stop.name || 'Pit Stop'}</span>
+            <span>${emoji}</span> <span>${escapeHtml(stop.name || 'Pit Stop')}</span>
           </div>
         `;
         const stopIcon = L.divIcon({ className: 'route-pitstop-badge', html: stopHtml, iconAnchor: [20, 10] });
         const stopMarker = L.marker([stop.lat, stop.lon], { icon: stopIcon, zIndexOffset: 650 }).addTo(map);
         const stopPopup = `
           <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
-            <div style="font-weight:900; font-size:11px; color:#fff;">${emoji} ${stop.name}</div>
+            <div style="font-weight:900; font-size:11px; color:#fff;">${emoji} ${escapeHtml(stop.name)}</div>
             <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">${stop.distanceKm.toFixed(1)} km mark</div>
             <button onclick="window.__navTo(${stop.lat}, ${stop.lon})" style="width:100%; background:#38bdf8; color:#080c10; font-weight:900; font-size:9px; padding:5px; border-radius:6px; border:none; cursor:pointer;">
               🧭 Navigate in Maps
@@ -926,10 +936,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           ${starBadge}
           ${bearingArrow}
           <div class="upright-counter-rotate" style="width:28px; height:28px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
-            ${initial}
+            ${escapeHtml(initial)}
           </div>
           <div class="upright-counter-rotate" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
-            ${isStarred ? '⭐ ' : ''}${m.name}
+            ${isStarred ? '⭐ ' : ''}${escapeHtml(m.name)}
           </div>
           <div class="upright-counter-rotate live-rider-speed" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:${statusBg}; border:1px solid ${statusColor}; color:${statusColor}; font-family:monospace; font-size:7px; font-weight:900; padding:0.5px 3.5px; border-radius:3px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.7); transition:transform 0.3s ease; letter-spacing:0.3px;">
             ${statusTag}
@@ -1042,7 +1052,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           🚨
         </div>
         <div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%); background:#7f1d1d; border:1px solid #ef4444; color:#fff; font-family:monospace; font-size:9px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap;">
-          SOS: ${sosAlert.fromName}
+          SOS: ${escapeHtml(sosAlert.fromName)}
         </div>
       </div>
     `;

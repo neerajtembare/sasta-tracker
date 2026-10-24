@@ -509,13 +509,13 @@ export function useGroupRide() {
 
     // 2. Global MQTT WebSocket relay
     if (mqttClientRef.current) {
-      // Broadcast to universal global radar channel so all app users see each other
-      mqttClientRef.current.publish('throttlelog/v1/radar/global', payload);
-
-      // Also publish to custom squad channel if explicitly joined a distinct squad
       const squadKey = sanitizeKey(profileRef.current.squadName);
       if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
+        // Exclusively broadcast to private squad topic for rider privacy
         mqttClientRef.current.publish(`throttlelog/v1/squad/${squadKey}`, payload);
+      } else {
+        // Open exploration: broadcast to global radar
+        mqttClientRef.current.publish('throttlelog/v1/radar/global', payload);
       }
     }
   }, []);
@@ -539,6 +539,9 @@ export function useGroupRide() {
   useEffect(() => {
     if (!profile.isLoggedIn) return;
 
+    // Reset member cache when joining a distinct squad to prevent stale rider ghosting
+    setMembers(new Map());
+
     const squadKey = sanitizeKey(profile.squadName);
     const client = new SimpleMqttClient({
       clientId: profile.id,
@@ -549,7 +552,8 @@ export function useGroupRide() {
         setConnectionStatus(status);
         if (status === 'connected') {
           setIsConnected(true);
-          setStatusMessage('Crew Radar Active • Everyone is live and visible');
+          const isPrivateSquad = squadKey && squadKey !== 'global' && squadKey !== 'globalcrew';
+          setStatusMessage(isPrivateSquad ? `Squad [${profile.squadName}] Active • Private squad radar live` : 'Crew Radar Active • Everyone is live and visible');
         } else if (status === 'connecting') {
           setStatusMessage(detail || 'Connecting to Crew Radar...');
         } else if (status === 'disconnected') {
@@ -564,12 +568,11 @@ export function useGroupRide() {
 
     client.connect();
 
-    // Universal open radar topic: ensures ANYONE using the app is directly visible
-    client.subscribe('throttlelog/v1/radar/global');
-
-    // Custom squad-specific topic only if explicitly in a distinct squad
+    // Universal open radar vs private squad topic isolation
     if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
       client.subscribe(`throttlelog/v1/squad/${squadKey}`);
+    } else {
+      client.subscribe('throttlelog/v1/radar/global');
     }
 
     mqttClientRef.current = client;

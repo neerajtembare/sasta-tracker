@@ -330,13 +330,13 @@ export default function App() {
   // Native Android Foreground Service & Keep-Alive (guarantees GPS, WebSocket survive backgrounding, & handlebar mount screen stays awake)
   useEffect(() => {
     const isGpsActive = gps.isTrackingActive ?? true;
-    const shouldKeepAlive = isGpsActive && (isRecordingLive || (groupRide.isOnRadar && (currentTab === 'crew' || currentTab === 'cockpit')));
+    const shouldKeepAlive = isGpsActive && (isRecordingLive || groupRide.isOnRadar);
     if (shouldKeepAlive) {
       startNativeRadarKeepAlive();
     } else {
       stopNativeRadarKeepAlive();
     }
-  }, [isRecordingLive, groupRide.isOnRadar, currentTab, gps.isTrackingActive]);
+  }, [isRecordingLive, groupRide.isOnRadar, gps.isTrackingActive]);
 
   // Unified Privacy & Stop Tracking Handler (zero-battery standby, stops GPS watch, kills native keep-alive & MQTT broadcasts)
   const handleToggleTracking = useCallback((enable?: boolean) => {

@@ -252,7 +252,6 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
             timestamp: Date.now(),
           });
           localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-          localStorage.setItem('sasta_live_recovery_v1', snapshot);
           sessionStorage.setItem('sasta_live_recovery', snapshot);
         }
       } catch {}
@@ -602,7 +601,6 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
             timestamp: Date.now(),
           });
           localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-          localStorage.setItem('sasta_live_recovery_v1', snapshot);
           sessionStorage.setItem('sasta_live_recovery', snapshot);
         } catch {}
       }
@@ -844,7 +842,6 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           timestamp: Date.now(),
         });
         localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-        localStorage.setItem('sasta_live_recovery_v1', snapshot);
         sessionStorage.setItem('sasta_live_recovery', snapshot);
       } catch {}
       return next;

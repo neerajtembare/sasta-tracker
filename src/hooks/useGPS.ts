@@ -131,7 +131,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const [mountMode, setMountModeState] = useState<'handlebar' | 'pocket'>('handlebar');
   const [mountOrientation, setMountOrientationState] = useState<'auto' | 'portrait' | 'landscape'>(() => {
     try {
-      const saved = localStorage.getItem('sasta_mount_orientation');
+      const saved = localStorage.getItem('throttlelog_mount_orientation') || localStorage.getItem('sasta_mount_orientation');
       if (saved === 'portrait' || saved === 'landscape' || saved === 'auto') return saved;
     } catch {}
     return 'auto';
@@ -150,7 +150,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const [isTrackingActive, setIsTrackingActive] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('sasta_gps_tracking_enabled');
+        const saved = localStorage.getItem('throttlelog_gps_tracking_enabled') ?? localStorage.getItem('sasta_gps_tracking_enabled');
         if (saved !== null) return saved !== 'false' && enabled;
       }
     } catch {}
@@ -159,7 +159,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState(() => {
     try {
-      return localStorage.getItem('sasta_voice_feedback') === 'true';
+      return (localStorage.getItem('throttlelog_voice_feedback') || localStorage.getItem('sasta_voice_feedback')) === 'true';
     } catch {
       return false;
     }
@@ -251,6 +251,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
             waypoints: markedWaypointsRef.current,
             timestamp: Date.now(),
           });
+          localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
           localStorage.setItem('sasta_live_recovery_v1', snapshot);
           sessionStorage.setItem('sasta_live_recovery', snapshot);
         }
@@ -268,7 +269,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     if (!enabled) return;
     try {
       // Check persistent v1 storage first, then legacy sessionStorage
-      let raw = localStorage.getItem('sasta_live_recovery_v1');
+      let raw = localStorage.getItem('throttlelog_live_recovery_v1') || localStorage.getItem('sasta_live_recovery_v1');
       if (!raw) {
         raw = sessionStorage.getItem('sasta_live_recovery');
       }
@@ -600,6 +601,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
             waypoints: markedWaypointsRef.current,
             timestamp: Date.now(),
           });
+          localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
           localStorage.setItem('sasta_live_recovery_v1', snapshot);
           sessionStorage.setItem('sasta_live_recovery', snapshot);
         } catch {}
@@ -811,6 +813,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
     // Clear recovery data
     try {
+      localStorage.removeItem('throttlelog_live_recovery_v1');
       localStorage.removeItem('sasta_live_recovery_v1');
       sessionStorage.removeItem('sasta_live_recovery');
     } catch {}
@@ -840,6 +843,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           waypoints: next,
           timestamp: Date.now(),
         });
+        localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
         localStorage.setItem('sasta_live_recovery_v1', snapshot);
         sessionStorage.setItem('sasta_live_recovery', snapshot);
       } catch {}
@@ -881,6 +885,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const setMountOrientation = useCallback((orientation: 'auto' | 'portrait' | 'landscape') => {
     setMountOrientationState(orientation);
     try {
+      localStorage.setItem('throttlelog_mount_orientation', orientation);
       localStorage.setItem('sasta_mount_orientation', orientation);
     } catch {}
   }, []);
@@ -926,6 +931,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const handleDiscardSession = useCallback(() => {
     pauseSilentAudio();
     try {
+      localStorage.removeItem('throttlelog_live_recovery_v1');
       localStorage.removeItem('sasta_live_recovery_v1');
       sessionStorage.removeItem('sasta_live_recovery');
     } catch {}
@@ -967,6 +973,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const stopGpsTracking = useCallback(() => {
     setIsTrackingActive(false);
     try {
+      localStorage.setItem('throttlelog_gps_tracking_enabled', 'false');
       localStorage.setItem('sasta_gps_tracking_enabled', 'false');
     } catch {}
     if (watchIdRef.current !== null) {
@@ -983,6 +990,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const startGpsTracking = useCallback(() => {
     setIsTrackingActive(true);
     try {
+      localStorage.setItem('throttlelog_gps_tracking_enabled', 'true');
       localStorage.setItem('sasta_gps_tracking_enabled', 'true');
     } catch {}
   }, []);

@@ -1,4 +1,4 @@
-// Sasta Tracker — Map Tile Pre-caching Utility for Mountain Passes & Zero-Signal Areas
+// ThrottleLog — Map Tile Pre-caching Utility for Mountain Passes & Zero-Signal Areas
 
 export interface LatLngBounds {
   minLat: number;
@@ -16,7 +16,7 @@ export interface CacheProgress {
   sizeMb?: string;
 }
 
-export const TILE_CACHE_NAME = 'sasta-map-tiles-v2';
+export const TILE_CACHE_NAME = 'throttlelog-map-tiles-v3';
 
 /**
  * Bounds covering Pune City, Mulshi, Lavasa, Khadakwasla, Sinhagad,

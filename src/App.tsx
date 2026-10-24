@@ -371,13 +371,18 @@ export default function App() {
       hasProcessedInviteRef.current = true;
       setCurrentTab('crew');
       const activeName = riderParam?.trim() || groupRide.riderName;
-      setSessionNotice(`🏍️ Welcome ${activeName}! Live on Crew Radar — auto-connected with squad friends.`);
+      if (roomParam?.trim()) {
+        groupRide.joinRoom(roomParam.trim(), riderParam?.trim());
+      } else if (riderParam?.trim()) {
+        groupRide.updateRiderName(riderParam.trim());
+      }
+      setSessionNotice(`🏍️ Welcome ${activeName}! Live on Crew Radar ${roomParam ? `in Squad [${roomParam.trim().toUpperCase()}]` : ''}.`);
       setTimeout(() => setSessionNotice(null), 6000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
       } catch {}
     }
-  }, [groupRide.riderName]);
+  }, [groupRide.riderName, groupRide.joinRoom, groupRide.updateRiderName]);
 
   // Synchronize GPS coordinates directly from unified hook into groupRide and myLocation
   useEffect(() => {

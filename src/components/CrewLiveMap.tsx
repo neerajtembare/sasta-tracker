@@ -189,7 +189,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Orientation & Compass state (Course-Up direction follow vs North-Up)
   const [orientationMode, setOrientationMode] = useState<'north' | 'course'>(() => {
     try {
-      const saved = localStorage.getItem('sasta_map_orientation');
+      const saved = localStorage.getItem('throttlelog_map_orientation') || localStorage.getItem('sasta_map_orientation');
       if (saved === 'north' || saved === 'course') return saved;
     } catch {}
     return 'course'; // Default to course-up (direction follow) for live motorcycle navigation
@@ -201,6 +201,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     setOrientationMode(prev => {
       const next = prev === 'course' ? 'north' : 'course';
       try {
+        localStorage.setItem('throttlelog_map_orientation', next);
         localStorage.setItem('sasta_map_orientation', next);
       } catch {}
       return next;
@@ -215,7 +216,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Default to Dark map for eye comfort and stealth motorcycle cockpit look
   const [mapLayer, setMapLayer] = useState<MapLayerType>(() => {
     try {
-      if (typeof window !== 'undefined' && localStorage.getItem('sasta_sunlight_mode') === 'true') {
+      const isSun = localStorage.getItem('throttlelog_sunlight_mode') === 'true' || localStorage.getItem('sasta_sunlight_mode') === 'true';
+      if (typeof window !== 'undefined' && isSun) {
         return 'sunlight';
       }
     } catch {}

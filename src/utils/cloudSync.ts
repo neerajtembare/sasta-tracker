@@ -78,7 +78,7 @@ export async function pushGarageToGist(
 
   const rides = getGarageRides();
   const payload = {
-    app: 'Sasta Tracker',
+    app: 'ThrottleLog',
     version: '1.0.0',
     exportTimestamp: new Date().toISOString(),
     rideCount: rides.length,
@@ -104,9 +104,9 @@ export async function pushGarageToGist(
           'X-GitHub-Api-Version': '2022-11-28',
         },
         body: JSON.stringify({
-          description: `Sasta Tracker Motorcycle Garage Backup (${rides.length} rides) — ${nowFormatted}`,
+          description: `ThrottleLog Motorcycle Garage Backup (${rides.length} rides) — ${nowFormatted}`,
           files: {
-            'sasta_tracker_garage.json': {
+            'throttlelog_garage.json': {
               content: fileContent,
             },
           },
@@ -138,10 +138,10 @@ export async function pushGarageToGist(
           'X-GitHub-Api-Version': '2022-11-28',
         },
         body: JSON.stringify({
-          description: `Sasta Tracker Motorcycle Garage Backup (${rides.length} rides) — ${nowFormatted}`,
+          description: `ThrottleLog Motorcycle Garage Backup (${rides.length} rides) — ${nowFormatted}`,
           public: false,
           files: {
-            'sasta_tracker_garage.json': {
+            'throttlelog_garage.json': {
               content: fileContent,
             },
           },
@@ -211,9 +211,9 @@ export async function pullGarageFromGist(
     }
 
     const json = await res.json();
-    const backupFile = json.files && json.files['sasta_tracker_garage.json'];
+    const backupFile = json.files && (json.files['throttlelog_garage.json'] || json.files['sasta_tracker_garage.json']);
     if (!backupFile || !backupFile.content) {
-      throw new Error('Gist does not contain a "sasta_tracker_garage.json" backup file.');
+      throw new Error('Gist does not contain a ThrottleLog backup file.');
     }
 
     const parsed = JSON.parse(backupFile.content);
@@ -312,7 +312,7 @@ export async function exportEncryptedGarage(password: string): Promise<string> {
 
   const buffer = new Uint8Array(ciphertext);
   const payload = {
-    app: 'Sasta Tracker Encrypted Backup',
+    app: 'ThrottleLog Encrypted Backup',
     version: 1,
     salt: Array.from(salt),
     iv: Array.from(iv),

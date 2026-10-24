@@ -173,12 +173,18 @@ export function useGroupRide() {
           saveIdentity('sasta_rider_name', cleanName);
           return newProfile;
         }
-      }
 
-      const savedRaw = getSavedIdentity(STORAGE_KEYS.USER_PROFILE);
-      if (savedRaw) {
-        const parsed = JSON.parse(savedRaw);
-        if (parsed.name && parsed.id) return parsed;
+        const savedRaw = getSavedIdentity(STORAGE_KEYS.USER_PROFILE);
+        if (savedRaw) {
+          const parsed = JSON.parse(savedRaw);
+          if (parsed.name && parsed.id) {
+            if (squadParam && squadParam.trim()) {
+              parsed.squadName = squadParam.trim();
+              saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(parsed));
+            }
+            return parsed;
+          }
+        }
       }
 
       // Default name or clean generic Rider identity
@@ -910,11 +916,21 @@ export function useGroupRide() {
 
   const getFriendInviteUrl = useCallback((friendName?: string) => {
     if (typeof window === 'undefined') return '';
-    const base = window.location.origin + window.location.pathname;
-    if (friendName) {
-      return `${base}?rider=${encodeURIComponent(friendName)}`;
+    let base = window.location.origin + window.location.pathname;
+    // When running inside Android Capacitor APK or localhost dev environment, ensure live public URL is shared
+    if (base.includes('localhost') || base.startsWith('capacitor://') || base.startsWith('http://localhost') || !base.startsWith('https://')) {
+      base = 'https://throttlelog.vercel.app/';
     }
-    return base;
+    const params = new URLSearchParams();
+    const currentSquad = profileRef.current.squadName;
+    if (currentSquad && currentSquad !== DEFAULT_SQUAD_NAME) {
+      params.set('crew', currentSquad);
+    }
+    if (friendName) {
+      params.set('rider', friendName);
+    }
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
   }, []);
 
   const sendVoiceBlast = useCallback((audioBase64: string, durationMs: number, mimeType: string = 'audio/webm') => {

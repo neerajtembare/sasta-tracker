@@ -27,12 +27,13 @@ class MotorcycleCrashDetector {
   private currentSpeedKmh = 0;
 
   // Persistence Key
-  private readonly STORAGE_KEY = 'sasta_crash_detection_v1';
+  private readonly STORAGE_KEY = 'throttlelog_crash_detection_v1';
+  private readonly LEGACY_STORAGE_KEY = 'sasta_crash_detection_v1';
 
   public isEnabled(): boolean {
     if (typeof window === 'undefined') return false;
     try {
-      const saved = localStorage.getItem(this.STORAGE_KEY);
+      const saved = localStorage.getItem(this.STORAGE_KEY) ?? localStorage.getItem(this.LEGACY_STORAGE_KEY);
       return saved !== 'false'; // Default enabled
     } catch {
       return true;
@@ -43,6 +44,7 @@ class MotorcycleCrashDetector {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(this.STORAGE_KEY, String(enabled));
+      localStorage.setItem(this.LEGACY_STORAGE_KEY, String(enabled));
     } catch {}
     if (!enabled) {
       this.cancelPotentialImpact();

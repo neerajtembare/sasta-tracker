@@ -26,7 +26,8 @@ import {
   Trash2,
   HardDrive,
   Shield,
-  ShieldOff
+  ShieldOff,
+  Volume2
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
@@ -57,6 +58,7 @@ interface AppDrawerProps {
   onToggleTracking?: (enable?: boolean) => void;
   orientationMode?: 'north' | 'course';
   onToggleOrientation?: () => void;
+  onTriggerRollCall?: () => void;
 }
 
 const COLOR_OPTIONS = [
@@ -94,6 +96,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   onToggleTracking,
   orientationMode = 'course',
   onToggleOrientation,
+  onTriggerRollCall,
 }) => {
   const isLight = theme === 'light';
 
@@ -193,13 +196,17 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 shrink-0">
+        <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${
+          isLight ? 'border-slate-200' : 'border-slate-800/80'
+        }`}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-sm">
               🏍️
             </div>
             <div>
-              <div className="font-heading font-black text-sm tracking-wider uppercase text-white">
+              <div className={`font-heading font-black text-sm tracking-wider uppercase ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}>
                 ThrottleLog
               </div>
               <div className="text-[10px] text-slate-400">
@@ -210,7 +217,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer"
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -224,8 +233,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           ───────────────────────────────────────────────────────────── */}
           <div className={`p-3.5 rounded-2xl border transition-all ${
             isTrackingActive && isOnRadar 
-              ? 'bg-emerald-950/20 border-emerald-500/30' 
-              : 'bg-rose-950/20 border-rose-500/30'
+              ? isLight ? 'bg-emerald-50 border-emerald-300' : 'bg-emerald-950/20 border-emerald-500/30' 
+              : isLight ? 'bg-rose-50 border-rose-300' : 'bg-rose-950/20 border-rose-500/30'
           }`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 flex items-center gap-1.5">
@@ -233,10 +242,10 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 <span>Privacy & Tracking Control</span>
               </span>
               <span className={`flex items-center gap-1 text-[10px] font-bold ${
-                isTrackingActive && isOnRadar ? 'text-emerald-400' : 'text-rose-400'
+                isTrackingActive && isOnRadar ? 'text-emerald-500' : 'text-rose-500'
               }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${
-                  isTrackingActive && isOnRadar ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                  isTrackingActive && isOnRadar ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
                 }`} />
                 <span>{isTrackingActive && isOnRadar ? 'TRACKING LIVE' : 'STOPPED (PRIVATE)'}</span>
               </span>
@@ -244,15 +253,19 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
 
             {/* Privacy Sub-system Status Matrix */}
             <div className="grid grid-cols-2 gap-1.5 mb-2.5 text-[10px] font-mono">
-              <div className="p-1.5 rounded-lg bg-black/40 border border-slate-800 flex items-center justify-between">
+              <div className={`p-1.5 rounded-lg border flex items-center justify-between ${
+                isLight ? 'bg-white border-slate-200 text-slate-700' : 'bg-black/40 border-slate-800 text-slate-300'
+              }`}>
                 <span className="text-slate-400">GPS Hardware:</span>
-                <span className={isTrackingActive ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                <span className={isTrackingActive ? 'text-emerald-500 font-bold' : 'text-slate-400'}>
                   {isTrackingActive ? 'Active' : 'Off (Zero Drain)'}
                 </span>
               </div>
-              <div className="p-1.5 rounded-lg bg-black/40 border border-slate-800 flex items-center justify-between">
+              <div className={`p-1.5 rounded-lg border flex items-center justify-between ${
+                isLight ? 'bg-white border-slate-200 text-slate-700' : 'bg-black/40 border-slate-800 text-slate-300'
+              }`}>
                 <span className="text-slate-400">Radar Broadcast:</span>
-                <span className={isOnRadar ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                <span className={isOnRadar ? 'text-emerald-500 font-bold' : 'text-slate-400'}>
                   {isOnRadar ? 'Live' : 'Hidden (Private)'}
                 </span>
               </div>
@@ -379,7 +392,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   {riderName ? riderName.slice(0, 1).toUpperCase() : 'R'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-white text-sm truncate flex items-center gap-1.5">
+                  <div className={`font-bold text-sm truncate flex items-center gap-1.5 ${
+                    isLight ? 'text-slate-900' : 'text-white'
+                  }`}>
                     <span>{riderName}</span>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: myColor }} />
                   </div>
@@ -413,6 +428,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
                     mapLayer === 'dark'
                       ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : isLight 
+                      ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' 
                       : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
                   }`}
                 >
@@ -428,6 +445,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
                     mapLayer === 'streets'
                       ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : isLight 
+                      ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' 
                       : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
                   }`}
                 >
@@ -443,6 +462,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   className={`p-2 rounded-xl border text-center font-bold text-[11px] transition-all cursor-pointer ${
                     mapLayer === 'satellite'
                       ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                      : isLight 
+                      ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' 
                       : 'bg-black/40 hover:bg-slate-800 border-slate-700 text-slate-300'
                   }`}
                 >
@@ -489,10 +510,10 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   <Download className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                  <div className={`font-heading font-black text-xs uppercase tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>
                     Pune & Ghats Offline Map
                   </div>
-                  <div className="text-[10px] text-slate-400 font-sans">
+                  <div className={`text-[10px] font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                     Mulshi, Lavasa, Lonavala, Tamhini & City
                   </div>
                 </div>
@@ -505,9 +526,11 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             </div>
 
             {/* Storage Info */}
-            <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono pt-1 border-t border-slate-800/80">
-              <span className="text-slate-400">Offline Storage:</span>
-              <span className="font-bold text-cyan-400">
+            <div className={`flex items-center justify-between text-[11px] font-mono pt-1 border-t ${
+              isLight ? 'border-slate-200 text-slate-700' : 'border-slate-800/80 text-slate-300'
+            }`}>
+              <span className={isLight ? 'text-slate-500' : 'text-slate-400'}>Offline Storage:</span>
+              <span className={`font-bold ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
                 {cachedTileCount > 0 
                   ? `${cachedTileCount} tiles (~${((cachedTileCount * 25) / 1024).toFixed(1)} MB)`
                   : 'No map downloaded yet'}
@@ -517,14 +540,14 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             {/* Active Download Progress Bar */}
             {isDownloadingMap && downloadProgress && (
               <div className="space-y-1 pt-1">
-                <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                <div className={`flex items-center justify-between text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
                   <span className="text-cyan-400 flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
                     Downloading tiles...
                   </span>
                   <span>{downloadProgress.percentage}% ({downloadProgress.cached}/{downloadProgress.total})</span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div className={`w-full h-2 rounded-full overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`}>
                   <div 
                     className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-150"
                     style={{ width: `${downloadProgress.percentage}%` }}
@@ -564,7 +587,11 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                   disabled={isDownloadingMap}
                   onClick={handleClearCache}
                   title="Clear offline map tiles to reclaim storage"
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-300 cursor-pointer transition-colors"
+                  className={`p-2 rounded-xl border cursor-pointer transition-colors ${
+                    isLight 
+                      ? 'bg-slate-200 hover:bg-rose-100 border-slate-300 hover:border-rose-300 text-slate-600 hover:text-rose-600'
+                      : 'bg-slate-800 hover:bg-rose-950 border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-300'
+                  }`}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -573,19 +600,41 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              4. WHATSAPP SQUAD INVITE
+              4. WHATSAPP SQUAD INVITE & SQUAD AUDIO ROLL CALL
           ───────────────────────────────────────────────────────────── */}
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic(25);
-              onShareWhatsApp();
-            }}
-            className="w-full py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-95"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Invite Friends via WhatsApp</span>
-          </button>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(25);
+                onShareWhatsApp();
+              }}
+              className="w-full py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-95"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Invite Friends via WhatsApp</span>
+            </button>
+
+            {onTriggerRollCall && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(30);
+                  onClose();
+                  onTriggerRollCall();
+                }}
+                className={`w-full py-2 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 ${
+                  isLight 
+                    ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900' 
+                    : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/30 text-cyan-300'
+                }`}
+                title="Hear current squad connection status, pack spread, and battery levels"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Squad Audio Roll Call (Instant)</span>
+              </button>
+            )}
+          </div>
 
           {/* ─────────────────────────────────────────────────────────────
               5. APP NAVIGATION SHORTCUTS (MY RIDES, COCKPIT)
@@ -606,8 +655,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               <div className="flex items-center gap-2.5">
                 <FolderArchive className="w-4 h-4 text-sky-400" />
                 <div className="text-left">
-                  <div className="font-bold text-white text-xs">Saved Rides & Garage</div>
-                  <div className="text-[10px] text-slate-400">View past trip logs & export GPX</div>
+                  <div className={`font-bold text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>Saved Rides & Garage</div>
+                  <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>View past trip logs & export GPX</div>
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-500" />
@@ -628,8 +677,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               <div className="flex items-center gap-2.5">
                 <Radio className="w-4 h-4 text-emerald-400" />
                 <div className="text-left">
-                  <div className="font-bold text-white text-xs">Solo Speedometer Cockpit</div>
-                  <div className="text-[10px] text-slate-400">Large digital HUD for solo rides</div>
+                  <div className={`font-bold text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>Solo Speedometer Cockpit</div>
+                  <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>Large digital HUD for solo rides</div>
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-500" />
@@ -648,7 +697,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 onToggleUnitSystem();
               }}
               className={`p-2.5 rounded-xl border flex items-center justify-center gap-1.5 font-bold text-xs transition-colors cursor-pointer ${
-                isLight ? 'bg-slate-50 hover:bg-slate-100 border-slate-200' : 'bg-[#121922] hover:bg-[#1a2430] border-[#1e2a38]'
+                isLight ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800' : 'bg-[#121922] hover:bg-[#1a2430] border-[#1e2a38] text-slate-200'
               }`}
             >
               <Gauge className="w-3.5 h-3.5 text-cyan-400" />
@@ -663,7 +712,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 onToggleTheme();
               }}
               className={`p-2.5 rounded-xl border flex items-center justify-center gap-1.5 font-bold text-xs transition-colors cursor-pointer ${
-                isLight ? 'bg-slate-50 hover:bg-slate-100 border-slate-200' : 'bg-[#121922] hover:bg-[#1a2430] border-[#1e2a38]'
+                isLight ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800' : 'bg-[#121922] hover:bg-[#1a2430] border-[#1e2a38] text-slate-200'
               }`}
             >
               {isLight ? <Moon className="w-3.5 h-3.5 text-slate-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
@@ -676,7 +725,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
           }`}>
             <div className="flex items-center justify-between">
-              <span className="font-heading font-black text-xs uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+              <span className={`font-heading font-black text-xs uppercase tracking-wider flex items-center gap-1.5 ${
+                isLight ? 'text-slate-900' : 'text-slate-200'
+              }`}>
                 <BatteryCharging className="w-4 h-4 text-emerald-400" />
                 <span>Pocket Ride & Background GPS</span>
               </span>
@@ -689,7 +740,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               </span>
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+            <p className={`text-[11px] leading-relaxed font-sans ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               Lock your phone in your pocket or use Google Maps. ThrottleLog runs in the background and broadcasts your live position to your riding crew.
             </p>
 
@@ -717,7 +768,11 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               onClose();
               onOpenDownloadApp();
             }}
-            className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            className={`w-full py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+              isLight 
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' 
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 text-slate-300 hover:text-white'
+            }`}
           >
             <Smartphone className="w-4 h-4 text-emerald-400" />
             <span>Download ThrottleLog Android APK (v1.1.0)</span>
@@ -725,7 +780,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2.5 border-t border-slate-800/80 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
+        <div className={`px-4 py-2.5 border-t text-[10px] flex items-center justify-between shrink-0 ${
+          isLight ? 'border-slate-200 text-slate-500' : 'border-slate-800/80 text-slate-500'
+        }`}>
           <span>ThrottleLog • v1.1.0</span>
           {onOpenFaq && (
             <button
@@ -734,7 +791,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                 onClose();
                 onOpenFaq();
               }}
-              className="text-slate-400 hover:text-white cursor-pointer"
+              className={`cursor-pointer ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
             >
               Help & FAQ
             </button>

@@ -8,6 +8,7 @@
  */
 
 import { triggerHaptic } from './audioChimes';
+import { nativeRequestAudioFocus, nativeAbandonAudioFocus } from './nativeKeepAlive';
 
 let audioCtx: AudioContext | null = null;
 
@@ -226,6 +227,9 @@ export async function playVoiceBlastAudio(audioBase64: string, mimeType: string 
   if (typeof window === 'undefined' || !audioBase64) return;
 
   try {
+    // Request Android native audio focus so background music ducks in Bluetooth helmet intercom
+    nativeRequestAudioFocus().catch(() => {});
+
     // 1. Play walkie-talkie opening squelch tone
     playRadioSquelch('open');
     triggerHaptic([70, 40, 70]);
@@ -250,12 +254,21 @@ export async function playVoiceBlastAudio(audioBase64: string, mimeType: string 
     await audio.play();
 
     audio.onended = () => {
+      nativeAbandonAudioFocus().catch(() => {});
       playRadioSquelch('close');
       if (currentAudioEl === audio) {
         currentAudioEl = null;
       }
     };
+
+    audio.onerror = () => {
+      nativeAbandonAudioFocus().catch(() => {});
+      if (currentAudioEl === audio) {
+        currentAudioEl = null;
+      }
+    };
   } catch (err) {
+    nativeAbandonAudioFocus().catch(() => {});
     console.warn('Voice blast audio playback failed:', err);
   }
 }

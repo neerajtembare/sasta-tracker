@@ -29,6 +29,7 @@ export interface GroupRiderLocation {
   timestamp: number;
   status: 'riding' | 'stopped' | 'sos';
   batteryPct?: number;
+  isCharging?: boolean;
 }
 
 export interface SharedRouteInfo {
@@ -264,15 +265,24 @@ export function useGroupRide() {
 
   // Browser Battery API integration for live squad battery monitoring
   const batteryPctRef = useRef<number | undefined>(undefined);
+  const isChargingRef = useRef<boolean | undefined>(undefined);
+  const [myBattery, setMyBattery] = useState<{ level?: number; isCharging?: boolean }>({});
+
   useEffect(() => {
     if (typeof navigator === 'undefined') return;
     try {
       if ('getBattery' in navigator) {
         (navigator as any).getBattery().then((battery: any) => {
-          batteryPctRef.current = Math.round(battery.level * 100);
-          battery.addEventListener('levelchange', () => {
-            batteryPctRef.current = Math.round(battery.level * 100);
-          });
+          const update = () => {
+            const level = Math.round(battery.level * 100);
+            const charging = battery.charging;
+            batteryPctRef.current = level;
+            isChargingRef.current = charging;
+            setMyBattery({ level, isCharging: charging });
+          };
+          update();
+          battery.addEventListener('levelchange', update);
+          battery.addEventListener('chargingchange', update);
         }).catch(() => {});
       }
     } catch {}
@@ -701,6 +711,7 @@ export function useGroupRide() {
         timestamp: Date.now(),
         status: speedKmh < 2.5 ? 'stopped' : 'riding',
         batteryPct: batteryPctRef.current,
+        isCharging: isChargingRef.current,
       },
     });
   }, [broadcastPayload]);
@@ -1022,6 +1033,7 @@ export function useGroupRide() {
     dismissSos: () => setSosAlert(null),
     isOnRadar,
     toggleOnRadar,
+    myBattery,
     broadcastActiveRoute,
     updateRiderName,
     updateProfile,

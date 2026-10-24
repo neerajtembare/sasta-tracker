@@ -37,6 +37,7 @@ import { triggerHaptic, playWaypointChime } from './utils/audioChimes';
 import { startNativeRadarKeepAlive, stopNativeRadarKeepAlive, addNativeCrashListener } from './utils/nativeKeepAlive';
 import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { saveRideToGarage, updateGarageRide } from './utils/storage';
+import { runConvoyWatchdog, triggerConvoyRollCall } from './utils/convoyWatchdog';
 import { 
   SAMPLE_GPX_DATA, 
   SAMPLE_GPX_NAME
@@ -45,7 +46,7 @@ import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types
 import { getStoredUnitSystem, setStoredUnitSystem, convertDistance } from './utils/units';
 import { 
   Radio, Gauge, HelpCircle, FolderArchive, Home, Users,
-  Map as MapIcon, Activity, History, Bike as BikeIcon 
+  Map as MapIcon, Activity, History, Bike as BikeIcon, X 
 } from 'lucide-react';
 import { RideDiagnosticsModal } from './components/RideDiagnosticsModal';
 
@@ -251,6 +252,80 @@ export default function App() {
     setCrashModalEvent(null);
     triggerHaptic(40);
   }, []);
+
+  // Motorcycle Convoy Safety & Audio Watchdog State
+  const [convoyAlert, setConvoyAlert] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    icon: string;
+    color: string;
+    type: 'battery' | 'separation' | 'rabbit' | 'deviation' | 'rollcall';
+    timestamp: number;
+  } | null>(null);
+
+  // Auto-dismiss convoy banner alert after 8 seconds
+  useEffect(() => {
+    if (!convoyAlert) return;
+    const timer = setTimeout(() => {
+      setConvoyAlert(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [convoyAlert]);
+
+  // Periodic Convoy Watchdog (Checks Battery <=15% and <=8%, Runaway >1.2km, Separation >1km, Route Deviation >450m, 20-min Roll Call)
+  useEffect(() => {
+    const isConvoyActive = (gps.isTrackingActive ?? true) && (groupRide.isOnRadar || isRecordingLive);
+    if (!isConvoyActive) return;
+
+    const interval = setInterval(() => {
+      runConvoyWatchdog({
+        myLocation,
+        myBattery: groupRide.myBattery,
+        members: groupRide.members,
+        activeRoutePoints: analysis?.points?.map(p => ({ lat: p.lat, lon: p.lon })),
+        unitSystem,
+        onAlertBanner: (alert) => {
+          setConvoyAlert({
+            id: 'alert_' + Date.now(),
+            ...alert,
+            timestamp: Date.now(),
+          });
+        },
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [
+    groupRide.isOnRadar,
+    isRecordingLive,
+    myLocation,
+    groupRide.myBattery,
+    groupRide.members,
+    analysis?.points,
+    unitSystem,
+    gps.isTrackingActive,
+  ]);
+
+  // Manual On-Demand Squad Roll Call (e.g. from AppDrawer or Map Capsule)
+  const handleManualRollCall = useCallback(() => {
+    triggerConvoyRollCall(
+      {
+        myLocation,
+        myBattery: groupRide.myBattery,
+        members: groupRide.members,
+        unitSystem,
+        onAlertBanner: (alert) => {
+          setConvoyAlert({
+            id: 'rollcall_' + Date.now(),
+            ...alert,
+            timestamp: Date.now(),
+          });
+        },
+      },
+      true
+    );
+  }, [myLocation, groupRide.myBattery, groupRide.members, unitSystem]);
 
   // Native Android Foreground Service & Keep-Alive (guarantees GPS, WebSocket survive backgrounding, & handlebar mount screen stays awake)
   useEffect(() => {
@@ -800,13 +875,66 @@ export default function App() {
           onToggleTheme={toggleTheme}
           unitSystem={unitSystem}
           onToggleUnitSystem={toggleUnitSystem}
-          onInstallPwa={handleOpenDownloadApp}
-          canInstallPwa={true}
         />
       )}
 
       {/* In-App Browser Helper Banner (surfaced across all views including live map) */}
       <InAppBrowserBanner />
+
+      {/* Global Convoy Safety & Alert Banner (Battery, Runaway Ahead, Separation, Route Deviation, Roll Call) */}
+      {convoyAlert && (
+        <div 
+          style={{
+            top: 'max(4.2rem, calc(env(safe-area-inset-top) + 3.8rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
+        >
+          <div 
+            className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all p-3 flex items-center justify-between gap-3 ${
+              theme === 'light'
+                ? 'bg-white/95 text-slate-800 shadow-slate-400/50'
+                : 'bg-[#0d131a]/95 text-white shadow-black/90'
+            }`}
+            style={{ borderColor: convoyAlert.color || '#00f0ff' }}
+          >
+            <div 
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border"
+              style={{
+                backgroundColor: `${convoyAlert.color || '#00f0ff'}20`,
+                borderColor: `${convoyAlert.color || '#00f0ff'}50`,
+              }}
+            >
+              {convoyAlert.icon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div 
+                className="text-[10px] font-black uppercase tracking-wider truncate"
+                style={{ color: convoyAlert.color || '#00f0ff' }}
+              >
+                {convoyAlert.title}
+              </div>
+              <div className={`text-xs font-sans truncate ${theme === 'light' ? 'text-slate-600' : 'text-slate-200'}`}>
+                {convoyAlert.message}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(20);
+                setConvoyAlert(null);
+              }}
+              title="Dismiss alert"
+              className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                theme === 'light' ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Callout Flash Banner for secondary tabs */}
       {currentTab !== 'crew' && (
@@ -1253,6 +1381,7 @@ export default function App() {
               onDismissCallout={groupRide.dismissCallout}
               onSendCallout={groupRide.sendCallout}
               gpsError={gps.gpsError}
+              onTriggerRollCall={handleManualRollCall}
             />
           </div>
         )}

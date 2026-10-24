@@ -323,6 +323,26 @@ public class ThrottleLogNativePlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void requestAudioFocus(PluginCall call) {
+        try {
+            requestTransientAudioFocus();
+            call.resolve();
+        } catch (Exception e) {
+            call.resolve();
+        }
+    }
+
+    @PluginMethod
+    public void abandonAudioFocus(PluginCall call) {
+        try {
+            abandonTransientAudioFocus();
+            call.resolve();
+        } catch (Exception e) {
+            call.resolve();
+        }
+    }
+
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();

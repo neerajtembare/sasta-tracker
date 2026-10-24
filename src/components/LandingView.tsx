@@ -433,21 +433,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
           <div className={`text-[10px] leading-tight ${subText}`}>Fuel, rest & chai breaks</div>
         </div>
 
-        <div 
-          onClick={onOpenDownloadApp}
-          className={`p-3 sm:p-4 border rounded-xl space-y-1 cursor-pointer hover:border-emerald-500/50 transition-all active:scale-95 ${cardBg}`}
-          title="Download standalone Android APK or install offline app"
-        >
-          <div className="text-emerald-400 flex justify-center mb-1">
-            <Smartphone className="w-5 h-5" />
+        <div className={`p-3 sm:p-4 border rounded-xl space-y-1 ${cardBg}`}>
+          <div className="text-cyan-400 flex justify-center mb-1">
+            <Radio className="w-5 h-5" />
           </div>
-          <div className="font-mono font-bold text-xs flex items-center justify-center gap-1.5">
-            <span>Install App</span>
-            <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-black border border-emerald-500/30">
-              APK
-            </span>
-          </div>
-          <div className={`text-[10px] leading-tight ${subText}`}>Direct Android APK download</div>
+          <div className="font-mono font-bold text-xs">Squad Intercom</div>
+          <div className={`text-[10px] leading-tight ${subText}`}>Live radar & walkie-talkie</div>
         </div>
       </div>
     </div>

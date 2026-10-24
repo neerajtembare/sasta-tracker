@@ -83,6 +83,7 @@ interface CrewDashboardProps {
   gpsError?: string | null;
   isTrackingActive?: boolean;
   onToggleTracking?: (enable?: boolean) => void;
+  onTriggerRollCall?: () => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -137,6 +138,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   gpsError = null,
   isTrackingActive = true,
   onToggleTracking,
+  onTriggerRollCall,
 }) => {
   // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
   // When user goes Offline and is not recording, WakeLock is released to conserve battery
@@ -283,6 +285,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         riderName={riderName}
         myColor={myColor}
         onShareInvite={handleShareWhatsApp}
+        onTriggerRollCall={onTriggerRollCall}
         theme={theme}
       />
 
@@ -517,6 +520,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onToggleRadar={onToggleRadar}
         isTrackingActive={isTrackingActive}
         onToggleTracking={onToggleTracking}
+        onTriggerRollCall={onTriggerRollCall}
       />
 
       {/* ─────────────────────────────────────────────────────────────

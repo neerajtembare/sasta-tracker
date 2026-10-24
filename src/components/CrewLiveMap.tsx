@@ -453,37 +453,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     return starredList[0];
   }, [members, starredRiderIds]);
 
-  // Convoy Separation Watchdog: Alert rider via Bluetooth intercom when any squad member falls behind
-  const lastSeparationWarningRef = useRef<number>(0);
-  useEffect(() => {
-    if (!myLocation) return;
-    const mySpeed = myLocation.speedKmh ?? 0;
-    if (mySpeed < 20) return; // Only alert if actively cruising
-
-    const onlineOthers = members.filter(m => m.isOnline && m.distanceFromMeMeters !== undefined);
-    if (onlineOthers.length === 0) return;
-
-    // Prioritize primary starred buddy if set, else check furthest squad member
-    const checkDist = primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined
-      ? primaryStarredMember.distanceFromMeMeters
-      : Math.max(...onlineOthers.map(m => m.distanceFromMeMeters ?? 0));
-
-    const now = Date.now();
-    // Alert if someone drops > 1200m behind and haven't alerted in 60s
-    if (checkDist > 1200 && (now - lastSeparationWarningRef.current > 60000)) {
-      lastSeparationWarningRef.current = now;
-      playWarningChime();
-      triggerHaptic([80, 50, 80]);
-
-      try {
-        const laggingRider = (primaryStarredMember && primaryStarredMember.distanceFromMeMeters && primaryStarredMember.distanceFromMeMeters > 1200)
-          ? primaryStarredMember
-          : onlineOthers.reduce((prev, curr) => (curr.distanceFromMeMeters ?? 0) > (prev.distanceFromMeMeters ?? 0) ? curr : prev);
-        const distKm = (checkDist / 1000).toFixed(1);
-        speakAlert(`Squad alert: ${laggingRider.name} is ${distKm} kilometers behind`, { rate: 1.05 });
-      } catch {}
-    }
-  }, [members, primaryStarredMember?.distanceFromMeMeters, myLocation?.speedKmh]);
+  // Note: Convoy safety, battery, runaway, separation & roll call watchdogs run globally in App.tsx via convoyWatchdog
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -1346,7 +1316,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </div>
           {isRecording && totalDistanceMeters !== undefined && totalDistanceMeters > 0 && (
             <div className="text-[8px] font-bold text-rose-400 mt-0.5 border-t border-slate-800/80 pt-0.5 w-full text-center">
-              REC • {(totalDistanceMeters / 1000).toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}
+              REC • {unitSystem === 'imperial'
+                ? `${((totalDistanceMeters / 1000) * 0.621371).toFixed(1)} mi`
+                : `${(totalDistanceMeters / 1000).toFixed(1)} km`}
             </div>
           )}
         </div>

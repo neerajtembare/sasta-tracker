@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'ThrottleLog',
   webDir: 'dist',
   server: {
+    url: 'https://sasta-tracker.vercel.app',
     androidScheme: 'https',
     cleartext: true,
   },

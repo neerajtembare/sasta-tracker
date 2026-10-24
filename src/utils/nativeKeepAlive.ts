@@ -26,6 +26,8 @@ interface ThrottleLogNativePlugin {
   requestBatteryOptimizationExemption(): Promise<void>;
   speak(options: { text: string; rate?: number; pitch?: number; queue?: 'flush' | 'add' }): Promise<void>;
   stopSpeaking(): Promise<void>;
+  requestAudioFocus(): Promise<void>;
+  abandonAudioFocus(): Promise<void>;
   requestMicrophonePermission(): Promise<{ granted: boolean }>;
   addListener(
     eventName: 'onNativeLocation' | 'onNativeCrashDetected',
@@ -61,6 +63,8 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     requestBatteryOptimizationExemption: async () => {},
     speak: async () => {},
     stopSpeaking: async () => {},
+    requestAudioFocus: async () => {},
+    abandonAudioFocus: async () => {},
     requestMicrophonePermission: async () => ({ granted: true }),
     addListener: async () => ({ remove: () => {} }),
   },
@@ -187,5 +191,25 @@ export async function requestNativeMicrophonePermission(): Promise<boolean> {
     }
   }
   return true;
+}
+
+export async function nativeRequestAudioFocus(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.requestAudioFocus();
+    } catch (e) {
+      console.warn('Native request audio focus warning:', e);
+    }
+  }
+}
+
+export async function nativeAbandonAudioFocus(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.abandonAudioFocus();
+    } catch (e) {
+      console.warn('Native abandon audio focus warning:', e);
+    }
+  }
 }
 

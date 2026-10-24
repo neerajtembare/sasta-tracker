@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Share2, Radio, Users, Power, Sparkles, Shield, ShieldOff } from 'lucide-react';
+import { Menu, Share2, Radio, Users, Power, Sparkles, Shield, ShieldOff, Volume2 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
 
@@ -15,6 +15,7 @@ interface TopMapCapsuleProps {
   riderName: string;
   myColor: string;
   onShareInvite?: () => void;
+  onTriggerRollCall?: () => void;
   theme?: AppTheme;
 }
 
@@ -30,6 +31,7 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
   riderName,
   myColor,
   onShareInvite,
+  onTriggerRollCall,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -162,6 +164,23 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
             >
               <Share2 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline text-[11px]">Invite</span>
+            </button>
+          )}
+
+          {onTriggerRollCall && (
+            <button
+              id="btn-quick-rollcall"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic(25);
+                onTriggerRollCall();
+              }}
+              title="Squad Audio Roll Call (Hear squad positions and battery)"
+              className="h-8 px-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-400 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+            >
+              <Volume2 className="w-3.5 h-3.5" />
+              <span className="hidden md:inline text-[11px]">Roll Call</span>
             </button>
           )}
 

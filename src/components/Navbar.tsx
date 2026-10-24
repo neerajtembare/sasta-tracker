@@ -238,26 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isLight ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
 
-          {onInstallPwa && (
-            <button
-              id="btn-install-pwa"
-              onClick={onInstallPwa}
-              title="Download Android APK or Install App"
-              className={`flex items-center gap-1 px-2 py-1 border rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                canInstallPwa
-                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400 text-emerald-400'
-                  : isLight
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="hidden xs:inline">App</span>
-              <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-black">
-                APK
-              </span>
-            </button>
-          )}
+
 
           <button
             id="btn-upload-gpx"

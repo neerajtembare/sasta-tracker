@@ -254,13 +254,35 @@ export default function App() {
 
   // Native Android Foreground Service & Keep-Alive (guarantees GPS, WebSocket survive backgrounding, & handlebar mount screen stays awake)
   useEffect(() => {
-    const shouldKeepAlive = isRecordingLive || groupRide.isOnRadar || currentTab === 'crew' || currentTab === 'cockpit';
+    const isGpsActive = gps.isTrackingActive ?? true;
+    const shouldKeepAlive = isGpsActive && (isRecordingLive || (groupRide.isOnRadar && (currentTab === 'crew' || currentTab === 'cockpit')));
     if (shouldKeepAlive) {
       startNativeRadarKeepAlive();
     } else {
       stopNativeRadarKeepAlive();
     }
-  }, [isRecordingLive, groupRide.isOnRadar, currentTab]);
+  }, [isRecordingLive, groupRide.isOnRadar, currentTab, gps.isTrackingActive]);
+
+  // Unified Privacy & Stop Tracking Handler (zero-battery standby, stops GPS watch, kills native keep-alive & MQTT broadcasts)
+  const handleToggleTracking = useCallback((enable?: boolean) => {
+    const isCurrentlyActive = (gps.isTrackingActive ?? true) && groupRide.isOnRadar;
+    const next = enable !== undefined ? enable : !isCurrentlyActive;
+    if (!next) {
+      controls.stopGpsTracking();
+      groupRide.toggleOnRadar(false);
+      stopNativeRadarKeepAlive();
+      setMyLocation(null);
+      setSessionNotice('🛡️ Privacy Mode Active: GPS hardware, background services, and radar broadcasts stopped.');
+      setTimeout(() => setSessionNotice(null), 5000);
+      triggerHaptic(30);
+    } else {
+      controls.startGpsTracking();
+      groupRide.toggleOnRadar(true);
+      setSessionNotice('🟢 Live Tracking Active: GPS location and squad radar broadcasting resumed.');
+      setTimeout(() => setSessionNotice(null), 5000);
+      triggerHaptic(30);
+    }
+  }, [gps.isTrackingActive, groupRide, controls]);
 
   // Check URL query for room invite link (e.g. ?rider=Rahul or ?crew=SUNDAY)
   // Zero-friction 1-tap auto-join: joins immediately and switches to crew radar!
@@ -298,12 +320,15 @@ export default function App() {
         gps.currentHeading
       );
       crashDetector.updateGpsSpeed(gps.currentSpeedKmh);
+    } else if (!gps.isTrackingActive) {
+      setMyLocation(null);
     }
   }, [
     gps.currentCoords?.lat,
     gps.currentCoords?.lon,
     gps.currentSpeedKmh,
     gps.currentHeading,
+    gps.isTrackingActive,
     groupRide.updateMyLocation,
   ]);
   // Backward-compatible location update handler
@@ -1208,6 +1233,8 @@ export default function App() {
               onLoadSampleRide={() => handleLoadSample()}
               isOnRadar={groupRide.isOnRadar}
               onToggleRadar={groupRide.toggleOnRadar}
+              isTrackingActive={gps.isTrackingActive}
+              onToggleTracking={handleToggleTracking}
               onJoinSharedRoute={handleJoinSharedRoute}
               activeVoiceBlast={groupRide.activeVoiceBlast}
               onDismissVoiceBlast={groupRide.dismissVoiceBlast}
@@ -1477,6 +1504,7 @@ export default function App() {
         crashEvent={crashModalEvent}
         onCancel={handleCancelCrashSos}
         onConfirmSos={handleConfirmCrashSos}
+        unitSystem={unitSystem}
       />
     </div>
   );

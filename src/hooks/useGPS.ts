@@ -48,6 +48,7 @@ export interface GPSState {
   isPaused: boolean;
   gpsError: string | null;
   wakeLockActive: boolean;
+  isTrackingActive: boolean;
 
   // Calibration
   tareOffset: number;
@@ -79,6 +80,11 @@ export interface GPSControls {
 
   // Real-time access & instant export
   getCurrentPoints: () => LiveGpsPoint[];
+
+  // Privacy & Tracking controls
+  startGpsTracking: () => void;
+  stopGpsTracking: () => void;
+  toggleGpsTracking: (enable?: boolean) => void;
 }
 
 // ─── Haversine ───────────────────────────────────────────────
@@ -140,6 +146,16 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [hasRecoverableRide, setHasRecoverableRide] = useState(false);
   const [recoverableData, setRecoverableData] = useState<any>(null);
+
+  const [isTrackingActive, setIsTrackingActive] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('sasta_gps_tracking_enabled');
+        if (saved !== null) return saved !== 'false' && enabled;
+      }
+    } catch {}
+    return enabled;
+  });
 
   const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState(() => {
     try {
@@ -611,6 +627,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   // ── Native Android Hardware Location Listener (Foreground Service Bridge) ──
   useEffect(() => {
+    if (!enabled || !isTrackingActive) return;
     let cleanupFn: (() => void) | null = null;
     addNativeLocationListener((data: NativeLocationData) => {
       processLocationFix({
@@ -629,10 +646,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     return () => {
       if (cleanupFn) cleanupFn();
     };
-  }, [processLocationFix]);
+  }, [enabled, isTrackingActive, processLocationFix]);
 
   // ── Standby / Live Web GPS Watcher (Browser Fallback) ──
   const startGpsWatch = useCallback(() => {
+    if (!enabled || !isTrackingActive) return;
     if (watchIdRef.current !== null) return;
     if (!navigator.geolocation) {
       setGpsError('Geolocation is not supported by your browser.');
@@ -675,11 +693,17 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 },
     );
-  }, [processLocationFix]);
+  }, [enabled, isTrackingActive, processLocationFix]);
 
   // Auto-start standby GPS fix on mount so satellite lock & accuracy are ready before user hits start
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isTrackingActive) {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       startGpsWatch();
     }
@@ -689,7 +713,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         watchIdRef.current = null;
       }
     };
-  }, [enabled, startGpsWatch]);
+  }, [enabled, isTrackingActive, startGpsWatch]);
 
   // 1-second inaudible audio loop that tricks mobile browsers (iOS WebKit & Android Chrome)
   // into keeping background geolocation & JS timers active when phone screen locks in a pocket.
@@ -934,10 +958,42 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     isPaused,
     gpsError,
     wakeLockActive,
+    isTrackingActive,
     tareOffset,
     mountMode,
     mountOrientation,
   };
+
+  const stopGpsTracking = useCallback(() => {
+    setIsTrackingActive(false);
+    try {
+      localStorage.setItem('sasta_gps_tracking_enabled', 'false');
+    } catch {}
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    pauseSilentAudio();
+    setCurrentCoords(null);
+    setCurrentSpeedKmh(0);
+    setCurrentHeading(null);
+    setGpsAccuracy(null);
+  }, [pauseSilentAudio]);
+
+  const startGpsTracking = useCallback(() => {
+    setIsTrackingActive(true);
+    try {
+      localStorage.setItem('sasta_gps_tracking_enabled', 'true');
+    } catch {}
+  }, []);
+
+  const toggleGpsTracking = useCallback((enable?: boolean) => {
+    if (enable === undefined ? !isTrackingActive : enable) {
+      startGpsTracking();
+    } else {
+      stopGpsTracking();
+    }
+  }, [isTrackingActive, startGpsTracking, stopGpsTracking]);
 
   const controls: GPSControls = {
     startNewRecording,
@@ -957,6 +1013,9 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     voiceFeedbackEnabled,
     setVoiceFeedbackEnabled,
     getCurrentPoints: () => [...recordedPointsRef.current],
+    startGpsTracking,
+    stopGpsTracking,
+    toggleGpsTracking,
   };
 
   return [state, controls];

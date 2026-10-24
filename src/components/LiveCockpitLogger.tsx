@@ -548,6 +548,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                   onTriggerSos?.();
                 }
               }}
+              unitSystem={unitSystem}
             />
           </div>
         )}

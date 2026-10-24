@@ -81,6 +81,8 @@ interface CrewDashboardProps {
   onDismissCallout?: () => void;
   onSendCallout?: (preset: CalloutPreset) => void;
   gpsError?: string | null;
+  isTrackingActive?: boolean;
+  onToggleTracking?: (enable?: boolean) => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
@@ -133,6 +135,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   onDismissCallout,
   onSendCallout,
   gpsError = null,
+  isTrackingActive = true,
+  onToggleTracking,
 }) => {
   // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
   // When user goes Offline and is not recording, WakeLock is released to conserve battery
@@ -256,8 +260,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           activeRoute={activeRoute}
           isOnRadar={isOnRadar}
           onToggleRadar={onToggleRadar}
+          isTrackingActive={isTrackingActive}
+          onToggleTracking={onToggleTracking}
           onJoinSharedRoute={onJoinSharedRoute}
           externalMapLayer={mapLayer}
+          onChangeMapLayer={handleChangeMapLayer}
         />
       </div>
 
@@ -270,6 +277,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         isConnected={isConnected}
         isOnRadar={isOnRadar}
         onToggleRadar={onToggleRadar}
+        isTrackingActive={isTrackingActive}
+        onToggleTracking={onToggleTracking}
         onlineCount={onlineCount}
         riderName={riderName}
         myColor={myColor}
@@ -285,6 +294,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onDismiss={onDismissCallout || (() => {})}
         onSendVoiceBlast={onSendVoiceBlast}
         theme={theme}
+        hasSosActive={!!sosAlert}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -293,7 +303,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       {gpsError && (
         <div 
           style={{
-            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            top: sosAlert 
+              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
+              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
@@ -315,6 +327,48 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md active:scale-95 transition-all"
             >
               Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          2D. PRIVACY MODE / TRACKING STOPPED NOTICE
+      ───────────────────────────────────────────────────────────── */}
+      {(!isTrackingActive || !isOnRadar) && (
+        <div 
+          style={{
+            top: gpsError ? 'max(7.2rem, calc(env(safe-area-inset-top) + 6.8rem))' : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-35 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
+        >
+          <div className="pointer-events-auto w-full max-w-md p-2.5 sm:p-3 rounded-2xl bg-slate-950/95 border border-rose-500/50 text-white font-mono text-xs shadow-2xl backdrop-blur-md flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">🛡️</span>
+              <div className="min-w-0">
+                <div className="font-heading font-black text-[11px] uppercase tracking-wider text-rose-300">
+                  Privacy Mode Active
+                </div>
+                <p className="text-[10px] text-slate-400 truncate">
+                  GPS & background tracking stopped. Location is private.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(30);
+                if (onToggleTracking) {
+                  onToggleTracking(true);
+                } else if (onToggleRadar) {
+                  onToggleRadar(true);
+                }
+              }}
+              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shrink-0 cursor-pointer shadow-md active:scale-95 transition-all"
+            >
+              Resume
             </button>
           </div>
         </div>
@@ -381,7 +435,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                 <div className="text-[10px] text-slate-400">DISTANCE</div>
-                <div className="font-black text-cyan-400 text-base">{finishedRideSummary.distanceKm.toFixed(1)} km</div>
+                <div className="font-black text-cyan-400 text-base">
+                  {unitSystem === 'imperial' 
+                    ? `${(finishedRideSummary.distanceKm * 0.621371).toFixed(1)} mi` 
+                    : `${finishedRideSummary.distanceKm.toFixed(1)} km`}
+                </div>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                 <div className="text-[10px] text-slate-400">DURATION</div>
@@ -389,7 +447,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
                 <div className="text-[10px] text-slate-400">TOP SPEED</div>
-                <div className="font-black text-amber-400 text-base">{Math.round(finishedRideSummary.maxSpeedKmh)} km/h</div>
+                <div className="font-black text-amber-400 text-base">
+                  {unitSystem === 'imperial'
+                    ? `${Math.round(finishedRideSummary.maxSpeedKmh * 0.621371)} mph`
+                    : `${Math.round(finishedRideSummary.maxSpeedKmh)} km/h`}
+                </div>
               </div>
             </div>
 
@@ -453,6 +515,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onOpenFaq={onOpenFaq}
         isOnRadar={isOnRadar}
         onToggleRadar={onToggleRadar}
+        isTrackingActive={isTrackingActive}
+        onToggleTracking={onToggleTracking}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -464,8 +528,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         riderName={riderName}
         bikeModel={bikeModel}
         myColor={myColor}
-        isOnRadar={isOnRadar}
-        onToggleRadar={onToggleRadar || (() => {})}
+        isOnRadar={isTrackingActive && isOnRadar}
+        onToggleRadar={() => {
+          if (onToggleTracking) {
+            onToggleTracking(!isOnRadar);
+          } else if (onToggleRadar) {
+            onToggleRadar();
+          }
+        }}
         onSaveProfile={(name, bike, color) => onUpdateRiderName(name, bike, color)}
         theme={theme}
       />

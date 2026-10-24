@@ -24,7 +24,9 @@ import {
   Compass,
   Download,
   Trash2,
-  HardDrive
+  HardDrive,
+  Shield,
+  ShieldOff
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme, UnitSystem } from '../types';
@@ -51,6 +53,8 @@ interface AppDrawerProps {
   onOpenFaq?: () => void;
   isOnRadar?: boolean;
   onToggleRadar?: () => void;
+  isTrackingActive?: boolean;
+  onToggleTracking?: (enable?: boolean) => void;
   orientationMode?: 'north' | 'course';
   onToggleOrientation?: () => void;
 }
@@ -86,6 +90,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   onOpenFaq,
   isOnRadar = true,
   onToggleRadar,
+  isTrackingActive = true,
+  onToggleTracking,
   orientationMode = 'course',
   onToggleOrientation,
 }) => {
@@ -214,50 +220,78 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         <div className="flex-1 px-4 py-3 space-y-4 text-xs">
           
           {/* ─────────────────────────────────────────────────────────────
-              1. RADAR TRACKING & BATTERY SAVER MODE
+              1. PRIVACY & BACKGROUND TRACKING CONTROL
           ───────────────────────────────────────────────────────────── */}
-          <div className={`p-3 rounded-2xl border transition-all ${
-            isOnRadar 
+          <div className={`p-3.5 rounded-2xl border transition-all ${
+            isTrackingActive && isOnRadar 
               ? 'bg-emerald-950/20 border-emerald-500/30' 
               : 'bg-rose-950/20 border-rose-500/30'
           }`}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
-                Radar Status & Battery
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Privacy & Tracking Control</span>
               </span>
               <span className={`flex items-center gap-1 text-[10px] font-bold ${
-                isOnRadar ? 'text-emerald-400' : 'text-rose-400'
+                isTrackingActive && isOnRadar ? 'text-emerald-400' : 'text-rose-400'
               }`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${
-                  isOnRadar ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                  isTrackingActive && isOnRadar ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
                 }`} />
-                <span>{isOnRadar ? 'LIVE' : 'OFFLINE'}</span>
+                <span>{isTrackingActive && isOnRadar ? 'TRACKING LIVE' : 'STOPPED (PRIVATE)'}</span>
               </span>
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed font-sans mb-2.5">
-              {isOnRadar 
-                ? 'Your location is broadcasting to your squad on the live map.'
-                : 'Offline mode disables GPS broadcast and background processes to conserve phone battery.'}
+            {/* Privacy Sub-system Status Matrix */}
+            <div className="grid grid-cols-2 gap-1.5 mb-2.5 text-[10px] font-mono">
+              <div className="p-1.5 rounded-lg bg-black/40 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">GPS Hardware:</span>
+                <span className={isTrackingActive ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                  {isTrackingActive ? 'Active' : 'Off (Zero Drain)'}
+                </span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-black/40 border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">Radar Broadcast:</span>
+                <span className={isOnRadar ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                  {isOnRadar ? 'Live' : 'Hidden (Private)'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed font-sans mb-3">
+              {isTrackingActive && isOnRadar 
+                ? 'Your GPS location is being actively tracked and broadcast to your squad friends on the live map.'
+                : 'Privacy Mode Active: Geolocation queries and background keep-alives are terminated. Your location is 100% private and cannot be tracked.'}
             </p>
 
-            {onToggleRadar && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(30);
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(30);
+                if (onToggleTracking) {
+                  onToggleTracking();
+                } else if (onToggleRadar) {
                   onToggleRadar();
-                }}
-                className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-md ${
-                  isOnRadar
-                    ? 'bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                }`}
-              >
-                <Power className="w-4 h-4" />
-                <span>{isOnRadar ? 'Go Offline (Battery Saver)' : 'Go Live on Crew Radar'}</span>
-              </button>
-            )}
+                }
+              }}
+              className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 shadow-md ${
+                isTrackingActive && isOnRadar
+                  ? 'bg-rose-950/90 hover:bg-rose-900 border border-rose-500/50 text-rose-300'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              }`}
+            >
+              {isTrackingActive && isOnRadar ? (
+                <>
+                  <ShieldOff className="w-4 h-4" />
+                  <span>Stop All Tracking & Go Private</span>
+                </>
+              ) : (
+                <>
+                  <Radio className="w-4 h-4" />
+                  <span>Resume Tracking & Go Live</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* ─────────────────────────────────────────────────────────────

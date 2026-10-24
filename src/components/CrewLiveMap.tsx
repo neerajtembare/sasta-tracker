@@ -115,9 +115,12 @@ interface CrewLiveMapProps {
   onSelectRider?: (riderId: string) => void;
   isOnRadar?: boolean;
   onToggleRadar?: (enable?: boolean) => void;
+  isTrackingActive?: boolean;
+  onToggleTracking?: (enable?: boolean) => void;
   onJoinSharedRoute?: (route: any) => void;
   starredRiderIds?: string[];
   externalMapLayer?: MapLayerType;
+  onChangeMapLayer?: (layer: MapLayerType) => void;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
@@ -140,6 +143,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   theme = 'dark',
   unitSystem = 'metric',
   externalMapLayer,
+  onChangeMapLayer,
   onTriggerSos,
   onDismissSos,
   onLeaveRoom,
@@ -723,7 +727,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     };
 
     try {
-      const result = await preCacheRouteTiles(bounds, 'dark', (progress) => {
+      const result = await preCacheRouteTiles(bounds, 11, 14, (progress) => {
         setCacheProgress(progress);
       });
       setCacheSuccessMsg(`Saved ${result.cached} tiles offline!`);
@@ -751,7 +755,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         myLocation.lat,
         myLocation.lon,
         25,
-        mapLayer === 'sunlight' ? 'street' : 'dark',
         (progress) => {
           setCacheProgress(progress);
         }
@@ -1089,66 +1092,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     map.flyTo(pos, 16, { animate: true, duration: 1.2 });
   }, [sosAlert]);
 
-  // Draw Active Planned / Shared Route on Leaflet Map
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
-
-    // Clear previous route polylines and destination markers
-    if (routePolylineRef.current) {
-      routePolylineRef.current.remove();
-      routePolylineRef.current = null;
-    }
-    if (routeGlowPolylineRef.current) {
-      routeGlowPolylineRef.current.remove();
-      routeGlowPolylineRef.current = null;
-    }
-    routeMarkersRef.current.forEach(m => m.remove());
-    routeMarkersRef.current = [];
-
-    if (activeRoute && activeRoute.points && activeRoute.points.length > 0) {
-      const latLngs: L.LatLngTuple[] = activeRoute.points.map(p => [p.lat, p.lon]);
-
-      // Outer neon cyan glow
-      const glow = L.polyline(latLngs, {
-        color: '#00f0ff',
-        weight: 8,
-        opacity: 0.35,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-      routeGlowPolylineRef.current = glow;
-
-      // Inner crisp route line
-      const poly = L.polyline(latLngs, {
-        color: '#00f0ff',
-        weight: 4,
-        opacity: 0.95,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-      routePolylineRef.current = poly;
-
-      // Destination flag marker
-      const destPt = activeRoute.points[activeRoute.points.length - 1];
-      const destIcon = L.divIcon({
-        className: 'route-destination-flag',
-        html: `
-          <div style="display:flex; flex-direction:column; align-items:center; transform:translateY(-12px);">
-            <div style="background:#00f0ff; color:#080c10; font-family:monospace; font-size:9px; font-weight:900; padding:2px 6px; border-radius:4px; box-shadow:0 2px 6px rgba(0,0,0,0.8); white-space:nowrap; display:flex; align-items:center; gap:3px;">
-              <span>🏁</span>
-              <span>${activeRoute.name || 'Finish'}</span>
-            </div>
-            <div style="width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid #00f0ff;"></div>
-          </div>
-        `,
-        iconSize: [100, 30],
-        iconAnchor: [50, 30],
-      });
-      const destMarker = L.marker([destPt.lat, destPt.lon], { icon: destIcon, zIndexOffset: 850 }).addTo(map);
-      routeMarkersRef.current.push(destMarker);
-    }
-  }, [activeRoute]);
 
   // Dynamic Initial Bounds: auto-encompass active riders on cold-start ONLY (never hijacks camera mid-ride)
   useEffect(() => {
@@ -1260,15 +1203,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           CONVOY PROXIMITY PILL (Shows primary starred buddy distance & speed)
       ───────────────────────────────────────────────────────────── */}
-      {primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
-        <div
+      {!trailedRiderId && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
+        <div 
           onClick={() => {
             triggerHaptic(20);
             if (primaryStarredMember.location && mapInstanceRef.current) {
               mapInstanceRef.current.flyTo([primaryStarredMember.location.lat, primaryStarredMember.location.lon], 16, { animate: true, duration: 0.6 });
             }
           }}
-          className={`absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
+          style={{
+            top: sosAlert 
+              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
+              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+          }}
+          className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
             primaryStarredMember.distanceFromMeMeters > 2500
               ? 'bg-amber-950/95 border-amber-500 text-amber-300 animate-pulse'
               : 'bg-slate-950/95 border-amber-500/60 text-white'
@@ -1278,13 +1226,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <span className="text-amber-400">⭐</span>
           <span className="font-black text-amber-300">{primaryStarredMember.name}:</span>
           <span>
-            {primaryStarredMember.distanceFromMeMeters < 1000
-              ? `${Math.round(primaryStarredMember.distanceFromMeMeters)}m`
-              : `${(primaryStarredMember.distanceFromMeMeters / 1000).toFixed(1)}km`}
+            {formatDistance(primaryStarredMember.distanceFromMeMeters)}
           </span>
           {primaryStarredMember.location?.speedKmh !== undefined && (
             <span className="text-cyan-400 text-[10px]">
-              ({Math.round(primaryStarredMember.location.speedKmh)} km/h)
+              ({formatSpeed(primaryStarredMember.location.speedKmh)})
             </span>
           )}
           {primaryStarredMember.distanceFromMeMeters > 2500 && (
@@ -1297,7 +1243,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed)
       ───────────────────────────────────────────────────────────── */}
       {crewNotification && (
-        <div className="absolute top-14 left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200">
+        <div 
+          style={{
+            top: sosAlert 
+              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
+              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+          }}
+          className="absolute left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200"
+        >
           <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-mono text-xs ${
             crewNotification.type === 'join'
               ? 'bg-emerald-950/92 border-emerald-500/60 text-emerald-200 shadow-emerald-950/40'
@@ -1439,7 +1392,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic(20);
-              setMapLayer(prev => prev === 'dark' ? 'sunlight' : prev === 'sunlight' ? 'satellite' : 'dark');
+              const next = mapLayer === 'dark' ? 'sunlight' : mapLayer === 'sunlight' ? 'satellite' : 'dark';
+              setMapLayer(next);
+              onChangeMapLayer?.(next);
             }}
             className="w-10 h-10 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500"
             title={`Map Theme: ${mapLayer.toUpperCase()} • Tap to cycle Dark / Sunlight / Satellite`}
@@ -1499,7 +1454,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {trailedMember && trailingStats && (
         <div 
           style={{ 
-            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            top: sosAlert ? 'max(7.2rem, calc(env(safe-area-inset-top) + 6.8rem))' : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
@@ -1525,7 +1480,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   </span>
                   <span>•</span>
                   <span className="text-slate-400">
-                    {trailingStats.isStopped ? 'STOPPED' : `${Math.round(trailingStats.speedKmh || 0)} km/h`}
+                    {trailingStats.isStopped 
+                      ? 'STOPPED' 
+                      : `${Math.round(unitSystem === 'imperial' ? (trailingStats.speedKmh || 0) * 0.621371 : (trailingStats.speedKmh || 0))} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`}
                   </span>
                 </div>
               </div>
@@ -1569,7 +1526,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {!trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
         <div 
           style={{ 
-            top: 'max(6.5rem, calc(env(safe-area-inset-top) + 6.2rem))',
+            top: sosAlert ? 'max(9.5rem, calc(env(safe-area-inset-top) + 9.2rem))' : 'max(6.5rem, calc(env(safe-area-inset-top) + 6.2rem))',
           }}
           className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in slide-in-from-top-1 duration-150"
         >
@@ -1762,41 +1719,51 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)
       ───────────────────────────────────────────────────────────── */}
       {sosAlert && (
-        <div className="absolute top-14 left-2 right-12 z-20 p-2 rounded-xl bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 truncate">
-            <span>🚨</span>
-            <span className="font-bold text-rose-300 truncate text-[11px]">
-              REGROUP: {sosAlert.fromName}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <a
-              href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1"
-              title="Send WhatsApp emergency confirmation to rider"
-            >
-              <Share2 className="w-3 h-3" />
-              <span>WA</span>
-            </a>
-            <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1"
-            >
-              <Navigation className="w-3 h-3" />
-              <span>Maps</span>
-            </a>
-            {onDismissSos && (
-              <button
-                onClick={onDismissSos}
-                className="px-1.5 py-0.5 rounded border border-rose-700 text-rose-300 text-[10px]"
+        <div 
+          style={{
+            top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
+          }}
+          className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
+        >
+          <div className="pointer-events-auto w-full max-w-md p-2.5 rounded-2xl bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="text-base animate-pulse">🚨</span>
+              <span className="font-bold text-rose-300 truncate text-[11px]">
+                EMERGENCY SOS: {sosAlert.fromName}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                title="Send WhatsApp emergency confirmation to rider"
               >
-                ✕
-              </button>
-            )}
+                <Share2 className="w-3 h-3" />
+                <span>WhatsApp</span>
+              </a>
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+              >
+                <Navigation className="w-3 h-3" />
+                <span>Navigate</span>
+              </a>
+              {onDismissSos && (
+                <button
+                  type="button"
+                  onClick={onDismissSos}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] cursor-pointer transition-all active:scale-95"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

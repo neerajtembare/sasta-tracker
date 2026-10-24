@@ -8,6 +8,7 @@ interface CrashAlertModalProps {
   crashEvent: CrashEvent | null;
   onCancel: () => void;
   onConfirmSos: () => void;
+  unitSystem?: 'metric' | 'imperial';
 }
 
 export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
@@ -15,6 +16,7 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
   crashEvent,
   onCancel,
   onConfirmSos,
+  unitSystem = 'metric',
 }) => {
   const [secondsRemaining, setSecondsRemaining] = useState(30);
   const sirenIntervalRef = useRef<any>(null);
@@ -72,7 +74,9 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
             Severe Impact Detected!
           </h2>
           <p className="text-xs text-slate-300">
-            {crashEvent ? `${crashEvent.peakG}G impact recorded at ${crashEvent.preImpactSpeedKmh} km/h.` : 'Sudden stop and impact registered.'}
+            {crashEvent 
+              ? `${crashEvent.peakG}G impact recorded at ${unitSystem === 'imperial' ? Math.round(crashEvent.preImpactSpeedKmh * 0.621371) + ' mph' : crashEvent.preImpactSpeedKmh + ' km/h'}.` 
+              : 'Sudden stop and impact registered.'}
           </p>
         </div>
 

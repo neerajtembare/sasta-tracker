@@ -10,6 +10,7 @@ interface GroupRideHudProps {
   onOpenModal: () => void;
   onTriggerSos: () => void;
   onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
+  unitSystem?: 'metric' | 'imperial';
 }
 
 export const GroupRideHud: React.FC<GroupRideHudProps> = ({
@@ -19,6 +20,7 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
   onOpenModal,
   onTriggerSos,
   onSendVoiceBlast,
+  unitSystem = 'metric',
 }) => {
   if (!roomCode) return null;
 
@@ -49,7 +51,9 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
           const distStr = m.distanceFromMeMeters !== undefined
             ? m.distanceFromMeMeters < 1000
               ? `${Math.round(m.distanceFromMeMeters)}m`
-              : `${(m.distanceFromMeMeters / 1000).toFixed(1)}km`
+              : unitSystem === 'imperial'
+                ? `${((m.distanceFromMeMeters / 1000) * 0.621371).toFixed(1)}mi`
+                : `${(m.distanceFromMeMeters / 1000).toFixed(1)}km`
             : '';
 
           const isStopped = m.location && m.location.speedKmh < 2.0;
@@ -75,7 +79,8 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
               </span>
               {m.location && (
                 <span className="text-cyan-300 font-mono text-[10px]">
-                  {m.location.speedKmh.toFixed(0)}k
+                  {Math.round(unitSystem === 'imperial' ? m.location.speedKmh * 0.621371 : m.location.speedKmh)}
+                  {unitSystem === 'imperial' ? 'mph' : 'k'}
                 </span>
               )}
               {distStr && (

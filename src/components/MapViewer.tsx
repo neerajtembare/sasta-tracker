@@ -158,7 +158,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
     const selectedStyle = mapStyle === 'dark' ? 'dark' : 'osm';
 
     try {
-      await preCacheRouteTiles(bounds, selectedStyle, (p) => {
+      await preCacheRouteTiles(bounds, 11, 14, (p) => {
         setCachingProgress({
           active: !p.isComplete,
           current: p.cached,

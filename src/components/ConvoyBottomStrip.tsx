@@ -162,7 +162,9 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             <div className="flex items-center gap-2 truncate">
               <RouteIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span className="font-bold truncate">{activeRoute.name || 'Route'}</span>
-              <span className="text-cyan-400 font-bold shrink-0">({activeRoute.totalDistanceKm.toFixed(1)} km)</span>
+              <span className="text-cyan-400 font-bold shrink-0">
+                ({unitSystem === 'imperial' ? `${(activeRoute.totalDistanceKm * 0.621371).toFixed(1)} mi` : `${activeRoute.totalDistanceKm.toFixed(1)} km`})
+              </span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
@@ -304,7 +306,13 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                               )}
                             </div>
                             <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                              <span>{rider.isOnline ? `${formatSpeed(rider.location?.speedKmh)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}` : 'Offline'}</span>
+                              <span>
+                                {rider.isOnline 
+                                  ? (rider.location && rider.location.speedKmh >= 2 
+                                      ? `${formatSpeed(rider.location.speedKmh)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}` 
+                                      : 'STOPPED') 
+                                  : 'Offline'}
+                              </span>
                               {rider.location?.batteryPct !== undefined && (
                                 <span className="flex items-center gap-0.5 opacity-75">
                                   <Battery className="w-2.5 h-2.5" />
@@ -602,7 +610,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                 <Users className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                 <span className="truncate">
                   {isRecording 
-                    ? `REC • ${(recordedDistanceMeters / 1000).toFixed(1)} km • Solo (Radar Live)`
+                    ? `REC • ${unitSystem === 'imperial' ? ((recordedDistanceMeters / 1000) * 0.621371).toFixed(1) + ' mi' : (recordedDistanceMeters / 1000).toFixed(1) + ' km'} • Solo (Radar Live)`
                     : 'Live Radar • Waiting for friends to join'}
                 </span>
               </div>
@@ -610,7 +618,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
                 <span className="truncate">
                   {isRecording 
-                    ? `REC • ${(recordedDistanceMeters / 1000).toFixed(1)} km (Offline)`
+                    ? `REC • ${unitSystem === 'imperial' ? ((recordedDistanceMeters / 1000) * 0.621371).toFixed(1) + ' mi' : (recordedDistanceMeters / 1000).toFixed(1) + ' km'} (Offline)`
                     : 'Offline • Tap to view crew'}
                 </span>
               </div>

@@ -262,6 +262,22 @@ export function useGroupRide() {
   const profileRef = useRef<RiderProfile>(profile);
   profileRef.current = profile;
 
+  // Browser Battery API integration for live squad battery monitoring
+  const batteryPctRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    try {
+      if ('getBattery' in navigator) {
+        (navigator as any).getBattery().then((battery: any) => {
+          batteryPctRef.current = Math.round(battery.level * 100);
+          battery.addEventListener('levelchange', () => {
+            batteryPctRef.current = Math.round(battery.level * 100);
+          });
+        }).catch(() => {});
+      }
+    } catch {}
+  }, []);
+
   const membersRef = useRef<Map<string, GroupMemberInfo>>(members);
   membersRef.current = members;
 
@@ -559,6 +575,7 @@ export function useGroupRide() {
         bikeModel: profile.bikeModel,
         timestamp: Date.now(),
         status: 'stopped',
+        batteryPct: batteryPctRef.current,
       };
       if (myLocationRef.current) {
         Object.assign(payload, myLocationRef.current);
@@ -683,6 +700,7 @@ export function useGroupRide() {
         leanAngle,
         timestamp: Date.now(),
         status: speedKmh < 2.5 ? 'stopped' : 'riding',
+        batteryPct: batteryPctRef.current,
       },
     });
   }, [broadcastPayload]);
@@ -794,7 +812,7 @@ export function useGroupRide() {
 
   const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {
     const cleanName = (name && name.trim()) || 'Rider';
-    const cleanId = generateUniqueRiderId(cleanName);
+    const cleanId = profileRef.current.id || generateUniqueRiderId(cleanName);
     const newProfile: RiderProfile = {
       id: cleanId,
       name: cleanName,

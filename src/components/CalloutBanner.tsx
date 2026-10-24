@@ -10,6 +10,7 @@ interface CalloutBannerProps {
   onDismiss: () => void;
   onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
   theme?: AppTheme;
+  hasSosActive?: boolean;
 }
 
 export const CalloutBanner: React.FC<CalloutBannerProps> = ({
@@ -17,6 +18,7 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
   onDismiss,
   onSendVoiceBlast,
   theme = 'dark',
+  hasSosActive = false,
 }) => {
   const isLight = theme === 'light';
   const [progress, setProgress] = useState(100);
@@ -46,7 +48,9 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
   return (
     <div 
       style={{
-        top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+        top: hasSosActive
+          ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))'
+          : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}

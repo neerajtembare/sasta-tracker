@@ -1186,7 +1186,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           LEAFLET MAP CANVAS (Oversized & Centered for Zero-Clip Rotation)
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-auto">
+      <div className="absolute inset-0 overflow-hidden pointer-events-auto z-0 [isolation:isolate]">
         <div 
           ref={mapContainerRef} 
           style={{
@@ -1397,7 +1397,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
           right: 'max(0.75rem, env(safe-area-inset-right))',
         }}
-        className="absolute z-30 flex flex-col items-center gap-2 pointer-events-auto"
+        className="absolute z-40 flex flex-col items-center gap-2 pointer-events-auto"
       >
         {/* Glove-friendly Zoom In / Out & Layer Quick Toggle */}
         <div className="flex flex-col gap-1.5 mb-0.5">

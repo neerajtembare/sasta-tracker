@@ -45,6 +45,7 @@ import {
   convertSpeed, 
   convertDistance 
 } from '../utils/units';
+import { triggerHaptic } from '../utils/audioChimes';
 
 interface MapViewerProps {
   analysis: RideAnalysis;
@@ -512,8 +513,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         attributionControl: false,
         preferCanvas: true,
       });
-
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
       mapInstanceRef.current = map;
     }
 
@@ -1336,12 +1335,38 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           )}
         </div>
 
-        {/* Floating Recenter FAB on Bottom Right */}
-        <div className="absolute bottom-4 right-3 z-[400]">
+        {/* Floating Zoom & Recenter Controls on Bottom Right */}
+        <div className="absolute bottom-4 right-3 z-[400] flex flex-col gap-1.5">
           <button
-            onClick={recenterMap}
+            type="button"
+            onClick={() => {
+              triggerHaptic(15);
+              mapInstanceRef.current?.zoomIn();
+            }}
+            title="Zoom In"
+            className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 shadow-xl flex items-center justify-center font-black text-lg cursor-pointer active:scale-95 transition-all"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(15);
+              mapInstanceRef.current?.zoomOut();
+            }}
+            title="Zoom Out"
+            className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 shadow-xl flex items-center justify-center font-black text-lg cursor-pointer active:scale-95 transition-all"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic(20);
+              recenterMap();
+            }}
             title="Recenter track"
-            className="w-9 h-9 rounded-full bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 shadow-xl flex items-center justify-center transition-all cursor-pointer active:scale-95"
+            className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 shadow-xl flex items-center justify-center transition-all cursor-pointer active:scale-95"
           >
             <Navigation className="w-4 h-4" />
           </button>

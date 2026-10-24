@@ -233,7 +233,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           1. FULLSCREEN LEAFLET CREW MAP (BASE LAYER)
       ───────────────────────────────────────────────────────────── */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0">
         <CrewLiveMap
           myLocation={myLocation}
           myRiderName={riderName}

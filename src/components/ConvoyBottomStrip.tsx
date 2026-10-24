@@ -537,7 +537,12 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white'
         }`}>
           {/* Left: Emergency SOS Button (Or I'm Safe / Cancel SOS if active) */}
-          {Boolean(sosAlert && (sosAlert.fromName === riderName || (sosAlert as any).fromId === riderName)) ? (
+          {Boolean(
+            sosAlert && (
+              (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (riderName || '').trim().toLowerCase()) ||
+              ((sosAlert as any).fromId && ((sosAlert as any).fromId === riderName || (sosAlert as any).fromId.toLowerCase() === (riderName || '').toLowerCase()))
+            )
+          ) ? (
             <button
               id="btn-cancel-my-sos"
               type="button"

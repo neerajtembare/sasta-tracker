@@ -126,16 +126,58 @@ export async function addNativeSharedTextListener(
   return null;
 }
 
+function isShortGoogleMapsUrl(u: string): boolean {
+  return /(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/|share\.google)/i.test(u);
+}
+
+async function resolveViaVercelApi(url: string): Promise<string> {
+  const encoded = encodeURIComponent(url);
+  const endpoints: string[] = [];
+  if (typeof window !== 'undefined' && window.location?.origin?.includes('vercel.app')) {
+    endpoints.push(`/api/unshorten?url=${encoded}`);
+  } else {
+    endpoints.push(`/api/unshorten?url=${encoded}`, `https://throttlelog.vercel.app/api/unshorten?url=${encoded}`);
+  }
+
+  for (const endpoint of endpoints) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 6500);
+      const resp = await fetch(endpoint, { signal: controller.signal });
+      clearTimeout(t);
+      if (resp.ok) {
+        const ct = resp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await resp.json();
+          if (data?.resolvedUrl && data.resolvedUrl !== url) {
+            return data.resolvedUrl;
+          }
+        }
+      }
+    } catch {
+      // Try next fallback endpoint
+    }
+  }
+  return url;
+}
+
 export async function nativeUnshortenUrl(url: string): Promise<string> {
   if (Capacitor.isNativePlatform()) {
     try {
       const res = await NativeBridge.unshortenUrl({ url });
-      return res.resolvedUrl || url;
+      if (res?.resolvedUrl && !isShortGoogleMapsUrl(res.resolvedUrl)) {
+        return res.resolvedUrl;
+      }
+      // Fallback to Vercel serverless unshortener if Android HttpURLConnection got stuck on a short link
+      if (res?.resolvedUrl) {
+        const viaApi = await resolveViaVercelApi(res.resolvedUrl);
+        return viaApi || res.resolvedUrl;
+      }
     } catch {
-      return url;
+      // Fall through to Vercel unshortener API
     }
   }
-  return url;
+  return await resolveViaVercelApi(url);
 }
 
 export async function startNativeRadarKeepAlive(pocketMode: boolean = false) {

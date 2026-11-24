@@ -1,4 +1,4 @@
-import { RideAnalysis, TrackPoint, Segment } from '../types';
+import { RideAnalysis, TrackPoint, Segment, PitStop } from '../types';
 import { haversineDistance, calculateForwardBearing } from './gpxParser';
 
 export interface RouteTurnStep {
@@ -11,6 +11,17 @@ export interface RouteTurnStep {
   location: [number, number]; // [lon, lat]
 }
 
+export interface RouteStopInput {
+  lat: number;
+  lon: number;
+  name?: string;
+}
+
+export interface GenerateRoadRouteOptions {
+  waypoints?: RouteStopInput[];
+  originName?: string;
+}
+
 export interface GeneratedRouteResult {
   analysis: RideAnalysis;
   steps: RouteTurnStep[];
@@ -19,19 +30,63 @@ export interface GeneratedRouteResult {
   destinationCoords: { lat: number; lon: number };
 }
 
+function buildWaypointPitStops(
+  waypoints: RouteStopInput[],
+  points: TrackPoint[],
+  nowMs: number
+): PitStop[] {
+  return waypoints.map((wp, idx) => {
+    // Find nearest point along route to compute cumulative distanceKm
+    let bestDistKm = 0;
+    let bestDelta = Infinity;
+    for (const pt of points) {
+      const d = haversineDistance(pt.lat, pt.lon, wp.lat, wp.lon);
+      if (d < bestDelta) {
+        bestDelta = d;
+        bestDistKm = pt.distanceFromStartKm;
+      }
+    }
+    return {
+      id: `gmaps-stop-${idx + 1}-${nowMs}`,
+      category: 'other',
+      name: `Stop ${idx + 1}: ${wp.name || `Waypoint ${idx + 1}`}`,
+      notes: 'Google Maps route stop',
+      lat: wp.lat,
+      lon: wp.lon,
+      ele: 0,
+      startTime: new Date(nowMs).toISOString(),
+      locationName: wp.name,
+      durationSeconds: 0,
+      segmentIndex: 0,
+      distanceKm: bestDistKm,
+      isAutoDetected: false,
+    };
+  });
+}
+
 /**
- * Calls OSRM Driving router to compute real road geometry and turn steps
- * between current rider location and the Google Maps destination.
+ * Calls OSRM Driving router to compute real road geometry, multi-stop waypoints, and turn steps
+ * between origin/current location and the Google Maps destination.
  */
 export async function generateRoadRoute(
   start: { lat: number; lon: number },
-  destination: { lat: number; lon: number; name?: string }
+  destination: { lat: number; lon: number; name?: string },
+  options?: GenerateRoadRouteOptions
 ): Promise<GeneratedRouteResult> {
   const destName = destination.name || 'Target Destination';
   const coords = { lat: destination.lat, lon: destination.lon };
+  const waypoints = (options?.waypoints || []).filter(
+    w => !isNaN(w.lat) && !isNaN(w.lon) && !(w.lat === 0 && w.lon === 0)
+  );
+  const allStops: RouteStopInput[] = [
+    { lat: start.lat, lon: start.lon, name: options?.originName },
+    ...waypoints,
+    { lat: coords.lat, lon: coords.lon, name: destName },
+  ];
 
   try {
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${start.lon},${start.lat};${coords.lon},${coords.lat}?overview=full&geometries=geojson&steps=true`;
+    const coordParam = allStops.map(s => `${s.lon},${s.lat}`).join(';');
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordParam}?overview=full&geometries=geojson&steps=true`;
     
     const resp = await fetch(osrmUrl, {
       headers: {
@@ -48,19 +103,23 @@ export async function generateRoadRoute(
         const totalDurationSeconds = Math.round(route.duration);
 
         const steps: RouteTurnStep[] = [];
-        if (route.legs && route.legs[0] && route.legs[0].steps) {
-          for (const s of route.legs[0].steps) {
-            steps.push({
-              instruction: s.maneuver?.type 
-                ? `${s.maneuver.type} ${s.maneuver.modifier || ''}`.trim()
-                : s.name || 'Continue',
-              distanceMeters: Math.round(s.distance),
-              durationSeconds: Math.round(s.duration),
-              name: s.name || '',
-              type: s.maneuver?.type,
-              modifier: s.maneuver?.modifier,
-              location: s.maneuver?.location || [0, 0],
-            });
+        if (Array.isArray(route.legs)) {
+          for (const leg of route.legs) {
+            if (leg && Array.isArray(leg.steps)) {
+              for (const s of leg.steps) {
+                steps.push({
+                  instruction: s.maneuver?.type 
+                    ? `${s.maneuver.type} ${s.maneuver.modifier || ''}`.trim()
+                    : s.name || 'Continue',
+                  distanceMeters: Math.round(s.distance),
+                  durationSeconds: Math.round(s.duration),
+                  name: s.name || '',
+                  type: s.maneuver?.type,
+                  modifier: s.maneuver?.modifier,
+                  location: s.maneuver?.location || [0, 0],
+                });
+              }
+            }
           }
         }
 
@@ -90,6 +149,8 @@ export async function generateRoadRoute(
             estimatedLeanAngle: 0,
           };
         });
+
+        const pitStops = buildWaypointPitStops(waypoints, points, now);
 
         const segment: Segment = {
           index: 0,
@@ -126,7 +187,7 @@ export async function generateRoadRoute(
           maxSatellites: 12,
           bestHdop: 1.0,
           maxEstimatedLean: 0,
-          pitStops: [],
+          pitStops,
           speedTraps: [],
           splits: [],
         };
@@ -144,51 +205,68 @@ export async function generateRoadRoute(
     console.warn('OSRM route computation failed, falling back to direct line:', err);
   }
 
-  // Fallback: Straight-line interpolation
-  return generateDirectLineFallback(start, coords, destName);
+  // Fallback: Straight-line multi-stop interpolation
+  return generateDirectLineFallback(allStops, coords, destName, waypoints);
 }
 
 /**
- * Straight line interpolation fallback for offline or failed routing calls
+ * Straight line interpolation fallback across all stops for offline or failed routing calls
  */
 function generateDirectLineFallback(
-  start: { lat: number; lon: number },
+  allStops: RouteStopInput[],
   destination: { lat: number; lon: number },
-  name: string
+  name: string,
+  waypoints: RouteStopInput[] = []
 ): GeneratedRouteResult {
-  const distKm = haversineDistance(start.lat, start.lon, destination.lat, destination.lon) / 1000;
-  const estSeconds = Math.round((distKm / 50) * 3600); // assume 50 km/h average
+  let totalDistKm = 0;
+  for (let s = 1; s < allStops.length; s++) {
+    totalDistKm += haversineDistance(allStops[s - 1].lat, allStops[s - 1].lon, allStops[s].lat, allStops[s].lon) / 1000;
+  }
+  const estSeconds = Math.round((totalDistKm / 50) * 3600); // assume 50 km/h average
   const now = Date.now();
 
-  const numSteps = 20;
   const points: TrackPoint[] = [];
-  for (let i = 0; i <= numSteps; i++) {
-    const fraction = i / numSteps;
-    const lat = start.lat + (destination.lat - start.lat) * fraction;
-    const lon = start.lon + (destination.lon - start.lon) * fraction;
-    points.push({
-      lat,
-      lon,
-      ele: 0,
-      time: new Date(now + i * 1000).toISOString(),
-      speed: 0,
-      speedKmh: 0,
-      bearing: calculateForwardBearing(start.lat, start.lon, destination.lat, destination.lon),
-      sat: 12,
-      hdop: 1.0,
-      vdop: 1.0,
-      pdop: 1.0,
-      geoidheight: null,
-      segmentIndex: 0,
-      distanceFromStartKm: Number((distKm * fraction).toFixed(3)),
-      estimatedLeanAngle: 0,
-    });
+  let runningDistKm = 0;
+  const subStepsPerLeg = Math.max(4, Math.floor(20 / Math.max(1, allStops.length - 1)));
+
+  for (let s = 1; s < allStops.length; s++) {
+    const legStart = allStops[s - 1];
+    const legEnd = allStops[s];
+    const legDistKm = haversineDistance(legStart.lat, legStart.lon, legEnd.lat, legEnd.lon) / 1000;
+    const legBearing = calculateForwardBearing(legStart.lat, legStart.lon, legEnd.lat, legEnd.lon);
+    const startIdx = s === 1 ? 0 : 1;
+
+    for (let i = startIdx; i <= subStepsPerLeg; i++) {
+      const fraction = i / subStepsPerLeg;
+      const lat = legStart.lat + (legEnd.lat - legStart.lat) * fraction;
+      const lon = legStart.lon + (legEnd.lon - legStart.lon) * fraction;
+      points.push({
+        lat,
+        lon,
+        ele: 0,
+        time: new Date(now + points.length * 1000).toISOString(),
+        speed: 0,
+        speedKmh: 0,
+        bearing: legBearing,
+        sat: 12,
+        hdop: 1.0,
+        vdop: 1.0,
+        pdop: 1.0,
+        geoidheight: null,
+        segmentIndex: 0,
+        distanceFromStartKm: Number((runningDistKm + legDistKm * fraction).toFixed(3)),
+        estimatedLeanAngle: 0,
+      });
+    }
+    runningDistKm += legDistKm;
   }
+
+  const pitStops = buildWaypointPitStops(waypoints, points, now);
 
   const segment: Segment = {
     index: 0,
     points,
-    distanceKm: Number(distKm.toFixed(2)),
+    distanceKm: Number(totalDistKm.toFixed(2)),
     durationSeconds: estSeconds,
     movingTimeSeconds: estSeconds,
     avgSpeedKmh: 50,
@@ -201,7 +279,7 @@ function generateDirectLineFallback(
     name,
     points,
     segments: [segment],
-    totalDistanceKm: Number(distKm.toFixed(2)),
+    totalDistanceKm: Number(totalDistKm.toFixed(2)),
     totalDurationSeconds: estSeconds,
     movingTimeSeconds: estSeconds,
     stoppedTimeSeconds: 0,
@@ -220,7 +298,7 @@ function generateDirectLineFallback(
     maxSatellites: 12,
     bestHdop: 1.0,
     maxEstimatedLean: 0,
-    pitStops: [],
+    pitStops,
     speedTraps: [],
     splits: [],
   };
@@ -230,7 +308,7 @@ function generateDirectLineFallback(
     steps: [
       {
         instruction: `Direct route to ${name}`,
-        distanceMeters: Math.round(distKm * 1000),
+        distanceMeters: Math.round(totalDistKm * 1000),
         durationSeconds: estSeconds,
         name,
         location: [destination.lon, destination.lat],

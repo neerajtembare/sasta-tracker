@@ -15,7 +15,7 @@ import {
   Radio
 } from 'lucide-react';
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
-import { openGoogleMapsNavigation } from '../utils/navigation';
+import { openActiveRouteNavigation } from '../utils/navigation';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
@@ -180,10 +180,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic(25);
-                  if (activeRoute.points && activeRoute.points.length > 0) {
-                    const last = activeRoute.points[activeRoute.points.length - 1];
-                    openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
-                  }
+                  openActiveRouteNavigation(activeRoute);
                 }}
                 className="h-7 px-2.5 rounded-lg bg-cyan-400 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
               >
@@ -197,7 +194,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                     triggerHaptic(20);
                     onClearActiveRoute();
                   }}
-                  className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                  className={`p-1 rounded-lg cursor-pointer transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500 hover:text-slate-900' : 'hover:bg-white/10 text-slate-400 hover:text-white'}`}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

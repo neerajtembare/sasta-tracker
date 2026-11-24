@@ -91,3 +91,60 @@ export function openGoogleMapsRoute(originLat: number, originLon: number, destLa
     window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
   }
 }
+
+export function openGoogleMapsMultiStop(
+  destination: { lat: number; lon: number; name?: string },
+  waypoints?: Array<{ lat: number; lon: number; name?: string }>,
+  origin?: { lat: number; lon: number; name?: string } | null
+): void {
+  const cleanStops = (waypoints || []).filter(
+    w => !isNaN(w.lat) && !isNaN(w.lon) && !(w.lat === 0 && w.lon === 0)
+  );
+  if (cleanStops.length === 0 && !origin) {
+    openGoogleMapsNavigation(destination.lat, destination.lon, destination.name);
+    return;
+  }
+
+  const destStr = `${destination.lat.toFixed(6)},${destination.lon.toFixed(6)}`;
+  const params = new URLSearchParams({
+    api: '1',
+    destination: destStr,
+    travelmode: 'driving',
+  });
+  if (origin && !isNaN(origin.lat) && !isNaN(origin.lon) && !(origin.lat === 0 && origin.lon === 0)) {
+    params.set('origin', `${origin.lat.toFixed(6)},${origin.lon.toFixed(6)}`);
+  }
+  if (cleanStops.length > 0) {
+    params.set('waypoints', cleanStops.map(w => `${w.lat.toFixed(6)},${w.lon.toFixed(6)}`).join('|'));
+  }
+
+  const mapsUrl = `https://www.google.com/maps/dir/?${params.toString()}`;
+  const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+  if (isAndroid) {
+    // On Android, opening https://www.google.com/maps/dir/?... hands off natively to Google Maps app with full stops
+    window.location.href = mapsUrl;
+  } else {
+    window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+export function openActiveRouteNavigation(route: {
+  name?: string;
+  points: Array<{ lat: number; lon: number }>;
+  pitStops?: Array<{ id: string; lat: number; lon: number; name?: string; locationName?: string }>;
+}): void {
+  if (!route.points || route.points.length === 0) return;
+  const destPt = route.points[route.points.length - 1];
+  const gmapsWaypoints = (route.pitStops || [])
+    .filter(s => s.id.startsWith('gmaps-stop-'))
+    .map(s => ({ lat: s.lat, lon: s.lon, name: s.locationName || s.name }));
+
+  if (gmapsWaypoints.length > 0) {
+    openGoogleMapsMultiStop(
+      { lat: destPt.lat, lon: destPt.lon, name: route.name },
+      gmapsWaypoints
+    );
+  } else {
+    openGoogleMapsNavigation(destPt.lat, destPt.lon, route.name);
+  }
+}

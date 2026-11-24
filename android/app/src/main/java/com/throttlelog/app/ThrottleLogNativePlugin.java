@@ -484,25 +484,48 @@ public class ThrottleLogNativePlugin extends Plugin {
                         String loc = conn.getHeaderField("Location");
                         conn.disconnect();
                         if (loc != null && !loc.isEmpty()) {
-                            current = new java.net.URL(u, loc).toString();
+                            String nextUrl = new java.net.URL(u, loc).toString();
+                            // Unwrap consent.google.com?continue= redirects directly
+                            try {
+                                java.net.URL nextParsed = new java.net.URL(nextUrl);
+                                if (nextParsed.getHost() != null && nextParsed.getHost().contains("consent.google") && nextParsed.getQuery() != null) {
+                                    for (String param : nextParsed.getQuery().split("&")) {
+                                        if (param.startsWith("continue=")) {
+                                            String decodedContinue = java.net.URLDecoder.decode(param.substring(9), "UTF-8");
+                                            if (decodedContinue.startsWith("http")) {
+                                                nextUrl = decodedContinue;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                            current = nextUrl;
                             redirects++;
                         } else {
                             break;
                         }
                     } else {
-                        // If final resolved URL has no coordinates (e.g. HTML preview /consent / meta redirect),
-                        // inspect up to 64KB of HTML for embedded Google Maps URLs or @lat,lon / staticmap coords
-                        if (!current.contains("@") && !current.contains("!3d") && code >= 200 && code < 400) {
+                        // If final resolved URL still lacks explicit coordinates (e.g. HTML preview / consent / share.google),
+                        // inspect up to 90KB of unescaped HTML for embedded Google Maps URLs or @lat,lon / !1d!2d / !3d!4d / staticmap coords
+                        boolean hasCoords = current.contains("@") || current.contains("!3d") || current.contains("!1d") || current.contains("destination=") || current.contains("q=");
+                        if (!hasCoords && code >= 200 && code < 400) {
                             try (java.io.InputStream is = conn.getInputStream()) {
-                                byte[] buf = new byte[65536];
+                                byte[] buf = new byte[92160];
                                 int total = 0;
                                 int n;
                                 while (total < buf.length && (n = is.read(buf, total, buf.length - total)) != -1) {
                                     total += n;
                                 }
-                                String body = new String(buf, 0, total, java.nio.charset.StandardCharsets.UTF_8);
+                                String rawBody = new String(buf, 0, total, java.nio.charset.StandardCharsets.UTF_8);
+                                String body = rawBody
+                                    .replace("\\u0026", "&")
+                                    .replace("\\u003d", "=")
+                                    .replace("\\u002f", "/")
+                                    .replace("\\/", "/")
+                                    .replace("&amp;", "&");
                                 java.util.regex.Matcher m = java.util.regex.Pattern
-                                    .compile("(https://(?:www\\.)?google\\.com/maps[^\"'<>\\s\\\\]+|!3d-?\\d{1,2}\\.\\d{2,12}!4d-?\\d{1,3}\\.\\d{2,12}|@-?\\d{1,2}\\.\\d{2,12},-?\\d{1,3}\\.\\d{2,12}|staticmap\\?center=(-?\\d{1,2}\\.\\d{2,12})(?:,|%2C)(-?\\d{1,3}\\.\\d{2,12}))")
+                                    .compile("(https://(?:www\\.|maps\\.)?google\\.[a-z.]+/maps[^\"'<>\\s]+|!1d-?\\d{1,3}\\.\\d{2,15}!2d-?\\d{1,2}\\.\\d{2,15}|!3d-?\\d{1,2}\\.\\d{2,15}!4d-?\\d{1,3}\\.\\d{2,15}|@-?\\d{1,2}\\.\\d{2,15},-?\\d{1,3}\\.\\d{2,15}|staticmap\\?center=(-?\\d{1,2}\\.\\d{2,15})(?:,|%2C)(-?\\d{1,3}\\.\\d{2,15}))")
                                     .matcher(body);
                                 if (m.find()) {
                                     String found = m.group(1);

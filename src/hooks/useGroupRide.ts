@@ -231,11 +231,16 @@ export function useGroupRide() {
   const [isOnRadar, setIsOnRadar] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('room') || params.get('crew') || params.get('squad')) {
+          return true;
+        }
         const saved = localStorage.getItem('sasta_on_radar');
-        return saved !== 'false';
+        // Default OFF for solo privacy unless user explicitly switched Crew Radar Live
+        return saved === 'true';
       }
     } catch {}
-    return true;
+    return false;
   });
   const isOnRadarRef = useRef(isOnRadar);
   isOnRadarRef.current = isOnRadar;
@@ -544,12 +549,21 @@ export function useGroupRide() {
     };
   }, [handleIncomingMessage]);
 
-  // Initialize Global MQTT Radar Client
+  // Initialize Global MQTT Radar Client (ONLY when Crew Radar is actively enabled)
   useEffect(() => {
-    if (!profile.isLoggedIn) return;
+    if (!profile.isLoggedIn || !isOnRadar) {
+      setMembers(new Map());
+      setIsConnected(false);
+      setConnectionStatus('disconnected');
+      setStatusMessage('Solo Private Mode • Hidden from Crew Radar');
+      return;
+    }
 
     // Reset member cache when joining a distinct squad to prevent stale rider ghosting
     setMembers(new Map());
+    setIsConnected(true);
+    setConnectionStatus('connecting');
+    setStatusMessage('Connecting to Crew Radar...');
 
     const squadKey = sanitizeKey(profile.squadName);
     const client = new SimpleMqttClient({
@@ -590,7 +604,7 @@ export function useGroupRide() {
       client.destroy();
       mqttClientRef.current = null;
     };
-  }, [profile.isLoggedIn, profile.id, profile.squadName, handleIncomingMessage]);
+  }, [profile.isLoggedIn, profile.id, profile.squadName, isOnRadar, handleIncomingMessage]);
 
   // Periodic heartbeat / location broadcast every 2.5 seconds
   useEffect(() => {
@@ -775,12 +789,15 @@ export function useGroupRide() {
 
   const broadcastActiveRoute = useCallback((route: { name?: string; distanceKm?: number; destination?: { lat: number; lon: number }; points?: Array<{ lat: number; lon: number }> } | null) => {
     if (!route) {
-      broadcastPayload({
-        type: 'ROUTE_CLEAR',
-        riderId: profileRef.current.id,
-      });
+      if (isOnRadarRef.current) {
+        broadcastPayload({
+          type: 'ROUTE_CLEAR',
+          riderId: profileRef.current.id,
+        });
+      }
       return;
     }
+    if (!isOnRadarRef.current) return;
 
     // Downsample points to ~60 points max so MQTT payload stays compact (< 4KB)
     let sampledPoints: Array<{ lat: number; lon: number }> | undefined = undefined;
@@ -921,25 +938,27 @@ export function useGroupRide() {
       color: nextColor,
     });
 
-    // Immediately broadcast updated profile so other riders see the new name & color right away
-    const payload: any = {
-      riderId: updated.id,
-      name: updated.name,
-      color: updated.color,
-      bikeModel: updated.bikeModel,
-      timestamp: Date.now(),
-      status: 'stopped',
-    };
-    if (myLocationRef.current) {
-      Object.assign(payload, myLocationRef.current);
-      payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
-    }
-    broadcastPayload({
-      type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
-      payload,
-    });
+    if (isOnRadarRef.current) {
+      // Immediately broadcast updated profile so other riders see the new name & color right away
+      const payload: any = {
+        riderId: updated.id,
+        name: updated.name,
+        color: updated.color,
+        bikeModel: updated.bikeModel,
+        timestamp: Date.now(),
+        status: 'stopped',
+      };
+      if (myLocationRef.current) {
+        Object.assign(payload, myLocationRef.current);
+        payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
+      }
+      broadcastPayload({
+        type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+        payload,
+      });
 
-    postCrewNotification(`Callsign updated: ${cleanName}`, 'info');
+      postCrewNotification(`Callsign updated: ${cleanName}`, 'info');
+    }
   }, [broadcastPayload, postCrewNotification]);
 
   const updateRiderName = useCallback((newName: string, bikeModel?: string, color?: string) => {
@@ -1108,7 +1127,10 @@ export function useGroupRide() {
     updateRiderName,
     updateProfile,
     createRoom: (name: string) => loginRider(name),
-    joinRoom: (code: string, name?: string) => loginRider(name || profile.name, undefined, undefined, code),
+    joinRoom: (code: string, name?: string) => {
+      loginRider(name || profile.name, undefined, undefined, code);
+      toggleOnRadar(true);
+    },
     rejoinRoom: () => loginRider(profile.name),
     leaveRoom: logoutRider,
   };

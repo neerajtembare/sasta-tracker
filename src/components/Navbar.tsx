@@ -1,21 +1,14 @@
 import React from 'react';
 import { 
-  Gauge, 
-  Upload, 
   Radio, 
   HelpCircle,
   FolderArchive,
-  Download,
-  FileText,
-  Sun,
-  Moon,
+  Upload,
   Home,
-  Smartphone,
-  Zap,
   Users,
-  Cloud
+  Settings,
 } from 'lucide-react';
-import { AppTheme, UnitSystem } from '../types';
+import { AppTheme } from '../types';
 
 interface NavbarProps {
   currentTab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
@@ -37,53 +30,38 @@ interface NavbarProps {
   rideName: string;
   hasActiveRide: boolean;
   theme: AppTheme;
-  onToggleTheme: () => void;
-  unitSystem?: UnitSystem;
-  onToggleUnitSystem?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   setCurrentTab,
-  onLoadSample,
   onUploadClick,
-  onOpenGarage,
-  onOpenCompare,
-  onOpenGroupRide,
-  onOpenCloudSync,
   groupRideConnected,
-  groupRoomCode,
-  onExportGpx,
-  onOpenReport,
   onHomeClick,
-  onInstallPwa,
-  canInstallPwa,
   isRecordingLive,
-  rideName,
   hasActiveRide,
   theme,
-  onToggleTheme,
-  unitSystem = 'metric',
-  onToggleUnitSystem,
+  onOpenSettings,
 }) => {
   const isLight = theme === 'light';
 
   return (
     <header
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      className={`sticky top-0 z-50 backdrop-blur-md border-b transition-colors ${
+      className={`sticky top-0 z-40 navbar-landscape-offset backdrop-blur-md border-b transition-colors ${
         isLight
           ? 'bg-white/95 border-slate-200 shadow-sm'
           : 'bg-[#0d131a]/95 border-[#1e2a38]'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-11 sm:h-12 landscape:h-8.5 flex items-center justify-between gap-1.5 sm:gap-2">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-11 sm:h-12 landscape:h-9 flex items-center justify-between gap-1.5 sm:gap-2">
         {/* Brand identity */}
         <button 
           id="btn-nav-home"
           type="button"
           onClick={onHomeClick}
-          title="Return to Home / Upload"
+          title="Return to Dashboard"
           className="flex items-center gap-1.5 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 focus:outline-hidden rounded-lg"
         >
           <div
@@ -103,33 +81,30 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               THROTTLE<span className="text-sky-500">LOG</span>
             </span>
-            <span className="hidden sm:inline-block landscape:hidden px-1 py-0.5 text-[8px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded uppercase tracking-wider">
-              FREE
-            </span>
           </div>
         </button>
 
-        {/* Mobile Portrait: Direct Return to Live Crew Map */}
+        {/* Mobile Portrait: Direct Jump to Live Map */}
         <button
           id="btn-nav-mobile-crew"
           type="button"
           onClick={() => setCurrentTab('crew')}
-          className="md:hidden landscape:hidden flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow-sm cursor-pointer transition-all active:scale-95"
+          className="md:hidden landscape-compact-hide flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow-sm cursor-pointer transition-all active:scale-95"
         >
           <Users className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>← Crew Map</span>
+          <span>Map</span>
         </button>
 
-        {/* Navigation Mode Switcher (Visible on desktop & in landscape mobile) */}
+        {/* Navigation Mode Switcher (Hidden on compact phone landscape since left thumb rail handles navigation) */}
         <div
-          className={`hidden landscape:flex md:flex items-center gap-1 p-0.5 sm:p-1 border rounded-lg transition-colors ${
+          className={`hidden md:flex landscape-compact-hide items-center gap-1 p-0.5 sm:p-1 border rounded-lg transition-colors ${
             isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]'
           }`}
         >
           <button
             id="tab-btn-home"
             onClick={() => setCurrentTab('home')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
               currentTab === 'home'
                 ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
                 : isLight
@@ -145,17 +120,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tab-btn-crew"
             onClick={() => setCurrentTab('crew')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
               currentTab === 'crew'
                 ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
                 : isLight
                 ? 'text-slate-600 hover:text-cyan-600 hover:bg-slate-200/70'
                 : 'text-[#8f9ca8] hover:text-cyan-400 hover:bg-[#1a2530]'
             }`}
-            title="Motorcycle Crew Radar & Squad Presence"
+            title="Live Map & Optional Crew Radar"
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Crew</span>
+            <span>Map</span>
             {groupRideConnected && (
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
             )}
@@ -164,14 +139,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tab-btn-cockpit"
             onClick={() => setCurrentTab('cockpit')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
               currentTab === 'cockpit'
                 ? 'bg-emerald-500 text-slate-950 shadow-sm font-black'
                 : isLight
                 ? 'text-slate-600 hover:text-emerald-600 hover:bg-slate-200/70'
                 : 'text-[#8f9ca8] hover:text-emerald-400 hover:bg-[#1a2530]'
             }`}
-            title="Live Handlebar GPS Logger"
+            title="Live Handlebar GPS Cockpit"
           >
             <Radio className="w-3.5 h-3.5" />
             <span>Cockpit</span>
@@ -183,14 +158,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tab-btn-analysis"
             onClick={() => setCurrentTab('analysis')}
-            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
               currentTab === 'analysis'
                 ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                 : isLight
                 ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'
                 : 'text-[#8f9ca8] hover:text-sky-400 hover:bg-[#1a2530]'
             }`}
-            title="Saved Rides, Telemetry & Route Map"
+            title="Saved Rides & Telemetry Analysis"
           >
             <FolderArchive className="w-3.5 h-3.5" />
             <span>Rides</span>
@@ -202,7 +177,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tab-btn-faq"
             onClick={() => setCurrentTab('faq')}
-            className={`hidden md:flex px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md items-center gap-1.5 transition-all cursor-pointer ${
+            className={`hidden lg:flex px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs font-bold rounded-md items-center gap-1.5 transition-all cursor-pointer ${
               currentTab === 'faq'
                 ? isLight
                   ? 'bg-slate-800 text-white font-black'
@@ -218,53 +193,34 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        {/* Quick action buttons & Theme Toggle */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          {/* Unit System Toggle (KM/H <-> MPH) */}
-          {onToggleUnitSystem && (
+        {/* Right Quick Actions: Upload (Desktop) + App Settings */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            id="btn-upload-gpx"
+            onClick={onUploadClick}
+            title="Import GPX Track"
+            className="hidden sm:flex landscape-compact-hide items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Import GPX</span>
+          </button>
+
+          {onOpenSettings && (
             <button
-              id="btn-toggle-units"
-              onClick={onToggleUnitSystem}
-              title={`Active Units: ${unitSystem === 'imperial' ? 'Imperial (mph)' : 'Metric (km/h)'}. Click to switch.`}
-              className={`px-2 py-0.5 sm:py-1 rounded-lg border font-mono font-bold text-xs transition-all cursor-pointer flex items-center gap-1 ${
+              id="btn-open-settings"
+              type="button"
+              onClick={onOpenSettings}
+              title="App Settings (Theme, Profile, Safety, Maps, APK)"
+              className={`px-2 sm:px-2.5 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                 isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
                   : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-200'
               }`}
             >
-              <span className={`font-black ${unitSystem === 'imperial' ? 'text-amber-400' : 'text-sky-400'}`}>
-                {unitSystem === 'imperial' ? 'MPH' : 'KM/H'}
-              </span>
+              <Settings className="w-4 h-4 text-cyan-400" />
+              <span className="hidden sm:inline">Settings</span>
             </button>
           )}
-
-
-
-          {/* Global Light/Dark Theme Switcher */}
-          <button
-            id="btn-toggle-theme"
-            onClick={onToggleTheme}
-            title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
-              isLight
-                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-amber-400'
-            }`}
-          >
-            {isLight ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
-          </button>
-
-
-
-          <button
-            id="btn-upload-gpx"
-            onClick={onUploadClick}
-            title="Upload GPX File"
-            className="hidden sm:flex landscape:hidden md:flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer shrink-0"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Upload</span>
-          </button>
         </div>
       </div>
     </header>

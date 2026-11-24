@@ -344,7 +344,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onShareInvite={handleShareWhatsApp}
         onTriggerRollCall={onTriggerRollCall}
         theme={theme}
-        isVisible={isTopBarVisible || !!gpsError || !isTrackingActive || !isOnRadar}
+        isVisible={isTopBarVisible || !!gpsError || !isTrackingActive}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -365,8 +365,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         <div 
           style={{
             top: sosAlert 
-              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
-              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
+              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
@@ -394,12 +394,12 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          2D. PRIVACY MODE / TRACKING STOPPED NOTICE
+          2D. GPS HARDWARE STOPPED NOTICE (Only when GPS truly off — NOT in Solo Private rides)
       ───────────────────────────────────────────────────────────── */}
-      {(!isTrackingActive || !isOnRadar) && (
+      {!isTrackingActive && (
         <div 
           style={{
-            top: gpsError ? 'max(7.2rem, calc(env(safe-area-inset-top) + 6.8rem))' : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            top: gpsError ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
@@ -410,10 +410,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
               <span className="text-base shrink-0">🛡️</span>
               <div className="min-w-0">
                 <div className="font-heading font-black text-[11px] uppercase tracking-wider text-rose-300">
-                  Privacy Mode Active
+                  GPS Tracking Paused
                 </div>
                 <p className="text-[10px] text-slate-400 truncate">
-                  GPS & background tracking stopped. Location is private.
+                  Location hardware & background tracking stopped.
                 </p>
               </div>
             </div>
@@ -589,10 +589,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onOpenPermissionsModal={onOpenPermissionsModal}
         onOpenSoloRide={onOpenSoloRide}
         onOpenDashboard={onGoToDashboard}
+        onOpenSettings={onOpenProfile || (() => setIsProfileModalOpen(true))}
       />
 
       {/* ─────────────────────────────────────────────────────────────
-          6. DEDICATED RIDER PROFILE & IDENTITY MODAL (TAP AVATAR)
+          6. DEDICATED RIDER PROFILE & SETTINGS MODAL (TAP AVATAR)
       ───────────────────────────────────────────────────────────── */}
       <RiderProfileModal
         isOpen={isProfileModalOpen}
@@ -600,16 +601,22 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         riderName={riderName}
         bikeModel={bikeModel}
         myColor={myColor}
-        isOnRadar={isTrackingActive && isOnRadar}
+        isOnRadar={isOnRadar}
         onToggleRadar={() => {
-          if (onToggleTracking) {
-            onToggleTracking(!(isTrackingActive && isOnRadar));
+          const turningOn = !isOnRadar;
+          if (turningOn && !isTrackingActive && onToggleTracking) {
+            onToggleTracking(true);
           } else if (onToggleRadar) {
-            onToggleRadar(!isOnRadar);
+            onToggleRadar(turningOn);
           }
         }}
         onSaveProfile={(name, bike, color) => onUpdateRiderName(name, bike, color)}
         theme={theme}
+        onToggleTheme={onToggleTheme}
+        onOpenGarage={onOpenGarage}
+        onOpenPermissions={onOpenPermissionsModal}
+        onOpenDownloadApp={onOpenDownloadApp}
+        onOpenFaq={onOpenFaq}
         onStartupScreenChanged={(screen) => {
           if (screen === 'dashboard' && onGoToDashboard) onGoToDashboard();
           else if (screen === 'cockpit' && onGoToCockpit) onGoToCockpit();

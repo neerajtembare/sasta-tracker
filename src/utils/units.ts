@@ -4,18 +4,13 @@ export const UNIT_STORAGE_KEY = 'throttlelog_unit_system';
 const LEGACY_UNIT_STORAGE_KEY = 'sasta_unit_system';
 
 export function getStoredUnitSystem(): UnitSystem {
-  try {
-    const saved = localStorage.getItem(UNIT_STORAGE_KEY) || localStorage.getItem(LEGACY_UNIT_STORAGE_KEY);
-    return saved === 'imperial' ? 'imperial' : 'metric';
-  } catch {
-    return 'metric';
-  }
+  return 'metric';
 }
 
-export function setStoredUnitSystem(unit: UnitSystem): void {
+export function setStoredUnitSystem(_unit: UnitSystem): void {
   try {
-    localStorage.setItem(UNIT_STORAGE_KEY, unit);
-    localStorage.setItem(LEGACY_UNIT_STORAGE_KEY, unit);
+    localStorage.setItem(UNIT_STORAGE_KEY, 'metric');
+    localStorage.setItem(LEGACY_UNIT_STORAGE_KEY, 'metric');
   } catch (e) {
     console.warn('Failed to save unit system preference:', e);
   }

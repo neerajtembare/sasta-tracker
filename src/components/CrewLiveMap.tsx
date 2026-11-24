@@ -999,9 +999,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
+    // When Solo Private mode (!isOnRadar), hide other riders completely from the full map
+    const visibleMembers = isOnRadar ? members : [];
+
     // Remove obsolete markers
     memberMarkersRef.current.forEach((marker, id) => {
-      if (!members.some(m => m.riderId === id)) {
+      if (!visibleMembers.some(m => m.riderId === id)) {
         marker.remove();
         memberMarkersRef.current.delete(id);
         memberCacheRef.current.delete(id);
@@ -1009,7 +1012,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     });
 
     // Add or update markers for connected members
-    members.forEach(m => {
+    visibleMembers.forEach(m => {
       if (!m.location) return;
       const pos: L.LatLngTuple = [m.location.lat, m.location.lon];
       const initial = m.name.charAt(0).toUpperCase() || 'R';
@@ -1157,7 +1160,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         });
       }
     });
-  }, [members, unitSystem, starredRiderIds, targetMapRotation, orientationMode, myHeading]);
+  }, [members, isOnRadar, unitSystem, starredRiderIds, targetMapRotation, orientationMode, myHeading]);
 
   // SOS Marker (Crisp solid alert marker)
   useEffect(() => {
@@ -1310,7 +1313,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       {/* Cold-Start Satellite Acquisition Pill */}
       {!myLocation && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
+        <div
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)' }}
+          className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in"
+        >
           <span className="w-2 h-2 rounded-full bg-amber-400" />
           <span>Acquiring GPS fix...</span>
         </div>
@@ -1319,13 +1325,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           INROADS-STYLE CONVOY PACK SPREAD HUD (1-TAP FIT ALL RIDERS)
       ───────────────────────────────────────────────────────────── */}
-      {!trailedRiderId && convoySpreadData && (
+      {isOnRadar && !trailedRiderId && convoySpreadData && (
         <div 
           onClick={handleFitAllRiders}
           style={{
             top: sosAlert 
-              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
-              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
+              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
           }}
           className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3.5 py-1.5 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
             convoySpreadData.state === 'separated'
@@ -1366,7 +1372,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       )}
 
       {/* Solo Rider / Starred Buddy fallback when no full pack spread */}
-      {!trailedRiderId && !convoySpreadData && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
+      {isOnRadar && !trailedRiderId && !convoySpreadData && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
         <div 
           onClick={() => {
             triggerHaptic(20);
@@ -1376,8 +1382,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           }}
           style={{
             top: sosAlert 
-              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
-              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
+              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
           }}
           className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
             primaryStarredMember.distanceFromMeMeters > 2500
@@ -1400,14 +1406,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed)
       ───────────────────────────────────────────────────────────── */}
-      {crewNotification && (
+      {isOnRadar && crewNotification && (
         <div 
           style={{
             top: sosAlert 
-              ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))' 
-              : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
+              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
+            left: 'max(0.6rem, env(safe-area-inset-left))',
+            right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
-          className="absolute left-2 right-2 sm:left-auto sm:right-2 sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200"
+          className="absolute sm:left-auto sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200"
         >
           <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-mono text-xs ${
             crewNotification.type === 'join'
@@ -1666,7 +1674,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       {trailedMember && trailingStats && (
         <div 
           style={{ 
-            top: sosAlert ? 'max(7.2rem, calc(env(safe-area-inset-top) + 6.8rem))' : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+            top: sosAlert ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
@@ -1735,10 +1743,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           1-TAP FOLLOW SQUAD LEADER PILL (WHEN NOT TRAILING)
           Positioned below the trailing HUD / callout banner zone to avoid overlap
       ───────────────────────────────────────────────────────────── */}
-      {!trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
+      {isOnRadar && !trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
         <div 
           style={{ 
-            top: sosAlert ? 'max(9.5rem, calc(env(safe-area-inset-top) + 9.2rem))' : 'max(6.5rem, calc(env(safe-area-inset-top) + 6.2rem))',
+            top: sosAlert ? 'calc(env(safe-area-inset-top, 0px) + 9.2rem)' : 'calc(env(safe-area-inset-top, 0px) + 6.5rem)',
           }}
           className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in slide-in-from-top-1 duration-150"
         >
@@ -1890,7 +1898,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       {/* Offline Caching Progress / Success Pill */}
       {(cacheProgress || cacheSuccessMsg) && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1 rounded-full bg-slate-950/95 backdrop-blur-md border border-emerald-500/60 text-emerald-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-2 whitespace-nowrap animate-in fade-in">
+        <div
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)' }}
+          className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1 rounded-full bg-slate-950/95 backdrop-blur-md border border-emerald-500/60 text-emerald-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-2 whitespace-nowrap animate-in fade-in"
+        >
           {cacheProgress && !cacheSuccessMsg && (
             <>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
@@ -1919,7 +1930,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         return (
           <div 
             style={{
-              top: 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+              top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
               left: 'max(0.6rem, env(safe-area-inset-left))',
               right: 'max(0.6rem, env(safe-area-inset-right))',
             }}

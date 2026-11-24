@@ -50,12 +50,12 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
   return (
     <header 
       style={{ 
-        top: 'max(0.6rem, env(safe-area-inset-top))',
+        top: 'calc(env(safe-area-inset-top, 0px) + 0.55rem)',
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}
       className={`absolute z-30 pointer-events-none flex justify-center transition-all duration-300 ease-out ${
-        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0'
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-20 opacity-0'
       }`}
     >
       <div 
@@ -196,15 +196,43 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
               <span>Go Private</span>
             </button>
           </div>
+        ) : isTrackingActive && !isOnRadar ? (
+          <div
+            onClick={() => {
+              triggerHaptic(15);
+              onOpenProfile();
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold truncate max-w-[200px] sm:max-w-xs cursor-pointer transition-all active:scale-95 ${
+              isLight ? 'bg-cyan-50 border border-cyan-300 text-cyan-800' : 'bg-cyan-950/50 border border-cyan-500/40 text-cyan-300'
+            }`}
+            title="Solo Private Mode: GPS recording stays on your phone only (hidden from Crew Radar)"
+          >
+            <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="text-[11px] truncate">Solo Private</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic(25);
+                if (onToggleRadar) onToggleRadar();
+                else if (onToggleTracking) onToggleTracking(true);
+              }}
+              className="px-1.5 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/40 font-black text-[9px] ml-0.5 shrink-0 cursor-pointer flex items-center gap-0.5"
+              title="Enable Crew Radar visibility"
+            >
+              <Radio className="w-2.5 h-2.5" />
+              <span className="hidden xs:inline">Crew</span>
+            </button>
+          </div>
         ) : (
           <div 
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold truncate max-w-[200px] sm:max-w-xs ${
               isLight ? 'bg-rose-50 border border-rose-200 text-rose-700' : 'bg-rose-950/60 border border-rose-500/40 text-rose-300'
             }`}
-            title="GPS tracking and background processes are completely stopped (Private Mode) • Tap Go Live to resume"
+            title="GPS tracking is paused • Tap Resume to restart GPS"
           >
             <Shield className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-            <span className="text-[11px] truncate">Private</span>
+            <span className="text-[11px] truncate">GPS Paused</span>
             <button
               type="button"
               onClick={(e) => {
@@ -219,7 +247,7 @@ export const TopMapCapsule: React.FC<TopMapCapsuleProps> = ({
               className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] ml-1 shrink-0 cursor-pointer shadow-xs active:scale-95 flex items-center gap-1"
             >
               <Radio className="w-3 h-3" />
-              <span>Go Live</span>
+              <span>Resume</span>
             </button>
           </div>
         )}

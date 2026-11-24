@@ -9,6 +9,10 @@
     --font-space: 'Space Grotesk', sans-serif;
     --font-chivo: 'Chivo', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
   }
 
   html, body {
@@ -228,8 +232,14 @@
   .mobile-landscape-dock {
     display: flex !important;
   }
-  main {
-    margin-left: 3.5rem !important;
+  main.has-landscape-rail {
+    margin-left: calc(3.5rem + var(--safe-left)) !important;
+  }
+  header.navbar-landscape-offset {
+    padding-left: calc(3.5rem + var(--safe-left)) !important;
+  }
+  .landscape-compact-hide {
+    display: none !important;
   }
   .mobile-landscape-hidden {
     display: none !important;

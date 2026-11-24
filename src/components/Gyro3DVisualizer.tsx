@@ -171,7 +171,7 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
           {/* ─────────────────────────────────────────────────────────────
               3D MOTORCYCLE HORIZON GAUGE (Hardware-accelerated 3D CSS)
           ───────────────────────────────────────────────────────────── */}
-          <div className="relative w-full h-28 sm:h-32 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-slate-950 to-[#0b1017] border border-slate-800">
+          <div className="relative w-full h-28 sm:h-32 landscape:h-22 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-slate-950 to-[#0b1017] border border-slate-800">
             
             {/* Artificial Horizon Background Grid */}
             <div 

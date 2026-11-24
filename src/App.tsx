@@ -48,7 +48,6 @@ import {
   SAMPLE_GPX_NAME
 } from './data/sampleRide';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
-import { getStoredUnitSystem, setStoredUnitSystem, convertDistance } from './utils/units';
 import { 
   Radio, Gauge, HelpCircle, FolderArchive, Home, Users,
   Map as MapIcon, Activity, History, Bike as BikeIcon, X 
@@ -111,16 +110,8 @@ export default function App() {
     maxSpeedKmh: number;
   } | null>(null);
 
-  // Global Unit System (Metric km/h <-> Imperial mph)
-  const [unitSystem, setUnitSystem] = useState<UnitSystem>(getStoredUnitSystem);
-
-  const toggleUnitSystem = () => {
-    setUnitSystem(prev => {
-      const next: UnitSystem = prev === 'metric' ? 'imperial' : 'metric';
-      setStoredUnitSystem(next);
-      return next;
-    });
-  };
+  // Global Unit System locked to Metric (KM/H)
+  const unitSystem: UnitSystem = 'metric';
 
   // Unified Single Source of Truth for GPS Tracking across Cockpit & Crew
   const [gps, controls] = useGPS(unitSystem);
@@ -761,38 +752,46 @@ export default function App() {
     setTimeout(() => setSessionNotice(null), 3000);
   }, [controls]);
 
-  const handleStartSoloRideWithOptions = useCallback((options: { mountMode: 'handlebar' | 'pocket'; view: 'map' | 'cockpit' }) => {
-    controls.setMountMode(options.mountMode);
-    startNativeRadarKeepAlive(options.mountMode === 'pocket');
-    handleStartRecording();
-    setIsSoloRideModalOpen(false);
-    if (options.view === 'cockpit') {
-      setCurrentTab('cockpit');
-    } else {
-      setCurrentTab('crew');
+  const startSoloRideFlow = useCallback((mountMode: 'handlebar' | 'pocket' = 'handlebar', view: 'map' | 'cockpit' = 'cockpit') => {
+    // Ensure Solo Rides NEVER publish rider location or show crew peers on the full map, while keeping hardware GPS active
+    if (groupRide.isOnRadar) {
+      groupRide.toggleOnRadar(false);
     }
+    if (!gps.isTrackingActive) {
+      controls.startGpsTracking();
+    }
+    controls.setMountMode(mountMode);
+    startNativeRadarKeepAlive(mountMode === 'pocket');
+    handleStartRecording();
+    setCurrentTab(view === 'map' ? 'crew' : 'cockpit');
     setSessionNotice(
-      options.mountMode === 'pocket'
-        ? '🔋 Pocket Mode Active: Lock phone in pocket. Android service tracks in background.'
-        : '📱 Handlebar Mount Active: Screen kept awake with live telemetry & lean angles.'
+      mountMode === 'pocket'
+        ? '🔋 Pocket Mode Active: Lock phone in pocket. Solo ride private on this phone.'
+        : '📱 Handlebar Mount Active: Screen awake. Solo ride private on this phone.'
     );
     setTimeout(() => setSessionNotice(null), 5000);
-  }, [controls, handleStartRecording, setCurrentTab]);
+  }, [controls, gps.isTrackingActive, groupRide, handleStartRecording, setCurrentTab]);
+
+  const handleStartSoloRideWithOptions = useCallback((options: { mountMode: 'handlebar' | 'pocket'; view: 'map' | 'cockpit' }) => {
+    setIsSoloRideModalOpen(false);
+    startSoloRideFlow(options.mountMode, options.view);
+  }, [startSoloRideFlow]);
 
   const handleRouteGeneratedFromGoogleMaps = useCallback((route: RideAnalysis, shouldBroadcastToCrew: boolean) => {
+    const canBroadcast = shouldBroadcastToCrew && groupRide.isOnRadar;
     // Controls whether the analysis effect automatically shares this route to the squad
-    isLocallyInitiatedRouteRef.current = shouldBroadcastToCrew;
+    isLocallyInitiatedRouteRef.current = canBroadcast;
     setAnalysis(route);
     setCurrentRideId(null);
     setScrubIndex(null);
     setSessionNotice(
-      shouldBroadcastToCrew
+      canBroadcast
         ? `🏁 Route to "${route.name}" set & shared with squad (${route.totalDistanceKm} km)`
-        : `🏁 Solo target route to "${route.name}" set (${route.totalDistanceKm} km)`
+        : `🏁 Route to "${route.name}" loaded (${route.totalDistanceKm} km)`
     );
     setTimeout(() => setSessionNotice(null), 5000);
     setCurrentTab('cockpit');
-  }, [setCurrentTab]);
+  }, [groupRide.isOnRadar, setCurrentTab]);
 
   const handleClearActiveRoute = useCallback(() => {
     isLocallyInitiatedRouteRef.current = false;
@@ -1054,67 +1053,97 @@ export default function App() {
               : 'No track loaded'
           }
           theme={theme}
-          onToggleTheme={toggleTheme}
-          unitSystem={unitSystem}
-          onToggleUnitSystem={toggleUnitSystem}
+          onOpenSettings={() => setIsProfileModalOpen(true)}
         />
       )}
 
-      {/* In-App Browser Helper Banner (surfaced across all views including live map) */}
-      <InAppBrowserBanner />
+      {/* In-App Browser Helper Banner (surfaced on non-map views so map top bar stays clear) */}
+      {currentTab !== 'crew' && <InAppBrowserBanner />}
 
-      {/* Global Convoy Safety & Alert Banner (Battery, Runaway Ahead, Separation, Route Deviation, Roll Call) */}
-      {convoyAlert && (
-        <div 
+      {/* Global Fixed Safe-Area Alert & Notice Stack (never hidden under status bar or Navbar) */}
+      {(convoyAlert || errorMessage || sessionNotice) && (
+        <div
           style={{
-            top: 'max(4.2rem, calc(env(safe-area-inset-top) + 3.8rem))',
+            top: currentTab === 'crew'
+              ? 'calc(env(safe-area-inset-top, 0px) + 4.1rem)'
+              : 'calc(env(safe-area-inset-top, 0px) + 3.65rem)',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
-          className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
+          className={`fixed z-[65] pointer-events-none flex flex-col items-center gap-2 ${
+            currentTab !== 'crew' ? 'landscape:pl-14' : ''
+          }`}
         >
-          <div 
-            className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all p-3 flex items-center justify-between gap-3 ${
-              theme === 'light'
-                ? 'bg-white/95 text-slate-800 shadow-slate-400/50'
-                : 'bg-[#0d131a]/95 text-white shadow-black/90'
-            }`}
-            style={{ borderColor: convoyAlert.color || '#00f0ff' }}
-          >
-            <div 
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border"
-              style={{
-                backgroundColor: `${convoyAlert.color || '#00f0ff'}20`,
-                borderColor: `${convoyAlert.color || '#00f0ff'}50`,
-              }}
-            >
-              {convoyAlert.icon}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div 
-                className="text-[10px] font-black uppercase tracking-wider truncate"
-                style={{ color: convoyAlert.color || '#00f0ff' }}
-              >
-                {convoyAlert.title}
-              </div>
-              <div className={`text-xs font-sans truncate ${theme === 'light' ? 'text-slate-600' : 'text-slate-200'}`}>
-                {convoyAlert.message}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic(20);
-                setConvoyAlert(null);
-              }}
-              title="Dismiss alert"
-              className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-                theme === 'light' ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+          {convoyAlert && (
+            <div
+              className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all p-3 flex items-center justify-between gap-3 animate-in slide-in-from-top-3 duration-300 ${
+                theme === 'light'
+                  ? 'bg-white/95 text-slate-800 shadow-slate-400/50'
+                  : 'bg-[#0d131a]/95 text-white shadow-black/90'
               }`}
+              style={{ borderColor: convoyAlert.color || '#00f0ff' }}
             >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border"
+                style={{
+                  backgroundColor: `${convoyAlert.color || '#00f0ff'}20`,
+                  borderColor: `${convoyAlert.color || '#00f0ff'}50`,
+                }}
+              >
+                {convoyAlert.icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[10px] font-black uppercase tracking-wider truncate"
+                  style={{ color: convoyAlert.color || '#00f0ff' }}
+                >
+                  {convoyAlert.title}
+                </div>
+                <div className={`text-xs font-sans truncate ${theme === 'light' ? 'text-slate-600' : 'text-slate-200'}`}>
+                  {convoyAlert.message}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(20);
+                  setConvoyAlert(null);
+                }}
+                title="Dismiss alert"
+                className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                  theme === 'light' ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                }`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className={`pointer-events-auto w-full max-w-md p-3 border font-sans text-xs rounded-2xl flex items-center justify-between shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
+              theme === 'light'
+                ? 'bg-rose-50/95 border-rose-300 text-rose-900'
+                : 'bg-red-950/95 border-red-500/60 text-red-200'
+            }`}>
+              <span className="min-w-0">{errorMessage}</span>
+              <button onClick={() => setErrorMessage(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {sessionNotice && (
+            <div className={`pointer-events-auto w-full max-w-md px-3.5 py-2.5 border text-xs font-mono rounded-2xl flex items-center justify-between shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
+              theme === 'light'
+                ? 'bg-sky-50/95 border-sky-300 text-sky-900'
+                : 'bg-[#0d131a]/95 border-sky-500/50 text-sky-300'
+            }`}>
+              <span className="truncate sm:whitespace-normal">🔒 {sessionNotice}</span>
+              <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
+                Got it
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1131,10 +1160,10 @@ export default function App() {
       <main className={`w-full transition-all ${
         currentTab === 'crew'
           ? 'h-[100dvh] w-full overflow-hidden flex flex-col p-0 m-0 max-w-none'
-          : 'max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
+          : 'has-landscape-rail max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
       }`}>
-        {/* Global Interrupted Session Recovery Banner (Surfaced across all views) */}
-        {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && (
+        {/* Global Interrupted Session Recovery Banner (Surfaced on non-map/non-cockpit views) */}
+        {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && currentTab !== 'crew' && (
           <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-mono text-xs animate-in fade-in duration-200 ${
             theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
           }`}>
@@ -1143,7 +1172,7 @@ export default function App() {
               <div>
                 <div className="font-bold text-sm">Interrupted Ride Session Found!</div>
                 <div className="text-[11px] opacity-80">
-                  {controls.recoverableData.points?.length || 0} unsaved GPS points ({convertDistance((controls.recoverableData.totalDistanceMeters || 0) / 1000, unitSystem).value.toFixed(1)} {unitSystem === 'imperial' ? 'mi' : 'km'}) from your previous ride.
+                  {controls.recoverableData.points?.length || 0} unsaved GPS points ({((controls.recoverableData.totalDistanceMeters || 0) / 1000).toFixed(1)} km) from your previous ride.
                 </div>
               </div>
             </div>
@@ -1205,18 +1234,7 @@ export default function App() {
               onFileLoaded={handleFileLoaded}
               onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
               onStartRecording={(mountMode) => {
-                if (mountMode) {
-                  controls.setMountMode(mountMode);
-                  startNativeRadarKeepAlive(mountMode === 'pocket');
-                }
-                handleStartRecording();
-                setCurrentTab('cockpit');
-                setSessionNotice(
-                  mountMode === 'pocket'
-                    ? '🔋 Pocket Mode Active: Lock phone in pocket. Android service tracks in background.'
-                    : '📱 Handlebar Mount Active: Screen kept awake with live telemetry & lean angles.'
-                );
-                setTimeout(() => setSessionNotice(null), 5000);
+                startSoloRideFlow(mountMode || 'handlebar', 'cockpit');
               }}
               onOpenCrew={() => setCurrentTab('crew')}
               onOpenCockpit={() => setCurrentTab('cockpit')}
@@ -1245,18 +1263,7 @@ export default function App() {
               onFileLoaded={handleFileLoaded}
               onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
               onStartRecording={(mountMode) => {
-                if (mountMode) {
-                  controls.setMountMode(mountMode);
-                  startNativeRadarKeepAlive(mountMode === 'pocket');
-                }
-                handleStartRecording();
-                setCurrentTab('cockpit');
-                setSessionNotice(
-                  mountMode === 'pocket'
-                    ? '🔋 Pocket Mode Active: Lock phone in pocket. Android service tracks in background.'
-                    : '📱 Handlebar Mount Active: Screen kept awake with live telemetry & lean angles.'
-                );
-                setTimeout(() => setSessionNotice(null), 5000);
+                startSoloRideFlow(mountMode || 'handlebar', 'cockpit');
               }}
               onOpenCrew={() => setCurrentTab('crew')}
               onOpenCockpit={() => setCurrentTab('cockpit')}
@@ -1536,6 +1543,7 @@ export default function App() {
             activeRoute={analysis}
             onClearActiveRoute={handleClearActiveRoute}
             onOpenGoogleMapsImport={() => setIsGoogleMapsModalOpen(true)}
+            onOpenSettings={() => setIsProfileModalOpen(true)}
           />
         </div>
 
@@ -1571,7 +1579,6 @@ export default function App() {
               theme={theme}
               onToggleTheme={toggleTheme}
               unitSystem={unitSystem}
-              onToggleUnitSystem={toggleUnitSystem}
               isRecording={gps.isRecording}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopAndSaveRecording}
@@ -1908,19 +1915,29 @@ export default function App() {
         theme={theme}
       />
 
-      {/* Global Rider Profile & Bike Odometer Settings Modal */}
+      {/* Global App Settings Hub (Profile, Display Theme/HUD, Privacy & Safety, Maps/Backup, APK/Help) */}
       <RiderProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         riderName={groupRide.riderName}
         bikeModel={groupRide.bikeModel}
         myColor={groupRide.myColor}
-        isOnRadar={gps.isTrackingActive && groupRide.isOnRadar}
+        isOnRadar={groupRide.isOnRadar}
         onToggleRadar={() => {
-          handleToggleTracking(!(gps.isTrackingActive && groupRide.isOnRadar));
+          const turningOn = !groupRide.isOnRadar;
+          if (turningOn && !gps.isTrackingActive) {
+            controls.startGpsTracking();
+          }
+          groupRide.toggleOnRadar(turningOn);
         }}
         onSaveProfile={(name, bike, color) => groupRide.updateRiderName(name, bike, color)}
         theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenGarage={() => setIsGarageOpen(true)}
+        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
+        onOpenPermissions={() => setIsPermissionsModalOpen(true)}
+        onOpenDownloadApp={handleOpenDownloadApp}
+        onOpenFaq={() => setCurrentTab('faq')}
         onStartupScreenChanged={(screen) => {
           if (screen === 'dashboard') setCurrentTab('home');
           else if (screen === 'cockpit') setCurrentTab('cockpit');

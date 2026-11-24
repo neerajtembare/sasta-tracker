@@ -49,12 +49,12 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
     <div 
       style={{
         top: hasSosActive
-          ? 'max(8.5rem, calc(env(safe-area-inset-top) + 8.0rem))'
-          : 'max(3.8rem, calc(env(safe-area-inset-top) + 3.4rem))',
+          ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)'
+          : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}
-      className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
+      className="fixed z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
     >
       <div 
         className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all ${

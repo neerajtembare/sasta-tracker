@@ -657,8 +657,8 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               <div className="text-xs text-slate-400 truncate flex items-center gap-1.5">
                 <span className="truncate">
                   {isRecording 
-                    ? `REC • ${unitSystem === 'imperial' ? ((recordedDistanceMeters / 1000) * 0.621371).toFixed(1) + ' mi' : (recordedDistanceMeters / 1000).toFixed(1) + ' km'} (Offline)`
-                    : 'Offline • Tap to view crew'}
+                    ? `REC • ${unitSystem === 'imperial' ? ((recordedDistanceMeters / 1000) * 0.621371).toFixed(1) + ' mi' : (recordedDistanceMeters / 1000).toFixed(1) + ' km'} • Solo Private`
+                    : 'Solo Private • Tap REC to track ride'}
                 </span>
               </div>
             )}

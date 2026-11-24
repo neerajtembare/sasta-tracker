@@ -82,17 +82,17 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span 
-                className="text-[10px] font-black px-1.5 py-0.2 rounded-md uppercase tracking-wider text-slate-950 truncate max-w-[120px]"
+                className="text-[10px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider text-slate-950 truncate max-w-[120px]"
                 style={{ backgroundColor: callout.color || '#00f0ff' }}
               >
                 {callout.riderName}
               </span>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 HEADS-UP
               </span>
             </div>
 
-            <div className="font-heading font-black text-sm tracking-wide uppercase text-white truncate mt-0.5">
+            <div className={`font-heading font-black text-sm tracking-wide uppercase truncate mt-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
               {callout.title}
             </div>
 

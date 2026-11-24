@@ -175,14 +175,14 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             {onOpenDiagnostics && (
               <button
                 onClick={onOpenDiagnostics}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100 shadow-xs'
                     : 'bg-sky-500/15 text-sky-300 border-sky-500/40 hover:bg-sky-500/25 shadow-xs'
                 }`}
                 title="Open Complete Telemetry & Raw GPS Specs (Shortcut: D)"
               >
-                <Activity className="w-3.5 h-3.5" />
+                <Activity className="w-3.5 h-3.5 text-sky-400" />
                 <span>Details</span>
               </button>
             )}
@@ -190,30 +190,32 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
             {onOpenShare && (
               <button
                 onClick={onOpenShare}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
                     : 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25'
                 }`}
                 title="Create 4:5 story ride card to share"
               >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Share Card</span>
+                <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden xs:inline">Share Card</span>
+                <span className="xs:hidden">Share</span>
               </button>
             )}
 
             {onOpenReport && (
               <button
                 onClick={onOpenReport}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
                     : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
                 }`}
                 title="Print or export complete PDF summary dossier"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span>PDF Dossier</span>
+                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden xs:inline">PDF Dossier</span>
+                <span className="xs:hidden">PDF</span>
               </button>
             )}
 
@@ -221,7 +223,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
               <button
                 id="btn-hero-compare"
                 onClick={onOpenCompare}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 shadow-xs'
                     : 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 shadow-xs'
@@ -235,16 +237,16 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
 
             {isSavedInGarage ? (
               <span 
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                className="flex items-center gap-1 px-2 py-1 text-xs font-mono font-bold rounded-lg border bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
                 title="This ride is saved on your device"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Saved</span>
+                <span className="hidden xs:inline">Saved</span>
               </span>
             ) : onSaveToGarage ? (
               <button
                 onClick={onSaveToGarage}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 shadow-xs'
                     : 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25 shadow-xs'
@@ -252,22 +254,21 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
                 title="Save this ride permanently to your device"
               >
                 <BookmarkPlus className="w-3.5 h-3.5 text-amber-400" />
-                <span>Save Ride</span>
+                <span>Save</span>
               </button>
             ) : null}
 
             {onCloseTrack && (
               <button
                 onClick={onCloseTrack}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
+                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
                   isLight
                     ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
                     : 'bg-rose-950/30 text-rose-400 border-rose-500/30 hover:bg-rose-500/20'
                 }`}
                 title="Close and unload this track"
               >
-                <X className="w-3.5 h-3.5" />
-                <span>Close</span>
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>

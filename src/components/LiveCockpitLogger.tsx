@@ -1,38 +1,41 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppTheme, UnitSystem } from '../types';
+import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
 import { useGPS, GPSState, GPSControls } from '../hooks/useGPS';
 import { exportPointsToGPX, downloadFile } from '../utils/gpxExporter';
-import { 
-  Play, 
-  Pause, 
-  Square, 
-  MapPin, 
-  Compass, 
-  Mountain, 
-  Coffee, 
-  Fuel, 
-  Camera, 
-  Utensils, 
-  AlertCircle, 
-  HelpCircle, 
-  Smartphone, 
-  UploadCloud, 
-  CheckCircle2, 
-  Crosshair, 
-  RotateCcw, 
-  Zap, 
-  ChevronDown, 
-  ChevronUp, 
-  Volume2, 
-  VolumeX, 
-  Clock, 
-  Sun, 
-  Users, 
+import { calculateNavGuidance } from '../utils/routeGenerator';
+import { openGoogleMapsNavigation } from '../utils/navigation';
+import {
+  Play,
+  Pause,
+  Square,
+  MapPin,
+  Compass,
+  Mountain,
+  Coffee,
+  Fuel,
+  Camera,
+  Utensils,
+  AlertCircle,
+  HelpCircle,
+  Smartphone,
+  UploadCloud,
+  CheckCircle2,
+  Crosshair,
+  RotateCcw,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  Volume2,
+  VolumeX,
+  Clock,
+  Sun,
+  Users,
   Share2,
   Download,
   Eye,
   EyeOff,
+  Navigation,
   X,
   Check
 } from 'lucide-react';
@@ -63,6 +66,11 @@ interface LiveCockpitLoggerProps {
   activeVoiceBlast?: ActiveVoiceBlast | null;
   onDismissVoiceBlast?: () => void;
   onSendVoiceBlast?: (audioBase64: string, durationMs: number, mimeType?: string) => void;
+  onSwitchToMap?: () => void;
+  onGoToDashboard?: () => void;
+  activeRoute?: RideAnalysis | null;
+  onClearActiveRoute?: () => void;
+  onOpenGoogleMapsImport?: () => void;
 }
 
 export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
@@ -84,6 +92,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   activeVoiceBlast = null,
   onDismissVoiceBlast,
   onSendVoiceBlast,
+  onSwitchToMap,
+  onGoToDashboard,
+  activeRoute = null,
+  onClearActiveRoute,
+  onOpenGoogleMapsImport,
 }) => {
   const isLight = theme === 'light';
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -147,7 +160,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     triggerHaptic(40);
     setIsCleanHud(prev => {
       const next = !prev;
-      try { localStorage.setItem('sasta_clean_hud', String(next)); } catch {}
+      try { localStorage.setItem('sasta_clean_hud', String(next)); } catch { }
       return next;
     });
   };
@@ -156,7 +169,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     triggerHaptic(40);
     setShowGyro(prev => {
       const next = !prev;
-      try { localStorage.setItem('sasta_show_gyro', String(next)); } catch {}
+      try { localStorage.setItem('sasta_show_gyro', String(next)); } catch { }
       return next;
     });
   };
@@ -165,11 +178,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
     triggerHaptic(60);
     setIsSunlightMode(prev => {
       const next = !prev;
-      try { localStorage.setItem('sasta_sunlight_mode', String(next)); } catch {}
+      try { localStorage.setItem('sasta_sunlight_mode', String(next)); } catch { }
       return next;
     });
   };
-  
+
   const [internalGps, internalControls] = useGPS(unitSystem, !externalGps);
   const gps = externalGps || internalGps;
   const controls = externalControls || internalControls;
@@ -296,42 +309,79 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const cardBg = isSunlightMode
     ? 'bg-black border-yellow-400 text-white shadow-2xl shadow-yellow-500/10'
     : isLight
-    ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50'
-    : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-2xl';
+      ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50'
+      : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-2xl';
 
   const innerCardBg = isSunlightMode
     ? 'bg-black border-yellow-500/50 text-white'
     : isLight
-    ? 'bg-slate-50 border-slate-200 text-slate-800'
-    : 'bg-[#141d26] border-[#223140] text-white';
+      ? 'bg-slate-50 border-slate-200 text-slate-800'
+      : 'bg-[#141d26] border-[#223140] text-white';
 
   const subTextColor = isSunlightMode
     ? 'text-yellow-400 font-bold'
     : isLight
-    ? 'text-slate-500'
-    : 'text-[#8f9ca8]';
+      ? 'text-slate-500'
+      : 'text-[#8f9ca8]';
 
   const speedTextColor = isSunlightMode
     ? 'text-yellow-300 font-black'
     : isLight
-    ? 'text-slate-900'
-    : 'text-white';
+      ? 'text-slate-900'
+      : 'text-white';
 
   const currentSpeedConverted = convertSpeed(gps.currentSpeedKmh, unitSystem);
   const maxSpeedConverted = convertSpeed(gps.maxRecordedSpeed, unitSystem);
   const distanceConverted = convertDistance(gps.totalDistanceMeters / 1000, unitSystem);
   const altitudeConverted = convertElevation(gps.currentAltitude, unitSystem);
 
+  // Swipe gesture support to seamlessly switch between Cockpit HUD, Map, and Dashboard
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current !== null && e.changedTouches.length === 1) {
+      const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+      const deltaY = touchStartYRef.current !== null ? Math.abs(e.changedTouches[0].clientY - touchStartYRef.current) : 0;
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+
+      if (Math.abs(deltaX) > 75 && deltaY < 60) {
+        if (deltaX < 0 && onSwitchToMap) {
+          triggerHaptic(30);
+          onSwitchToMap();
+        } else if (deltaX > 0 && onGoToDashboard) {
+          triggerHaptic(30);
+          onGoToDashboard();
+        }
+      }
+    }
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-3">
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="w-full max-w-4xl mx-auto space-y-3 select-none"
+    >
       {/* Toast Alert Banner */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-emerald-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 border border-emerald-400">
+        <div 
+          style={{ top: 'max(3.5rem, calc(env(safe-area-inset-top) + 3.0rem))' }}
+          className="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-emerald-500 text-slate-950 font-mono font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 border border-emerald-400"
+        >
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
- 
+
       {/* Background Battery Optimization Exemption Banner (Ensures 100% background GPS in pocket) */}
       {!isBatteryIgnored && (
         <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-between gap-2 font-mono text-xs text-amber-200 animate-in fade-in">
@@ -354,9 +404,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
       {/* Interrupted Session Recovery Banner (Safe against browser refresh or crash) */}
       {controls.hasRecoverableRide && controls.recoverableData && (
-        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
-          isLight ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-        }`}>
+        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${isLight ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+          }`}>
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
@@ -383,9 +432,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             </button>
             <button
               onClick={controls.handleDiscardSession}
-              className={`px-2.5 py-1.5 border rounded-lg transition-colors cursor-pointer text-[11px] ${
-                isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-              }`}
+              className={`px-2.5 py-1.5 border rounded-lg transition-colors cursor-pointer text-[11px] ${isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                }`}
             >
               Discard
             </button>
@@ -395,9 +443,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
       {/* Short Ride Warning Alert */}
       {shortRideWarning && (
-        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${
-          isLight ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
-        }`}>
+        <div className={`p-3.5 rounded-xl border flex items-center justify-between flex-wrap gap-2.5 font-mono text-xs shadow-lg animate-in fade-in duration-200 ${isLight ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+          }`}>
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             <div className="text-[11px] opacity-90 max-w-xl">
@@ -413,9 +460,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             </button>
             <button
               onClick={handleForceDiscard}
-              className={`px-2.5 py-1 border rounded-lg transition-colors cursor-pointer text-xs ${
-                isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-              }`}
+              className={`px-2.5 py-1 border rounded-lg transition-colors cursor-pointer text-xs ${isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                }`}
             >
               Discard
             </button>
@@ -427,14 +473,13 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           COCKPIT HUD MAIN CLUSTER (UNCLUTTERED, STREAMLINED INSTRUMENT PANEL)
       ───────────────────────────────────────────────────────────── */}
       <div className={`border rounded-2xl p-2.5 sm:p-4 landscape:p-2 relative overflow-hidden shadow-2xl space-y-2.5 landscape:space-y-1.5 ${cardBg}`}>
-        
+
         {/* Streamlined Top Navigation & Status Bar */}
         <div className={`flex flex-wrap items-center justify-between gap-1.5 border-b pb-2 landscape:pb-1 text-xs font-mono ${isLight ? 'border-slate-200' : 'border-[#1e2a38]'}`}>
           <div className="flex items-center gap-2">
             <span className="relative flex h-2.5 w-2.5">
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500 ring-2 ring-rose-500/30 animate-pulse') : 'bg-slate-500'
-              }`} />
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isRecording ? (isPaused ? 'bg-amber-400' : 'bg-rose-500 ring-2 ring-rose-500/30 animate-pulse') : 'bg-slate-500'
+                }`} />
             </span>
             <span className="font-bold text-[11px] uppercase tracking-wider">
               {isRecording ? (isPaused ? 'PAUSED' : 'LIVE GPS') : 'STANDBY'}
@@ -450,17 +495,73 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-1.5 font-mono text-xs">
+            {/* Seamless 1-Tap Toggle to Map */}
+            {onSwitchToMap && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(25);
+                  onSwitchToMap();
+                }}
+                className={`px-2.5 py-1 rounded-xl border font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-sm ${
+                  isLight
+                    ? 'bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border-cyan-300'
+                    : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40'
+                }`}
+                title="Switch to Map (or swipe left)"
+              >
+                <span>🗺️ Map</span>
+              </button>
+            )}
+
+            {/* Seamless 1-Tap Toggle to Dashboard */}
+            {onGoToDashboard && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(25);
+                  onGoToDashboard();
+                }}
+                className={`px-2.5 py-1 rounded-xl border font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Return to Solo Dashboard (or swipe right)"
+              >
+                <span>🏠 Home</span>
+              </button>
+            )}
+
+            {/* Set Destination Target from Google Maps Link */}
+            {onOpenGoogleMapsImport && !activeRoute && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(20);
+                  onOpenGoogleMapsImport();
+                }}
+                className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'border-cyan-300 bg-cyan-50 hover:bg-cyan-100 text-cyan-800'
+                    : 'border-cyan-500/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300'
+                }`}
+                title="Set Destination Target from Google Maps"
+              >
+                <span>🎯 Target</span>
+              </button>
+            )}
+
             {/* Clean HUD / Focus Mode Toggle */}
             <button
               onClick={toggleCleanHud}
               title={isCleanHud ? 'Exit Clean HUD (Show all telemetry)' : 'Clean HUD: Streamlines UI, hides secondary numbers for distraction-free riding'}
-              className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
-                isCleanHud
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
-                  : isLight
+              className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${isCleanHud
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                : isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                   : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-cyan-400/80'
-              }`}
+                }`}
             >
               {isCleanHud ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
               <span>{isCleanHud ? 'Clean ON' : 'Clean'}</span>
@@ -471,13 +572,12 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               <button
                 onClick={toggleGyro}
                 title="Toggle 3D Lean Angle & Gyroscope panel"
-                className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
-                  showGyro
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold'
-                    : isLight
+                className={`px-2 py-0.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${showGyro
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold'
+                  : isLight
                     ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                     : 'bg-[#141d26] hover:bg-[#1f2c3a] border-[#223140] text-cyan-400/80'
-                }`}
+                  }`}
               >
                 <Compass className="w-3 h-3" />
                 <span className="hidden sm:inline">Lean</span>
@@ -488,43 +588,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             <button
               onClick={toggleSunlightMode}
               title="Sunlight Mode (High-contrast OLED black & neon yellow)"
-              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${
-                isSunlightMode ? 'bg-yellow-400 text-black border-yellow-300 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-yellow-400/80'
-              }`}
+              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${isSunlightMode ? 'bg-yellow-400 text-black border-yellow-300 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-yellow-400/80'
+                }`}
             >
               <Sun className="w-3 h-3" />
               <span className="hidden md:inline">{isSunlightMode ? 'Sun ON' : 'Sun'}</span>
-            </button>
-
-            {/* Crew Live Button */}
-            {onOpenGroupRideModal && (
-              <button
-                onClick={() => {
-                  triggerHaptic(40);
-                  onOpenGroupRideModal();
-                }}
-                title="Crew Live Radar"
-                className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-1 cursor-pointer ${
-                  groupRideConnected ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold' : isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#141d26] border-[#223140] text-cyan-400/80'
-                }`}
-              >
-                <Users className="w-3 h-3" />
-                <span className="font-bold">{groupRideConnected ? `${(groupMembers?.length || 0) + 1}` : 'Crew'}</span>
-              </button>
-            )}
-
-            {/* Share Pin */}
-            <button
-              onClick={() => {
-                triggerHaptic(40);
-                setIsShareLocModalOpen(true);
-              }}
-              title="Share live location pin"
-              className={`p-1 sm:px-1.5 sm:py-0.5 rounded-lg border text-[10px] flex items-center gap-0.5 cursor-pointer ${
-                isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-              }`}
-            >
-              <Share2 className="w-3 h-3 text-emerald-400" />
             </button>
           </div>
         </div>
@@ -556,14 +624,85 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           </div>
         )}
 
+        {/* Active Google Maps / Target Route Navigation Capsule */}
+        {activeRoute && activeRoute.points && activeRoute.points.length > 0 && (() => {
+          const destPt = activeRoute.points[activeRoute.points.length - 1];
+          const guidance = calculateNavGuidance(gps.currentCoords, destPt, gps.currentHeading);
+          return (
+            <div className={`p-2 sm:p-2.5 landscape:py-1 landscape:px-2 rounded-xl sm:rounded-2xl border flex items-center justify-between gap-2 shadow-lg animate-in fade-in duration-200 ${isLight ? 'bg-cyan-50 border-cyan-300 text-slate-900' : 'bg-cyan-950/40 border-cyan-500/50 text-white'
+              }`}>
+              <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 landscape:w-6 landscape:h-6 rounded-lg sm:rounded-xl bg-cyan-400 text-slate-950 flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 shadow-md">
+                  {guidance ? guidance.directionArrow : '🏁'}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="font-bold text-xs landscape:text-[11px] truncate">🏁 {activeRoute.name || 'Target Destination'}</span>
+                  </div>
+                  <div className={`flex items-center gap-2 text-[11px] landscape:text-[10px] font-mono ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
+                    {guidance ? (
+                      <>
+                        <span className="font-black text-xs sm:text-sm landscape:text-xs">
+                          {unitSystem === 'imperial'
+                            ? `${(guidance.distanceRemainingKm * 0.621371).toFixed(1)} mi`
+                            : `${guidance.distanceRemainingKm.toFixed(1)} km`}
+                        </span>
+                        <span className="opacity-75">• {guidance.targetBearing}°</span>
+                      </>
+                    ) : (
+                      <span>{unitSystem === 'imperial' ? `${(activeRoute.totalDistanceKm * 0.621371).toFixed(1)} mi` : `${activeRoute.totalDistanceKm.toFixed(1)} km`}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(20);
+                    openGoogleMapsNavigation(destPt.lat, destPt.lon, activeRoute.name);
+                  }}
+                  className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border text-[10px] sm:text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                    isLight
+                      ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-400'
+                      : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40'
+                  }`}
+                  title="Open Google Maps Turn-by-Turn Navigation"
+                >
+                  <Navigation className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span className="hidden xs:inline">Maps Nav</span>
+                </button>
+
+                {onClearActiveRoute && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(20);
+                      onClearActiveRoute();
+                    }}
+                    className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors cursor-pointer ${isLight
+                      ? 'border-slate-300 text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                      : 'border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    title="Cancel Route Target"
+                  >
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ─────────────────────────────────────────────────────────────
             WIDESCREEN TFT COCKPIT POD (DUAL COLUMN IN LANDSCAPE, STACK IN PORTRAIT)
         ───────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 landscape:grid-cols-12 gap-2.5 landscape:gap-2 items-stretch">
-          
+
           {/* LEFT POD (landscape:col-span-7) -> SPEEDOMETER + GLANCE TELEMETRY STRIP (NO UNWANTED BULKY BOXES!) */}
           <div className="landscape:col-span-7 flex flex-col justify-between space-y-2 landscape:space-y-1">
-            
+
             {/* Speedometer Display (Floating, Clean, Borderless Glanceability) */}
             <div className={`text-center py-2 sm:py-3 landscape:py-1 relative rounded-xl flex flex-col justify-center ${innerCardBg}`}>
               <div className={`text-[10px] font-mono tracking-widest uppercase ${subTextColor}`}>
@@ -657,13 +796,12 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               <div className="space-y-1">
                 <button
                   onClick={() => setShowWaypoints(!showWaypoints)}
-                  className={`w-full py-1 px-2 border rounded-lg text-[10px] font-mono flex items-center justify-between cursor-pointer transition-colors ${
-                    showWaypoints
-                      ? 'bg-slate-800 border-slate-700 text-cyan-400'
-                      : isLight
+                  className={`w-full py-1 px-2 border rounded-lg text-[10px] font-mono flex items-center justify-between cursor-pointer transition-colors ${showWaypoints
+                    ? 'bg-slate-800 border-slate-700 text-cyan-400'
+                    : isLight
                       ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600'
                       : 'bg-[#141d26] hover:bg-[#1a2533] border-[#223140] text-slate-400'
-                  }`}
+                    }`}
                 >
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-cyan-400" />
@@ -777,40 +915,42 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
 
       {/* Finish Ride Modal with Instant Download GPX / Save to Garage Options */}
       {showFinishModal && (
-        <div 
+        <div
           onClick={e => { if (e.target === e.currentTarget) setShowFinishModal(false); }}
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200 cursor-pointer"
         >
-          <div 
+          <div
             onClick={e => e.stopPropagation()}
             className={`w-full max-w-md p-5 rounded-2xl border shadow-2xl space-y-4 font-mono cursor-default ${innerCardBg}`}
           >
-            <div className="flex items-center justify-between border-b pb-3 border-slate-700">
+            <div className={`flex items-center justify-between border-b pb-3 ${isLight ? 'border-slate-200' : 'border-slate-700'}`}>
               <div className="flex items-center gap-2">
                 <Square className="w-5 h-5 text-rose-500 fill-current" />
-                <h3 className="font-bold text-base text-white">Finish Ride Recording</h3>
+                <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>Finish Ride Recording</h3>
               </div>
               <button
                 onClick={() => setShowFinishModal(false)}
-                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Quick Stats Summary */}
-            <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-center text-xs">
+            <div className={`grid grid-cols-3 gap-2 p-3 rounded-xl border text-center text-xs ${
+              isLight ? 'bg-white border-slate-200' : 'bg-slate-950/70 border-slate-800'
+            }`}>
               <div>
                 <span className="text-slate-400 block text-[10px]">DISTANCE</span>
-                <strong className="text-white text-base">{distanceConverted.value.toFixed(2)} {distanceConverted.unit.toUpperCase()}</strong>
+                <strong className={`text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>{distanceConverted.value.toFixed(2)} {distanceConverted.unit.toUpperCase()}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px]">TIME</span>
-                <strong className="text-emerald-400 text-base">{formatSec(gps.elapsedSeconds)}</strong>
+                <strong className="text-emerald-500 text-base">{formatSec(gps.elapsedSeconds)}</strong>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px]">GPS POINTS</span>
-                <strong className="text-cyan-400 text-base">{gps.pointsCount}</strong>
+                <strong className="text-cyan-500 text-base">{gps.pointsCount}</strong>
               </div>
             </div>
 
@@ -828,7 +968,11 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               {/* Option 2: Download GPX File Directly */}
               <button
                 onClick={() => handleFinishAndSave(true)}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 text-sm"
+                className={`w-full py-3 border font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 text-sm ${
+                  isLight
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border-emerald-500/40'
+                }`}
               >
                 <Download className="w-4 h-4" />
                 <span>Download GPX File Directly</span>
@@ -837,7 +981,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
               {/* Cancel */}
               <button
                 onClick={() => setShowFinishModal(false)}
-                className="w-full py-2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                className={`w-full py-2 text-xs cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
                 Cancel & Continue Riding
               </button>

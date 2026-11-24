@@ -14,6 +14,7 @@ import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
 import { playVoiceBlastAudio } from '../utils/voiceBlast';
 import { RiderCallout, CalloutPreset, playCalloutAlert } from '../utils/callouts';
 import { speakAlert } from '../utils/tts';
+import { saveRiderProfile } from '../utils/riderProfile';
 export type { RiderCallout, CalloutPreset } from '../utils/callouts';
 
 export interface GroupRiderLocation {
@@ -868,11 +869,13 @@ export function useGroupRide() {
   const loginRider = useCallback((name: string, bikeModel?: string, color?: string, squadName?: string) => {
     const cleanName = (name && name.trim()) || 'Rider';
     const cleanId = profileRef.current.id || generateUniqueRiderId(cleanName);
+    const resolvedBike = bikeModel !== undefined ? bikeModel.trim() : (profileRef.current.bikeModel || 'Motorcycle');
+    const resolvedColor = color || profileRef.current.color || getRiderColor(cleanId);
     const newProfile: RiderProfile = {
       id: cleanId,
       name: cleanName,
-      bikeModel: bikeModel || 'Motorcycle',
-      color: color || getRiderColor(cleanId),
+      bikeModel: resolvedBike || 'Motorcycle',
+      color: resolvedColor,
       squadName: squadName || DEFAULT_SQUAD_NAME,
       isLoggedIn: true,
     };
@@ -880,6 +883,11 @@ export function useGroupRide() {
 
     saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
     saveIdentity('sasta_rider_name', cleanName);
+    saveRiderProfile({
+      callsign: cleanName,
+      bikeModel: newProfile.bikeModel,
+      color: resolvedColor,
+    });
 
     postCrewNotification(`👋 Checked in as ${cleanName}! Live on Crew Radar.`, 'join');
   }, [postCrewNotification]);
@@ -894,17 +902,24 @@ export function useGroupRide() {
 
   const updateProfile = useCallback((name: string, bikeModel?: string, color?: string) => {
     const cleanName = (name && name.trim()) || profileRef.current.name || 'Rider';
+    const nextBike = bikeModel !== undefined ? (bikeModel.trim() || 'Motorcycle') : (profileRef.current.bikeModel || 'Motorcycle');
+    const nextColor = color || profileRef.current.color;
     const updated: RiderProfile = {
       ...profileRef.current,
       name: cleanName,
-      bikeModel: bikeModel !== undefined && bikeModel.trim() ? bikeModel.trim() : profileRef.current.bikeModel,
-      color: color || profileRef.current.color,
+      bikeModel: nextBike,
+      color: nextColor,
     };
     setProfile(updated);
     profileRef.current = updated;
 
     saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(updated));
     saveIdentity('sasta_rider_name', cleanName);
+    saveRiderProfile({
+      callsign: cleanName,
+      bikeModel: nextBike,
+      color: nextColor,
+    });
 
     // Immediately broadcast updated profile so other riders see the new name & color right away
     const payload: any = {

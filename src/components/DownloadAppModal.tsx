@@ -78,30 +78,32 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
         }`}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className={`flex items-center justify-between border-b pb-3 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
               <Smartphone className="w-4 h-4" />
             </div>
             <div>
-              <div className="font-heading font-black text-sm uppercase tracking-wider text-white">
+              <div className={`font-heading font-black text-sm uppercase tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>
                 Get ThrottleLog App
               </div>
-              <div className="text-[10px] text-slate-400">
+              <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Direct Android APK & Offline Mobile Access
               </div>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer transition-colors"
+            className={`p-1 rounded-lg cursor-pointer transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Option Tabs: Android APK vs iOS / Web App (PWA) */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+        <div className={`grid grid-cols-2 gap-1.5 p-1 rounded-xl border text-xs ${
+          isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'
+        }`}>
           <button
             onClick={() => {
               setActiveTab('apk');
@@ -110,7 +112,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
             className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
               activeTab === 'apk'
                 ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-400 hover:text-slate-200'
+                : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200')
             }`}
           >
             <Download className="w-3.5 h-3.5" />
@@ -124,7 +126,7 @@ export const DownloadAppModal: React.FC<DownloadAppModalProps> = ({
             className={`py-2 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
               activeTab === 'pwa'
                 ? 'bg-sky-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-400 hover:text-slate-200'
+                : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200')
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />

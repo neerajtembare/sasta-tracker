@@ -6,6 +6,12 @@ export interface SavedRide {
   distanceKm: number;
   maxSpeedKmh: number;
   createdAt?: number;
+  durationSeconds?: number;
+  avgSpeedKmh?: number;
+  movingTimeSeconds?: number;
+  elevGainM?: number;
+  rideType?: 'solo' | 'crew';
+  mountMode?: 'handlebar' | 'pocket';
 }
 
 const STORAGE_KEY = 'sasta_tracker_garage';
@@ -359,6 +365,12 @@ export function importGarageBackup(importedRides: any[]): SavedRide[] {
       gpxContent: String(r.gpxContent),
       distanceKm: Number(r.distanceKm) || 0,
       maxSpeedKmh: Number(r.maxSpeedKmh) || 0,
+      durationSeconds: r.durationSeconds !== undefined ? Number(r.durationSeconds) : undefined,
+      avgSpeedKmh: r.avgSpeedKmh !== undefined ? Number(r.avgSpeedKmh) : undefined,
+      movingTimeSeconds: r.movingTimeSeconds !== undefined ? Number(r.movingTimeSeconds) : undefined,
+      elevGainM: r.elevGainM !== undefined ? Number(r.elevGainM) : undefined,
+      rideType: r.rideType === 'crew' || r.rideType === 'solo' ? r.rideType : undefined,
+      mountMode: r.mountMode === 'handlebar' || r.mountMode === 'pocket' ? r.mountMode : undefined,
     });
     countAdded++;
   }
@@ -498,4 +510,143 @@ export function removeMemberFromCrew(crewId: string, memberName: string): SavedC
     members: crew.members.filter(m => m !== memberName),
   };
   return saveCrew(updatedCrew);
+}
+
+// ─── Crash & Live Session Recovery Storage (IndexedDB + Synchronous Fallback) ─
+export interface LiveRecoveryData {
+  points: any[];
+  elapsedSeconds: number;
+  movingSeconds: number;
+  stoppedSeconds: number;
+  totalDistanceMeters: number;
+  waypoints: any[];
+  timestamp: number;
+  rideType?: 'solo' | 'crew';
+  mountMode?: 'handlebar' | 'pocket';
+}
+
+const RECOVERY_DB_NAME = 'ThrottleLogRecoveryDB';
+const RECOVERY_DB_VERSION = 1;
+const RECOVERY_STORE_NAME = 'active_session';
+const RECOVERY_STORAGE_KEY = 'throttlelog_live_recovery_v1';
+const LEGACY_RECOVERY_KEY = 'sasta_live_recovery_v1';
+
+function openRecoveryIDB(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return Promise.resolve(null);
+  }
+  return new Promise(resolve => {
+    try {
+      const request = indexedDB.open(RECOVERY_DB_NAME, RECOVERY_DB_VERSION);
+      request.onupgradeneeded = (event: any) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(RECOVERY_STORE_NAME)) {
+          db.createObjectStore(RECOVERY_STORE_NAME, { keyPath: 'key' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+export async function saveRecoverySnapshot(data: LiveRecoveryData): Promise<void> {
+  // 1. Primary: Save full snapshot to IndexedDB (zero quota limitation, won't blow up on multi-hour rides)
+  try {
+    const db = await openRecoveryIDB();
+    if (db) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(RECOVERY_STORE_NAME, 'readwrite');
+          const store = tx.objectStore(RECOVERY_STORE_NAME);
+          store.put({ key: 'current', ...data });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('IDB recovery save warning:', e);
+  }
+
+  // 2. Secondary: Mirror lightweight summary / recent points to localStorage for sync fallback
+  try {
+    const safePoints = data.points && data.points.length > 500 ? data.points.slice(-500) : data.points;
+    const lightSnapshot = JSON.stringify({
+      ...data,
+      points: safePoints,
+      truncatedForStorage: (data.points?.length || 0) > 500,
+    });
+    localStorage.setItem(RECOVERY_STORAGE_KEY, lightSnapshot);
+    sessionStorage.setItem('sasta_live_recovery', lightSnapshot);
+  } catch {
+    // Quota reached on localStorage is safely ignored because IDB has the full point set
+  }
+}
+
+export async function loadRecoverySnapshot(): Promise<LiveRecoveryData | null> {
+  // 1. Try reading from IndexedDB first (most complete, full point set)
+  try {
+    const db = await openRecoveryIDB();
+    if (db) {
+      const result = await new Promise<any>((resolve) => {
+        try {
+          const tx = db.transaction(RECOVERY_STORE_NAME, 'readonly');
+          const store = tx.objectStore(RECOVERY_STORE_NAME);
+          const req = store.get('current');
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+      if (result && result.points && result.points.length > 0) {
+        return result as LiveRecoveryData;
+      }
+    }
+  } catch (e) {
+    console.warn('IDB recovery read warning:', e);
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    let raw = localStorage.getItem(RECOVERY_STORAGE_KEY) || localStorage.getItem(LEGACY_RECOVERY_KEY);
+    if (!raw) {
+      raw = sessionStorage.getItem('sasta_live_recovery');
+    }
+    if (raw) {
+      return JSON.parse(raw) as LiveRecoveryData;
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function clearRecoverySnapshot(): Promise<void> {
+  try {
+    const db = await openRecoveryIDB();
+    if (db) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(RECOVERY_STORE_NAME, 'readwrite');
+          const store = tx.objectStore(RECOVERY_STORE_NAME);
+          store.delete('current');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+  } catch {}
+
+  try {
+    localStorage.removeItem(RECOVERY_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_RECOVERY_KEY);
+    sessionStorage.removeItem('sasta_live_recovery');
+  } catch {}
 }

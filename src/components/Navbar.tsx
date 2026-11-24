@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               THROTTLE<span className="text-sky-500">LOG</span>
             </span>
-            <span className="hidden sm:inline-block landscape:hidden px-1 py-0.2 text-[8px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded uppercase tracking-wider">
+            <span className="hidden sm:inline-block landscape:hidden px-1 py-0.5 text-[8px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded uppercase tracking-wider">
               FREE
             </span>
           </div>
@@ -126,6 +126,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]'
           }`}
         >
+          <button
+            id="tab-btn-home"
+            onClick={() => setCurrentTab('home')}
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all relative cursor-pointer ${
+              currentTab === 'home'
+                ? 'bg-cyan-500 text-slate-950 shadow-sm font-black'
+                : isLight
+                ? 'text-slate-600 hover:text-cyan-600 hover:bg-slate-200/70'
+                : 'text-[#8f9ca8] hover:text-cyan-400 hover:bg-[#1a2530]'
+            }`}
+            title="Solo Dashboard & Motorcycle Odometer"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Dashboard</span>
+          </button>
+
           <button
             id="tab-btn-crew"
             onClick={() => setCurrentTab('crew')}
@@ -168,7 +184,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="tab-btn-analysis"
             onClick={() => setCurrentTab('analysis')}
             className={`px-2.5 sm:px-3 py-1 sm:py-1.5 landscape:py-0.5 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
-              currentTab === 'analysis' || currentTab === 'home'
+              currentTab === 'analysis'
                 ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                 : isLight
                 ? 'text-slate-600 hover:text-sky-600 hover:bg-slate-200/70'

@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 /**
  * Lightweight, zero-latency Web Audio API chime synthesizer.
  * Runs 100% offline, requires no external sound files, and outputs
@@ -186,6 +188,9 @@ let keepAliveStarted = false;
 
 export function enableBackgroundKeepAlive() {
   if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+  // In native Android APKs, ThrottleLogKeepAliveService handles background execution
+  // with PARTIAL_WAKE_LOCK and foreground location. Web Audio keep-alive is redundant.
+  if (Capacitor.isNativePlatform()) return;
   try {
     if (!silentAudioEl) {
       silentAudioEl = new Audio(SILENT_AUDIO_URI);
@@ -209,8 +214,8 @@ export function disableBackgroundKeepAlive() {
   } catch {}
 }
 
-// Automatically bind keep-alive on the first touch or click
-if (typeof window !== 'undefined') {
+// Automatically bind keep-alive on the first touch or click (Web PWA only; skipped on native APK)
+if (typeof window !== 'undefined' && !Capacitor.isNativePlatform()) {
   const handleFirstUserGesture = () => {
     enableBackgroundKeepAlive();
     window.removeEventListener('touchstart', handleFirstUserGesture);

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --breakpoint-xs: 380px;
+}
+
 @layer base {
   :root {
     --font-space: 'Space Grotesk', sans-serif;

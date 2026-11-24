@@ -27,6 +27,7 @@ interface CrewDashboardProps {
   roomCode?: string;
   lastRoomCode?: string;
   riderName: string;
+  riderId?: string;
   myColor?: string;
   bikeModel?: string;
   myLocation?: {
@@ -87,10 +88,16 @@ interface CrewDashboardProps {
   onToggleTracking?: (enable?: boolean) => void;
   onTriggerRollCall?: () => void;
   onOpenPermissionsModal?: () => void;
+  mountMode?: 'handlebar' | 'pocket';
+  onOpenSoloRide?: () => void;
+  onGoToDashboard?: () => void;
+  onOpenProfile?: () => void;
+  onOpenGoogleMaps?: () => void;
 }
 
 export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   riderName,
+  riderId,
   myColor = '#00f0ff',
   bikeModel = '',
   myLocation = null,
@@ -144,24 +151,29 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
   onToggleTracking,
   onTriggerRollCall,
   onOpenPermissionsModal,
+  mountMode = 'handlebar',
+  onOpenSoloRide,
+  onGoToDashboard,
+  onOpenProfile,
+  onOpenGoogleMaps,
 }) => {
   // Auto-acquire Screen WakeLock so handlebar phone screen stays on while riding on live map
-  // When user goes Offline and is not recording, WakeLock is released to conserve battery
+  // When user is in Pocket mode, WakeLock is disabled so phone can lock in pocket to save battery
   useEffect(() => {
     let sentinel: any = null;
     const requestLock = async () => {
-      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (isOnRadar || isRecording)) {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && (isOnRadar || isRecording) && mountMode !== 'pocket') {
         try {
           sentinel = await (navigator as any).wakeLock.request('screen');
         } catch {}
       }
     };
-    if (isOnRadar || isRecording) {
+    if ((isOnRadar || isRecording) && mountMode !== 'pocket') {
       requestLock();
     }
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && (isOnRadar || isRecording)) requestLock();
+      if (document.visibilityState === 'visible' && (isOnRadar || isRecording) && mountMode !== 'pocket') requestLock();
     };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -171,7 +183,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         sentinel?.release();
       } catch {}
     };
-  }, [isOnRadar, isRecording]);
+  }, [isOnRadar, isRecording, mountMode]);
 
   // Navigation & Settings Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -271,6 +283,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         <CrewLiveMap
           myLocation={myLocation}
           myRiderName={riderName}
+          myRiderId={riderId}
           myColor={myColor}
           isHost={isHost}
           leaderId={leaderId}
@@ -307,6 +320,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           externalMapLayer={mapLayer}
           onChangeMapLayer={handleChangeMapLayer}
           onSendCallout={onSendCallout}
+          onOpenProfile={onOpenProfile || (() => setIsProfileModalOpen(true))}
         />
       </div>
 
@@ -315,7 +329,10 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       ───────────────────────────────────────────────────────────── */}
       <TopMapCapsule
         onOpenDrawer={() => setIsDrawerOpen(true)}
-        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenProfile={onOpenProfile || (() => setIsProfileModalOpen(true))}
+        onGoToCockpit={onGoToCockpit}
+        onGoToDashboard={onGoToDashboard}
+        onOpenGoogleMaps={onOpenGoogleMaps}
         isConnected={isConnected}
         isOnRadar={isOnRadar}
         onToggleRadar={onToggleRadar}
@@ -434,6 +451,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
             onStartRecording?.();
           }
         }}
+        onOpenSoloRide={onOpenSoloRide}
         recordedDistanceMeters={totalDistanceMeters}
         sosAlert={sosAlert}
         onTriggerSos={onTriggerSos}
@@ -461,39 +479,39 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
           <div className={`w-full max-w-md p-4 sm:p-5 rounded-3xl border shadow-2xl space-y-4 font-mono ${
             theme === 'light' ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#0d131a] border-cyan-500/40 text-white'
           }`}>
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className={`flex items-center justify-between pb-2 border-b ${theme === 'light' ? 'border-slate-200' : 'border-slate-800'}`}>
               <div className="flex items-center gap-2">
                 <span className="text-xl">🏁</span>
                 <div>
-                  <h3 className="font-heading font-black text-sm tracking-wider uppercase text-white">Ride Saved to Garage!</h3>
-                  <p className="text-[10px] text-slate-400">Track preserved & saved offline</p>
+                  <h3 className={`font-heading font-black text-sm tracking-wider uppercase ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Ride Saved to Garage!</h3>
+                  <p className={`text-[10px] ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Track preserved & saved offline</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onDismissRideSummary}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1.5 rounded-lg cursor-pointer ${theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
                 ✕
               </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <div className="text-[10px] text-slate-400">DISTANCE</div>
-                <div className="font-black text-cyan-400 text-base">
+              <div className={`p-2.5 rounded-xl border ${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800'}`}>
+                <div className={`text-[10px] ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>DISTANCE</div>
+                <div className={`font-black text-base ${theme === 'light' ? 'text-cyan-700' : 'text-cyan-400'}`}>
                   {unitSystem === 'imperial' 
                     ? `${(finishedRideSummary.distanceKm * 0.621371).toFixed(1)} mi` 
                     : `${finishedRideSummary.distanceKm.toFixed(1)} km`}
                 </div>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <div className="text-[10px] text-slate-400">DURATION</div>
-                <div className="font-black text-white text-base">{finishedRideSummary.durationMin}m</div>
+              <div className={`p-2.5 rounded-xl border ${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800'}`}>
+                <div className={`text-[10px] ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>DURATION</div>
+                <div className={`font-black text-base ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{finishedRideSummary.durationMin}m</div>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <div className="text-[10px] text-slate-400">TOP SPEED</div>
-                <div className="font-black text-amber-400 text-base">
+              <div className={`p-2.5 rounded-xl border ${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800'}`}>
+                <div className={`text-[10px] ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>TOP SPEED</div>
+                <div className="font-black text-amber-500 text-base">
                   {unitSystem === 'imperial'
                     ? `${Math.round(finishedRideSummary.maxSpeedKmh * 0.621371)} mph`
                     : `${Math.round(finishedRideSummary.maxSpeedKmh)} km/h`}
@@ -520,7 +538,11 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
                     triggerHaptic(25);
                     onViewTelemetry();
                   }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                  className={`w-full py-2.5 px-4 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 ${
+                    theme === 'light'
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                      : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
                 >
                   <span>📊 View Deep Stats & Telemetry</span>
                 </button>
@@ -565,6 +587,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         onToggleTracking={onToggleTracking}
         onTriggerRollCall={onTriggerRollCall}
         onOpenPermissionsModal={onOpenPermissionsModal}
+        onOpenSoloRide={onOpenSoloRide}
+        onOpenDashboard={onGoToDashboard}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -579,13 +603,17 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         isOnRadar={isTrackingActive && isOnRadar}
         onToggleRadar={() => {
           if (onToggleTracking) {
-            onToggleTracking(!isOnRadar);
+            onToggleTracking(!(isTrackingActive && isOnRadar));
           } else if (onToggleRadar) {
-            onToggleRadar();
+            onToggleRadar(!isOnRadar);
           }
         }}
         onSaveProfile={(name, bike, color) => onUpdateRiderName(name, bike, color)}
         theme={theme}
+        onStartupScreenChanged={(screen) => {
+          if (screen === 'dashboard' && onGoToDashboard) onGoToDashboard();
+          else if (screen === 'cockpit' && onGoToCockpit) onGoToCockpit();
+        }}
       />
 
       {/* ─────────────────────────────────────────────────────────────

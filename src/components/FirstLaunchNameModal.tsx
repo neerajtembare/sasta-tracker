@@ -77,26 +77,26 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
           isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#0d131a] border-cyan-500/50 text-white'
         }`}
       >
-        <div className="flex items-center gap-2.5 pb-2 border-b border-slate-800">
+        <div className={`flex items-center gap-2.5 pb-2 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
           <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-xl shrink-0">
             🏍️
           </div>
           <div>
-            <h2 className="font-heading font-black text-sm tracking-wider uppercase text-white flex items-center gap-1.5">
+            <h2 className={`font-heading font-black text-sm tracking-wider uppercase flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
               <span>Welcome to Crew Radar</span>
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             </h2>
-            <p className="text-[11px] text-slate-400">Set your name for your riding squad</p>
+            <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>Set your name for your riding squad</p>
           </div>
         </div>
 
-        <p className="text-xs text-slate-300 font-sans leading-relaxed">
+        <p className={`text-xs font-sans leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
           Enter your name so your friends recognize your bike on the map and hear your voice callouts:
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-[10px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">
+            <label className={`text-[10px] font-bold block mb-1 uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               Your Callsign / Name *
             </label>
             <input
@@ -107,12 +107,14 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
               onChange={(e) => setNameInput(e.target.value)}
               placeholder="e.g. Rahul / Amit / Neeraj"
               maxLength={16}
-              className="w-full px-3 py-2.5 rounded-xl bg-black/50 border border-slate-700 text-white font-bold text-sm focus:outline-hidden focus:border-cyan-400 placeholder:text-slate-500"
+              className={`w-full px-3 py-2.5 rounded-xl border font-bold text-sm focus:outline-hidden focus:border-cyan-400 placeholder:text-slate-500 ${
+                isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-black/50 border-slate-700 text-white'
+              }`}
             />
           </div>
 
           <div>
-            <label className="text-[10px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">
+            <label className={`text-[10px] font-bold block mb-1 uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               Motorcycle Model (Optional)
             </label>
             <input
@@ -121,7 +123,9 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
               onChange={(e) => setBikeInput(e.target.value)}
               placeholder="e.g. Hunter 350 / Duke 390"
               maxLength={20}
-              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-slate-700 text-white text-xs focus:outline-hidden focus:border-cyan-400 placeholder:text-slate-500"
+              className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-hidden focus:border-cyan-400 placeholder:text-slate-500 ${
+                isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-black/50 border-slate-700 text-white'
+              }`}
             />
           </div>
 

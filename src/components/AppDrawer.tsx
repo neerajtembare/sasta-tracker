@@ -62,6 +62,8 @@ interface AppDrawerProps {
   onToggleOrientation?: () => void;
   onTriggerRollCall?: () => void;
   onOpenPermissionsModal?: () => void;
+  onOpenSoloRide?: () => void;
+  onOpenDashboard?: () => void;
 }
 
 const COLOR_OPTIONS = [
@@ -101,6 +103,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   onToggleOrientation,
   onTriggerRollCall,
   onOpenPermissionsModal,
+  onOpenSoloRide,
+  onOpenDashboard,
 }) => {
   const isLight = theme === 'light';
 
@@ -343,7 +347,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                     onChange={(e) => setNameInput(e.target.value)}
                     maxLength={18}
                     placeholder="e.g. Neeraj"
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-slate-700 text-white font-bold text-xs focus:outline-hidden focus:border-cyan-400"
+                    className={`w-full px-2.5 py-1.5 rounded-lg border font-bold text-xs focus:outline-hidden focus:border-cyan-400 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-black/40 border-slate-700 text-white'
+                    }`}
                   />
                 </div>
 
@@ -355,7 +361,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
                     onChange={(e) => setBikeInput(e.target.value)}
                     maxLength={22}
                     placeholder="e.g. Hunter 350 / Duke 390"
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-slate-700 text-white text-xs focus:outline-hidden focus:border-cyan-400"
+                    className={`w-full px-2.5 py-1.5 rounded-lg border text-xs focus:outline-hidden focus:border-cyan-400 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-black/40 border-slate-700 text-white'
+                    }`}
                   />
                 </div>
 
@@ -641,9 +649,63 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </div>
 
           {/* ─────────────────────────────────────────────────────────────
-              5. APP NAVIGATION SHORTCUTS (MY RIDES, COCKPIT)
+              5. APP NAVIGATION SHORTCUTS (MY RIDES, COCKPIT, SOLO RIDE)
           ───────────────────────────────────────────────────────────── */}
           <div className="space-y-1.5">
+            {/* Solo Dashboard Home */}
+            {onOpenDashboard && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(20);
+                  onClose();
+                  onOpenDashboard();
+                }}
+                className={`w-full p-3 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${
+                  isLight ? 'bg-slate-50 hover:bg-slate-100 border-slate-200' : 'bg-[#121922] hover:bg-[#1a2430] border-[#1e2a38]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-sm">
+                    🏠
+                  </div>
+                  <div className="text-left">
+                    <div className={`font-bold text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>Solo Dashboard</div>
+                    <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>Motorcycle odometer, lifetime stats & rides</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-cyan-400" />
+              </button>
+            )}
+
+            {/* Solo Ride Pre-Ride Launcher */}
+            {onOpenSoloRide && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic(25);
+                  onClose();
+                  onOpenSoloRide();
+                }}
+                className={`w-full p-3 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${
+                  isLight 
+                    ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300' 
+                    : 'bg-gradient-to-r from-cyan-950/40 to-emerald-950/30 hover:from-cyan-900/50 hover:to-emerald-900/40 border-cyan-500/40 shadow-sm'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-sm">
+                    🏍️
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold text-xs text-cyan-300">Start Solo Ride</div>
+                    <div className="text-[10px] text-slate-400">Handlebar mount vs Pocket low-battery mode</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-cyan-400" />
+              </button>
+            )}
+
             {/* My Rides / Garage */}
             <button
               type="button"

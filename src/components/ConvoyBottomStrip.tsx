@@ -15,6 +15,7 @@ import {
   Radio
 } from 'lucide-react';
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
+import { openGoogleMapsNavigation } from '../utils/navigation';
 import { GroupMemberInfo, SosAlert } from '../hooks/useGroupRide';
 import { AppTheme, UnitSystem, RideAnalysis } from '../types';
 import { convertSpeed, convertDistance } from '../utils/units';
@@ -46,6 +47,7 @@ interface ConvoyBottomStripProps {
   onTrailRider?: (targetRiderId: string | null) => void;
   theme?: AppTheme;
   unitSystem?: UnitSystem;
+  onOpenSoloRide?: () => void;
 }
 
 export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
@@ -73,6 +75,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   onTrailRider,
   theme = 'dark',
   unitSystem = 'metric',
+  onOpenSoloRide,
 }) => {
   const isLight = theme === 'light';
   const [isExpanded, setIsExpanded] = useState(false);
@@ -124,6 +127,8 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
     triggerHaptic(40);
     if (isRecording) {
       setIsConfirmStopOpen(true);
+    } else if (onOpenSoloRide) {
+      onOpenSoloRide();
     } else {
       onToggleRecording?.();
     }
@@ -177,8 +182,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   triggerHaptic(25);
                   if (activeRoute.points && activeRoute.points.length > 0) {
                     const last = activeRoute.points[activeRoute.points.length - 1];
-                    const url = `https://www.google.com/maps/dir/?api=1&destination=${last.lat},${last.lon}&travelmode=driving`;
-                    window.open(url, '_blank');
+                    openGoogleMapsNavigation(last.lat, last.lon, activeRoute.name);
                   }
                 }}
                 className="h-7 px-2.5 rounded-lg bg-cyan-400 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
@@ -207,17 +211,17 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 animate-in slide-in-from-bottom-3 duration-200 ${
             isLight ? 'bg-white/98 border-slate-300 text-slate-800' : 'bg-[#0d131a]/98 border-[#1e2a38] text-white'
           }`}>
-            <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
+            <div className={`flex items-center justify-between pb-1.5 border-b ${isLight ? 'border-slate-200' : 'border-slate-800/80'}`}>
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-cyan-400" />
-                <span className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                <Users className="w-4 h-4 text-cyan-500" />
+                <span className={`font-heading font-black text-xs uppercase tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   Squad Convoy ({otherRiders.length + 1} Riders)
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsExpanded(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -234,13 +238,19 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                       triggerHaptic(30);
                       onTrailRider?.(squadLead.riderId);
                     }}
-                    className="w-full py-1.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center justify-between cursor-pointer transition-all active:scale-98 shadow-sm"
+                    className={`w-full py-1.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-between cursor-pointer transition-all active:scale-98 shadow-sm ${
+                      isLight
+                        ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-800'
+                        : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/50 text-amber-300'
+                    }`}
                   >
                     <span className="flex items-center gap-1.5">
                       <span>👑</span>
                       <span>Follow Leader: {squadLead.name}</span>
                     </span>
-                    <span className="text-[10px] text-amber-400 font-mono bg-amber-500/20 px-1.5 py-0.5 rounded">
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                      isLight ? 'text-amber-800 bg-amber-200/70' : 'text-amber-400 bg-amber-500/20'
+                    }`}>
                       {formatDistance(squadLead.distanceFromMeMeters)} ➔
                     </span>
                   </button>
@@ -252,12 +262,14 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
             {/* Rider cards */}
             <div className="max-h-48 overflow-y-auto space-y-1.5 no-scrollbar pr-1">
               {/* Self card */}
-              <div className="flex items-center justify-between p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-xs">
+              <div className={`flex items-center justify-between p-2 rounded-xl border text-xs ${
+                isLight ? 'bg-cyan-50/70 border-cyan-300' : 'bg-cyan-500/10 border-cyan-500/30'
+              }`}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                  <span className="font-bold text-white truncate">{riderName} (You)</span>
+                  <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                  <span className={`font-bold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{riderName} (You)</span>
                 </div>
-                <span className="text-[10px] text-cyan-300 font-bold">
+                <span className={`text-[10px] font-bold ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>
                   {otherRiders.some(r => r.isHost || r.riderId === leaderId) ? 'RIDER / YOU' : '👑 SQUAD LEAD / YOU'}
                 </span>
               </div>
@@ -280,10 +292,10 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                       }}
                       className={`flex flex-col p-2.5 rounded-xl border text-xs cursor-pointer transition-all gap-1.5 ${
                         isTrailed
-                          ? 'bg-amber-950/30 border-amber-500/70 shadow-md ring-1 ring-amber-500/40'
+                          ? (isLight ? 'bg-amber-50 border-amber-400 shadow-md ring-1 ring-amber-400/40' : 'bg-amber-950/30 border-amber-500/70 shadow-md ring-1 ring-amber-500/40')
                           : rider.isOnline 
-                          ? isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/50'
-                          : 'opacity-50 bg-black/30 border-slate-900'
+                          ? isLight ? 'bg-slate-50 border-slate-200 hover:border-cyan-400' : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/50'
+                          : (isLight ? 'opacity-60 bg-slate-100 border-slate-200' : 'opacity-50 bg-black/30 border-slate-900')
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -293,18 +305,18 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                             style={{ backgroundColor: rider.color || '#00f0ff' }} 
                           />
                           <div className="truncate">
-                            <div className="font-bold text-white truncate flex items-center gap-1.5">
+                            <div className={`font-bold truncate flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                               <span>{rider.name}</span>
                               {rider.bikeModel && (
                                 <span className="text-[10px] text-slate-400 font-normal">({rider.bikeModel})</span>
                               )}
                               {isLeader && (
-                                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black">
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[9px] font-black">
                                   👑 LEAD
                                 </span>
                               )}
                               {isTrailed && (
-                                <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black animate-pulse">
+                                <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-[9px] font-black animate-pulse">
                                   🧭 TRAILING
                                 </span>
                               )}
@@ -402,29 +414,31 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
           <div className={`p-3 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 animate-in slide-in-from-bottom-3 duration-200 ${
             isLight ? 'bg-white/98 border-slate-300 text-slate-800' : 'bg-[#0d131a]/98 border-[#1e2a38] text-white'
           }`}>
-            <div className="flex items-center justify-between pb-1 border-b border-slate-800/80">
+            <div className={`flex items-center justify-between pb-1 border-b ${isLight ? 'border-slate-200' : 'border-slate-800/80'}`}>
               <div className="flex items-center gap-1.5">
                 <span className="text-base">📣</span>
-                <span className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                <span className={`font-heading font-black text-xs uppercase tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   Quick Squad Callout
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCalloutOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
             {/* Direct Walkie-Talkie Voice Option in Callout Popover */}
             {onSendVoiceBlast && (
-              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/40 flex items-center justify-between gap-2 shadow-inner">
+              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 shadow-inner ${
+                isLight ? 'bg-cyan-50/60 border-cyan-300' : 'bg-slate-900/90 border-cyan-500/40'
+              }`}>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                  <div className={`text-[11px] font-bold flex items-center gap-1 ${isLight ? 'text-cyan-800' : 'text-cyan-300'}`}>
                     <span>🎙️ Live PTT Voice Blast</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 font-sans truncate">
+                  <div className={`text-[10px] font-sans truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                     Tap to broadcast custom voice note to crew
                   </div>
                 </div>
@@ -438,7 +452,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               </div>
             )}
 
-            <p className="text-[11px] text-slate-400 leading-tight font-sans">
+            <p className={`text-[11px] leading-tight font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Or 1-tap quick intent presets to broadcast speech:
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -451,12 +465,16 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                     onSendCallout?.(preset);
                     setIsCalloutOpen(false);
                   }}
-                  className="p-2.5 rounded-xl border flex items-center gap-2.5 text-left transition-all active:scale-95 cursor-pointer bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 hover:border-cyan-400"
+                  className={`p-2.5 rounded-xl border flex items-center gap-2.5 text-left transition-all active:scale-95 cursor-pointer ${
+                    isLight
+                      ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-cyan-400'
+                      : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 hover:border-cyan-400'
+                  }`}
                 >
                   <span className="text-xl shrink-0">{preset.icon}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-white text-xs truncate">{preset.label}</div>
-                    <div className="text-[9px] text-slate-400 truncate font-sans">{preset.spokenText}</div>
+                    <div className={`font-bold text-xs truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{preset.label}</div>
+                    <div className={`text-[9px] truncate font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{preset.spokenText}</div>
                   </div>
                 </button>
               ))}

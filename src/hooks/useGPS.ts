@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { LiveGpsPoint, UnitSystem } from '../types';
 import { convertDistance } from '../utils/units';
 import { playChime } from '../utils/audioChimes';
@@ -6,8 +7,15 @@ import {
   addNativeLocationListener, 
   NativeLocationData,
   startNativeRadarKeepAlive,
-  stopNativeRadarKeepAlive
+  stopNativeRadarKeepAlive,
+  setNativeScreenKeepOn
 } from '../utils/nativeKeepAlive';
+import {
+  saveRecoverySnapshot,
+  loadRecoverySnapshot,
+  clearRecoverySnapshot,
+} from '../utils/storage';
+import { getRiderProfile } from '../utils/riderProfile';
 import {
   calculate3DOrientation,
   createZeroCalibration,
@@ -134,7 +142,13 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const lastGpsHeadingRef = useRef<number | null>(null);
 
   const [tareOffset, setTareOffset] = useState(0);
-  const [mountMode, setMountModeState] = useState<'handlebar' | 'pocket'>('handlebar');
+  const [mountMode, setMountModeState] = useState<'handlebar' | 'pocket'>(() => {
+    try {
+      const p = getRiderProfile();
+      return p.defaultMountMode || 'handlebar';
+    } catch {}
+    return 'handlebar';
+  });
   const [mountOrientation, setMountOrientationState] = useState<'auto' | 'portrait' | 'landscape'>(() => {
     try {
       const saved = localStorage.getItem('throttlelog_mount_orientation') || localStorage.getItem('sasta_mount_orientation');
@@ -194,6 +208,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const unitSystemRef = useRef<UnitSystem>(unitSystem);
   const isRecordingRef = useRef<boolean>(isRecording);
   const isPausedRef = useRef<boolean>(isPaused);
+  const mountModeRef = useRef<'handlebar' | 'pocket'>(mountMode);
   const lastStorageSnapshotTsRef = useRef<number>(0);
 
   isRecordingRef.current = isRecording;
@@ -202,6 +217,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   voiceFeedbackEnabledRef.current = voiceFeedbackEnabled;
   unitSystemRef.current = unitSystem;
   markedWaypointsRef.current = markedWaypoints;
+  mountModeRef.current = mountMode;
 
   // Cleanup silent audio on unmount
   useEffect(() => {
@@ -248,7 +264,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       try {
         if (recordedPointsRef.current.length > 0) {
-          const snapshot = JSON.stringify({
+          saveRecoverySnapshot({
             points: recordedPointsRef.current,
             elapsedSeconds: elapsedSecondsRef.current,
             movingSeconds: movingSecondsRef.current,
@@ -256,9 +272,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
             totalDistanceMeters: totalDistanceMetersRef.current,
             waypoints: markedWaypointsRef.current,
             timestamp: Date.now(),
+            mountMode,
           });
-          localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-          sessionStorage.setItem('sasta_live_recovery', snapshot);
         }
       } catch {}
       e.preventDefault();
@@ -267,32 +282,27 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isRecording]);
+  }, [isRecording, mountMode]);
 
-  // ── Crash-recovery check (using persistent localStorage) ──
+  // ── Crash-recovery check (using persistent IndexedDB + localStorage fallback) ──
   useEffect(() => {
     if (!enabled) return;
-    try {
-      // Check persistent v1 storage first, then legacy sessionStorage
-      let raw = localStorage.getItem('throttlelog_live_recovery_v1') || localStorage.getItem('sasta_live_recovery_v1');
-      if (!raw) {
-        raw = sessionStorage.getItem('sasta_live_recovery');
-      }
-      if (raw && !isRecording) {
-        const parsed = JSON.parse(raw);
-        if (parsed.points && parsed.points.length >= 2 && Date.now() - parsed.timestamp < 1000 * 60 * 60 * 24) {
-          setHasRecoverableRide(true);
-          setRecoverableData(parsed);
+    loadRecoverySnapshot().then(data => {
+      if (data && data.points && data.points.length >= 2 && Date.now() - data.timestamp < 1000 * 60 * 60 * 24) {
+        setHasRecoverableRide(true);
+        setRecoverableData(data);
+        if (data.mountMode) {
+          setMountModeState(data.mountMode);
         }
       }
-    } catch {}
-  }, [enabled, isRecording]);
+    }).catch(() => {});
+  }, [enabled]);
 
-  // ── Wake-lock ──
+  // ── Wake-lock (only active in Handlebar Mount mode, disabled in Pocket mode) ──
   useEffect(() => {
     let releasedListener: any = null;
     const requestWakeLock = async () => {
-      if ('wakeLock' in navigator && isRecording && !isPaused) {
+      if ('wakeLock' in navigator && isRecording && !isPaused && mountMode !== 'pocket') {
         try {
           if (!wakeLockRef.current || wakeLockRef.current.released) {
             wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
@@ -315,7 +325,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     requestWakeLock();
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && isRecording && !isPaused) {
+      if (document.visibilityState === 'visible' && isRecording && !isPaused && mountMode !== 'pocket') {
         requestWakeLock();
       }
     };
@@ -330,7 +340,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         } catch {}
       }
     };
-  }, [isRecording, isPaused]);
+  }, [isRecording, isPaused, mountMode]);
 
   // ── iOS DeviceOrientation permission ──
   const requestDeviceOrientationPermission = useCallback(async () => {
@@ -538,7 +548,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     if (effectiveHeading !== null) {
       setCurrentHeading(effectiveHeading);
       if (kmh >= 2.5) {
-        if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountMode === 'handlebar') {
+        if (lastGpsHeadingRef.current !== null && kmh >= 12 && mountModeRef.current === 'handlebar') {
           let dHeading = effectiveHeading - lastGpsHeadingRef.current;
           if (dHeading > 180) dHeading -= 360;
           if (dHeading < -180) dHeading += 360;
@@ -603,22 +613,19 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       setPointsCount(count);
 
       // Throttled Persistent Session snapshot: every 15 seconds (or during initial 3 points)
-      // Eliminates 1Hz synchronous JSON.stringify blocking on multi-hour rides and prevents QuotaExceededError
+      // Uses IndexedDB for multi-hour rides to prevent QuotaExceededError while keeping localStorage fallback
       if (count <= 3 || nowTs - lastStorageSnapshotTsRef.current >= 15000) {
         lastStorageSnapshotTsRef.current = nowTs;
-        try {
-          const snapshot = JSON.stringify({
-            points: recordedPointsRef.current,
-            elapsedSeconds: elapsedSecondsRef.current,
-            movingSeconds: movingSecondsRef.current,
-            stoppedSeconds: stoppedSecondsRef.current,
-            totalDistanceMeters: totalDistanceMetersRef.current,
-            waypoints: markedWaypointsRef.current,
-            timestamp: Date.now(),
-          });
-          localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-          sessionStorage.setItem('sasta_live_recovery', snapshot);
-        } catch {}
+        saveRecoverySnapshot({
+          points: recordedPointsRef.current,
+          elapsedSeconds: elapsedSecondsRef.current,
+          movingSeconds: movingSecondsRef.current,
+          stoppedSeconds: stoppedSecondsRef.current,
+          totalDistanceMeters: totalDistanceMetersRef.current,
+          waypoints: markedWaypointsRef.current,
+          timestamp: Date.now(),
+          mountMode: mountModeRef.current,
+        });
       }
 
       // Voice milestones using universal TTS engine (Native Android + Web fallback)
@@ -639,11 +646,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         }
       }
     }
-  }, [mountMode]);
+  }, [getScreenAngle]);
 
   // ── Native Android Hardware Location Listener (Foreground Service Bridge) ──
   useEffect(() => {
     if (!enabled || !isTrackingActive) return;
+    let cancelled = false;
     let cleanupFn: (() => void) | null = null;
     addNativeLocationListener((data: NativeLocationData) => {
       processLocationFix({
@@ -656,10 +664,15 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         isNative: true,
       });
     }).then(cleanup => {
-      if (cleanup) cleanupFn = cleanup;
+      if (cancelled) {
+        if (cleanup) cleanup();
+      } else if (cleanup) {
+        cleanupFn = cleanup;
+      }
     });
 
     return () => {
+      cancelled = true;
       if (cleanupFn) cleanupFn();
     };
   }, [enabled, isTrackingActive, processLocationFix]);
@@ -733,10 +746,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   // 1-second inaudible audio loop that tricks mobile browsers (iOS WebKit & Android Chrome)
   // into keeping background geolocation & JS timers active when phone screen locks in a pocket.
+  // Skipped entirely on native APK where ThrottleLogKeepAliveService runs natively.
   const SILENT_AUDIO_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
   const playSilentAudio = useCallback(() => {
-    if (typeof Audio === 'undefined') return;
+    if (typeof Audio === 'undefined' || Capacitor.isNativePlatform()) return;
     try {
       if (!silentAudioRef.current) {
         const audio = new Audio(SILENT_AUDIO_URI);
@@ -753,6 +767,41 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       silentAudioRef.current?.pause();
     } catch {}
   }, []);
+
+  const stopGpsTracking = useCallback(() => {
+    setIsTrackingActive(false);
+    try {
+      localStorage.setItem('throttlelog_gps_tracking_enabled', 'false');
+      localStorage.setItem('sasta_gps_tracking_enabled', 'false');
+    } catch {}
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    pauseSilentAudio();
+    stopNativeRadarKeepAlive().catch(() => {});
+    setCurrentCoords(null);
+    setCurrentSpeedKmh(0);
+    setCurrentHeading(null);
+    setGpsAccuracy(null);
+  }, [pauseSilentAudio]);
+
+  const startGpsTracking = useCallback(() => {
+    setIsTrackingActive(true);
+    try {
+      localStorage.setItem('throttlelog_gps_tracking_enabled', 'true');
+      localStorage.setItem('sasta_gps_tracking_enabled', 'true');
+    } catch {}
+    startNativeRadarKeepAlive(mountModeRef.current === 'pocket').catch(() => {});
+  }, []);
+
+  const toggleGpsTracking = useCallback((enable?: boolean) => {
+    if (enable === undefined ? !isTrackingActive : enable) {
+      startGpsTracking();
+    } else {
+      stopGpsTracking();
+    }
+  }, [isTrackingActive, startGpsTracking, stopGpsTracking]);
 
   // ── Public controls ──
   const startNewRecording = useCallback(() => {
@@ -778,8 +827,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     setIsPaused(false);
     playSilentAudio();
     playChime('start');
+    if (!isTrackingActive) {
+      startGpsTracking();
+    }
     startGpsWatch();
-  }, [startGpsWatch, playSilentAudio]);
+  }, [startGpsWatch, playSilentAudio, isTrackingActive, startGpsTracking]);
 
   const pauseRecording = useCallback(() => {
     setIsPaused(true);
@@ -787,7 +839,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     pauseSilentAudio();
     try {
       if (recordedPointsRef.current.length > 0) {
-        const snapshot = JSON.stringify({
+        saveRecoverySnapshot({
           points: recordedPointsRef.current,
           elapsedSeconds: elapsedSecondsRef.current,
           movingSeconds: movingSecondsRef.current,
@@ -795,13 +847,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           totalDistanceMeters: totalDistanceMetersRef.current,
           waypoints: markedWaypointsRef.current,
           timestamp: Date.now(),
+          mountMode,
         });
-        localStorage.setItem('sasta_live_recovery_v1', snapshot);
-        sessionStorage.setItem('sasta_live_recovery', snapshot);
       }
     } catch {}
     playChime('pause');
-  }, [pauseSilentAudio]);
+  }, [pauseSilentAudio, mountMode]);
 
   const resumeRecording = useCallback(() => {
     setIsPaused(false);
@@ -825,12 +876,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     recordedPointsRef.current = [];
     setPointsCount(0);
 
-    // Clear recovery data
-    try {
-      localStorage.removeItem('throttlelog_live_recovery_v1');
-      localStorage.removeItem('sasta_live_recovery_v1');
-      sessionStorage.removeItem('sasta_live_recovery');
-    } catch {}
+    // Clear recovery data from IndexedDB and storage
+    clearRecoverySnapshot().catch(() => {});
 
     return pts;
   }, [pauseSilentAudio]);
@@ -847,22 +894,19 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
     setMarkedWaypoints(prev => {
       const next = [...prev, wp];
-      try {
-        const snapshot = JSON.stringify({
-          points: recordedPointsRef.current,
-          elapsedSeconds: elapsedSecondsRef.current,
-          movingSeconds: movingSecondsRef.current,
-          stoppedSeconds: stoppedSecondsRef.current,
-          totalDistanceMeters: totalDistanceMetersRef.current,
-          waypoints: next,
-          timestamp: Date.now(),
-        });
-        localStorage.setItem('throttlelog_live_recovery_v1', snapshot);
-        sessionStorage.setItem('sasta_live_recovery', snapshot);
-      } catch {}
+      saveRecoverySnapshot({
+        points: recordedPointsRef.current,
+        elapsedSeconds: elapsedSecondsRef.current,
+        movingSeconds: movingSecondsRef.current,
+        stoppedSeconds: stoppedSecondsRef.current,
+        totalDistanceMeters: totalDistanceMetersRef.current,
+        waypoints: next,
+        timestamp: Date.now(),
+        mountMode,
+      });
       return next;
     });
-  }, [currentAltitude, currentCoords]);
+  }, [currentAltitude, currentCoords, mountMode]);
 
   const handleTareAngle = useCallback(async () => {
     await requestDeviceOrientationPermission();
@@ -890,6 +934,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   const setMountMode = useCallback(async (mode: 'handlebar' | 'pocket') => {
     setMountModeState(mode);
+    setNativeScreenKeepOn(mode !== 'pocket');
     if (mode === 'handlebar') {
       await requestDeviceOrientationPermission();
     }
@@ -926,9 +971,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     pauseStartRef.current = null;
 
     setMarkedWaypoints(recoverableData.waypoints || []);
+    const restoredMax = pts.reduce((max: number, p: any) => Math.max(max, p?.speedKmh || 0), 0);
+    setMaxRecordedSpeed(restoredMax);
     if (pts.length > 0) {
       const last = pts[pts.length - 1];
       lastPositionRef.current = { lat: last.lat, lon: last.lon };
+      lastFixCoordsRef.current = { lat: last.lat, lon: last.lon };
     }
     setHasRecoverableRide(false);
     setRecoverableData(null);
@@ -943,11 +991,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   const handleDiscardSession = useCallback(() => {
     pauseSilentAudio();
-    try {
-      localStorage.removeItem('throttlelog_live_recovery_v1');
-      localStorage.removeItem('sasta_live_recovery_v1');
-      sessionStorage.removeItem('sasta_live_recovery');
-    } catch {}
+    clearRecoverySnapshot().catch(() => {});
     setHasRecoverableRide(false);
     setRecoverableData(null);
   }, [pauseSilentAudio]);
@@ -982,41 +1026,6 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     mountMode,
     mountOrientation,
   };
-
-  const stopGpsTracking = useCallback(() => {
-    setIsTrackingActive(false);
-    try {
-      localStorage.setItem('throttlelog_gps_tracking_enabled', 'false');
-      localStorage.setItem('sasta_gps_tracking_enabled', 'false');
-    } catch {}
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    pauseSilentAudio();
-    stopNativeRadarKeepAlive().catch(() => {});
-    setCurrentCoords(null);
-    setCurrentSpeedKmh(0);
-    setCurrentHeading(null);
-    setGpsAccuracy(null);
-  }, [pauseSilentAudio]);
-
-  const startGpsTracking = useCallback(() => {
-    setIsTrackingActive(true);
-    try {
-      localStorage.setItem('throttlelog_gps_tracking_enabled', 'true');
-      localStorage.setItem('sasta_gps_tracking_enabled', 'true');
-    } catch {}
-    startNativeRadarKeepAlive().catch(() => {});
-  }, []);
-
-  const toggleGpsTracking = useCallback((enable?: boolean) => {
-    if (enable === undefined ? !isTrackingActive : enable) {
-      startGpsTracking();
-    } else {
-      stopGpsTracking();
-    }
-  }, [isTrackingActive, startGpsTracking, stopGpsTracking]);
 
   const controls: GPSControls = {
     startNewRecording,

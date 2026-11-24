@@ -26,10 +26,23 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "ThrottleLogNative")
 public class ThrottleLogNativePlugin extends Plugin {
 
+    public static String lastSharedText = null;
+    private static ThrottleLogNativePlugin activeInstance = null;
     private TextToSpeech tts;
     private boolean isTtsReady = false;
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
+
+    public static void deliverSharedText(String text, boolean notifyListenersNow) {
+        lastSharedText = text;
+        if (notifyListenersNow && activeInstance != null && text != null && !text.isEmpty()) {
+            try {
+                JSObject data = new JSObject();
+                data.put("text", text);
+                activeInstance.notifyListeners("onSharedTextReceived", data);
+            } catch (Exception ignored) {}
+        }
+    }
 
     private void requestTransientAudioFocus() {
         try {
@@ -95,6 +108,7 @@ public class ThrottleLogNativePlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+        activeInstance = this;
 
         try {
             tts = new TextToSpeech(getContext(), status -> {
@@ -428,9 +442,102 @@ public class ThrottleLogNativePlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void getLastSharedText(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("text", lastSharedText);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void clearLastSharedText(PluginCall call) {
+        lastSharedText = null;
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void unshortenUrl(PluginCall call) {
+        String shortUrl = call.getString("url");
+        if (shortUrl == null || shortUrl.isEmpty()) {
+            call.reject("URL is empty");
+            return;
+        }
+
+        new Thread(() -> {
+            String current = shortUrl;
+            try {
+                int redirects = 0;
+                while (redirects < 8) {
+                    java.net.URL u = new java.net.URL(current);
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) u.openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setRequestMethod("GET");
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
+                    conn.setConnectTimeout(6000);
+                    conn.setReadTimeout(6000);
+                    conn.connect();
+
+                    int code = conn.getResponseCode();
+                    if (code == java.net.HttpURLConnection.HTTP_MOVED_PERM ||
+                        code == java.net.HttpURLConnection.HTTP_MOVED_TEMP ||
+                        code == 303 || code == 307 || code == 308) {
+                        String loc = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        if (loc != null && !loc.isEmpty()) {
+                            current = new java.net.URL(u, loc).toString();
+                            redirects++;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        // If final resolved URL has no coordinates (e.g. HTML preview /consent / meta redirect),
+                        // inspect up to 64KB of HTML for embedded Google Maps URLs or @lat,lon / staticmap coords
+                        if (!current.contains("@") && !current.contains("!3d") && code >= 200 && code < 400) {
+                            try (java.io.InputStream is = conn.getInputStream()) {
+                                byte[] buf = new byte[65536];
+                                int total = 0;
+                                int n;
+                                while (total < buf.length && (n = is.read(buf, total, buf.length - total)) != -1) {
+                                    total += n;
+                                }
+                                String body = new String(buf, 0, total, java.nio.charset.StandardCharsets.UTF_8);
+                                java.util.regex.Matcher m = java.util.regex.Pattern
+                                    .compile("(https://(?:www\\.)?google\\.com/maps[^\"'<>\\s\\\\]+|!3d-?\\d{1,2}\\.\\d{2,12}!4d-?\\d{1,3}\\.\\d{2,12}|@-?\\d{1,2}\\.\\d{2,12},-?\\d{1,3}\\.\\d{2,12}|staticmap\\?center=(-?\\d{1,2}\\.\\d{2,12})(?:,|%2C)(-?\\d{1,3}\\.\\d{2,12}))")
+                                    .matcher(body);
+                                if (m.find()) {
+                                    String found = m.group(1);
+                                    if (found != null && found.startsWith("http")) {
+                                        current = found;
+                                    } else if (m.group(2) != null && m.group(3) != null) {
+                                        current = current + (current.contains("?") ? "&" : "?") + "q=" + m.group(2) + "," + m.group(3);
+                                    } else if (found != null) {
+                                        current = current + "#" + found;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        conn.disconnect();
+                        break;
+                    }
+                }
+
+                JSObject ret = new JSObject();
+                ret.put("resolvedUrl", current);
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("resolvedUrl", current);
+                call.resolve(ret);
+            }
+        }).start();
+    }
+
     @Override
     protected void handleOnDestroy() {
         super.handleOnDestroy();
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
         abandonTransientAudioFocus();
         if (tts != null) {
             try {

@@ -272,17 +272,17 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
         }`}
       >
         {/* Modal Header */}
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-800">
+        <div className={`flex items-start justify-between gap-3 pb-3 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
               <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <h2 className="font-heading font-black text-sm sm:text-base tracking-wider uppercase text-white flex items-center gap-1.5">
+              <h2 className={`font-heading font-black text-sm sm:text-base tracking-wider uppercase flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                 <span>Rider Permissions & GPS Setup</span>
                 <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
               </h2>
-              <p className="text-[11px] text-slate-400 font-sans">
+              <p className={`text-[11px] font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Tap each permission to configure, or open phone settings directly
               </p>
             </div>
@@ -290,7 +290,9 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+              isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white'
+            }`}
           >
             <X className="w-4 h-4" />
           </button>

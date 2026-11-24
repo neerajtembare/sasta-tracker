@@ -33,8 +33,11 @@ interface ThrottleLogNativePlugin {
   requestLocationPermission(): Promise<{ granted: boolean }>;
   openAppSettings(): Promise<void>;
   openLocationSettings(): Promise<void>;
+  getLastSharedText(): Promise<{ text: string | null }>;
+  clearLastSharedText(): Promise<void>;
+  unshortenUrl(options: { url: string }): Promise<{ resolvedUrl: string }>;
   addListener(
-    eventName: 'onNativeLocation' | 'onNativeCrashDetected',
+    eventName: 'onNativeLocation' | 'onNativeCrashDetected' | 'onSharedTextReceived',
     listenerFunc: (data: any) => void
   ): Promise<any>;
 }
@@ -74,20 +77,85 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     requestLocationPermission: async () => ({ granted: true }),
     openAppSettings: async () => {},
     openLocationSettings: async () => {},
+    getLastSharedText: async () => ({ text: null }),
+    clearLastSharedText: async () => {},
+    unshortenUrl: async (options: { url: string }) => ({ resolvedUrl: options.url }),
     addListener: async () => ({ remove: () => {} }),
   },
 });
 
-export async function startNativeRadarKeepAlive() {
+export async function getNativeLastSharedText(): Promise<string | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.getLastSharedText();
+      return res.text || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function clearNativeLastSharedText(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.clearLastSharedText();
+    } catch {}
+  }
+}
+
+export async function addNativeSharedTextListener(
+  callback: (text: string) => void
+): Promise<(() => void) | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const handle = await NativeBridge.addListener('onSharedTextReceived', (data: { text?: string }) => {
+        if (data?.text && data.text.trim()) {
+          callback(data.text.trim());
+        }
+      });
+      return () => {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function nativeUnshortenUrl(url: string): Promise<string> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await NativeBridge.unshortenUrl({ url });
+      return res.resolvedUrl || url;
+    } catch {
+      return url;
+    }
+  }
+  return url;
+}
+
+export async function startNativeRadarKeepAlive(pocketMode: boolean = false) {
   if (Capacitor.isNativePlatform()) {
     try {
       await NativeBridge.startKeepAlive();
-      await NativeBridge.setKeepScreenOn({ enabled: true });
+      await NativeBridge.setKeepScreenOn({ enabled: !pocketMode });
     } catch (e) {
       console.warn('Native keep-alive start warning:', e);
     }
   } else {
-    await NativeBridge.setKeepScreenOn({ enabled: true });
+    await NativeBridge.setKeepScreenOn({ enabled: !pocketMode });
+  }
+}
+
+export async function setNativeScreenKeepOn(enabled: boolean) {
+  try {
+    await NativeBridge.setKeepScreenOn({ enabled });
+  } catch (e) {
+    console.warn('Set keep screen on warning:', e);
   }
 }
 

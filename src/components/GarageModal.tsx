@@ -198,7 +198,9 @@ export const GarageModal: React.FC<GarageModalProps> = ({
               placeholder="••••"
               value={pinInput}
               onChange={e => { setPinInput(e.target.value); setPinError(false); }}
-              className="w-full text-center tracking-widest text-xl font-mono font-black py-2.5 px-3 rounded-xl border bg-slate-900 border-slate-700 text-white focus:outline-none focus:border-amber-400"
+              className={`w-full text-center tracking-widest text-xl font-mono font-black py-2.5 px-3 rounded-xl border focus:outline-none focus:border-amber-400 ${
+                isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+              }`}
             />
             {pinError && (
               <div className="text-xs font-mono text-rose-400 font-bold">
@@ -236,6 +238,10 @@ export const GarageModal: React.FC<GarageModalProps> = ({
         name: currentAnalysis.name,
         distanceKm: currentAnalysis.totalDistanceKm,
         maxSpeedKmh: currentAnalysis.maxSpeedKmh,
+        durationSeconds: currentAnalysis.totalDurationSeconds,
+        avgSpeedKmh: currentAnalysis.movingAvgSpeedKmh || currentAnalysis.overallAvgSpeedKmh,
+        movingTimeSeconds: currentAnalysis.movingTimeSeconds,
+        elevGainM: currentAnalysis.elevGainM,
         gpxContent: gpxText,
       });
       setRides(getGarageRides());
@@ -318,7 +324,9 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                 placeholder={getGaragePin() ? "Enter new PIN (or blank to disable PIN)" : "Enter 4-digit numeric PIN"}
                 value={newPinValue}
                 onChange={e => setNewPinValue(e.target.value)}
-                className="w-full py-1 px-2.5 rounded-lg border bg-slate-900 border-slate-700 text-white text-xs font-mono"
+                className={`w-full py-1 px-2.5 rounded-lg border text-xs font-mono ${
+                  isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                }`}
               />
             </div>
             <div className="flex gap-1.5">
@@ -548,12 +556,33 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <div className={`text-[11px] font-mono mt-0.5 flex items-center gap-2 ${subTextColor}`}>
+                      <div className={`text-[11px] font-mono mt-0.5 flex items-center gap-1.5 flex-wrap ${subTextColor}`}>
                         <span>{r.distanceKm ? r.distanceKm.toFixed(1) : 0} km</span>
+                        {r.durationSeconds && r.durationSeconds > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{Math.floor(r.durationSeconds / 3600) > 0 ? `${Math.floor(r.durationSeconds / 3600)}h ${Math.round((r.durationSeconds % 3600) / 60)}m` : `${Math.round(r.durationSeconds / 60)}m`}</span>
+                          </>
+                        )}
+                        {r.avgSpeedKmh && r.avgSpeedKmh > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>Avg {Math.round(r.avgSpeedKmh)} km/h</span>
+                          </>
+                        )}
                         <span>•</span>
                         <span className="text-rose-400 font-bold">Max {r.maxSpeedKmh ? r.maxSpeedKmh.toFixed(0) : 0} km/h</span>
                         <span>•</span>
                         <span>{r.date}</span>
+                        {r.mountMode && (
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                            r.mountMode === 'pocket' 
+                              ? (isLight ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30')
+                              : (isLight ? 'bg-cyan-100 text-cyan-800 border border-cyan-300' : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30')
+                          }`}>
+                            {r.mountMode}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -592,10 +621,10 @@ export const GarageModal: React.FC<GarageModalProps> = ({
                 <FolderArchive className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="font-heading font-black text-sm uppercase text-white tracking-wider">
+                <h4 className={`font-heading font-black text-sm uppercase tracking-wider ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   {searchQuery ? `No Rides Match "${searchQuery}"` : 'Your Garage is Empty'}
                 </h4>
-                <p className="text-xs max-w-sm mt-1 text-slate-400 leading-relaxed">
+                <p className={`text-xs max-w-sm mt-1 leading-relaxed ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                   {searchQuery
                     ? 'Try searching with a different term or clear the search bar.'
                     : 'Record a ride from the Handlebar Cockpit or import a GPX track to save your runs here.'}

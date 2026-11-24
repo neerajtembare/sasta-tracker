@@ -90,6 +90,7 @@ interface MyLocationData {
 interface CrewLiveMapProps {
   myLocation: MyLocationData | null;
   myRiderName: string;
+  myRiderId?: string;
   myColor: string;
   isHost: boolean;
   leaderId?: string | null;
@@ -135,6 +136,7 @@ interface CrewLiveMapProps {
   externalMapLayer?: MapLayerType;
   onChangeMapLayer?: (layer: MapLayerType) => void;
   onSendCallout?: (preset: CalloutPreset) => void;
+  onOpenProfile?: () => void;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
@@ -142,6 +144,7 @@ export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
 export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   myLocation,
   myRiderName,
+  myRiderId,
   myColor,
   isHost,
   leaderId = null,
@@ -185,6 +188,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   externalMapLayer,
   onChangeMapLayer,
   onSendCallout,
+  onOpenProfile,
 }) => {
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -940,6 +944,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         triggerHaptic(30);
         if (onOpenCrewManage) {
           onOpenCrewManage('active');
+        } else if (onOpenProfile) {
+          onOpenProfile();
         }
       });
       prevMyPosRef.current = { lat: myLocation.lat, lon: myLocation.lon, speedKmh: myLocation.speedKmh, heading, name: myRiderName, color, orientationMode, isHost, targetMapRotation } as any;
@@ -1770,25 +1776,25 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           <div className={`pointer-events-auto w-full max-w-md p-3 sm:p-3.5 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 font-mono ${
             isLight ? 'bg-white/98 border-slate-300 text-slate-900' : 'bg-slate-950/98 border-cyan-500/40 text-white'
           }`}>
-            <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+            <div className={`flex items-center justify-between pb-1.5 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
               <div className="flex items-center gap-2 min-w-0">
                 <span 
                   className="w-3 h-3 rounded-full shrink-0" 
                   style={{ backgroundColor: selectedMember.color || '#00f0ff' }} 
                 />
                 <div className="truncate">
-                  <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
+                  <div className={`font-bold text-xs truncate flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                     <span>{selectedMember.name}</span>
                     {selectedMember.bikeModel && (
                       <span className="text-[10px] text-slate-400 font-normal">({selectedMember.bikeModel})</span>
                     )}
                     {(selectedMember.isHost || selectedMember.riderId === leaderId) && (
-                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[9px] font-black">
                         👑 LEAD
                       </span>
                     )}
                     {trailedRiderId === selectedMember.riderId && (
-                      <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black animate-pulse">
+                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-[9px] font-black animate-pulse">
                         🧭 TRAILING
                       </span>
                     )}
@@ -1904,8 +1910,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)
       ───────────────────────────────────────────────────────────── */}
       {sosAlert && (() => {
-        const isMySos = (sosAlert.fromId && sosAlert.fromId === myRiderName) || 
-                        (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (myRiderName || '').trim().toLowerCase());
+        const isMySos = myRiderId && sosAlert.fromId
+          ? sosAlert.fromId === myRiderId
+          : Boolean(
+              (sosAlert.fromId && sosAlert.fromId === myRiderName) ||
+              (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (myRiderName || '').trim().toLowerCase())
+            );
         return (
           <div 
             style={{

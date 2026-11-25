@@ -11,6 +11,7 @@ import {
   parseGPX,
   guessActivity,
 } from '../src/utils/gpxParser.ts';
+import { exportAnalysisToGPX } from '../src/utils/gpxExporter.ts';
 
 test('haversineDistance and calculateForwardBearing compute expected geometry', () => {
   // ~111.19 km per degree latitude
@@ -86,4 +87,50 @@ test('guessActivity identifies slow technical ADV/mountain motorcycling properly
   assert.equal(guessActivity(19, 38, 42).category, 'motorbike');
   assert.equal(guessActivity(16, 28, 12).category, 'cycling');
   assert.equal(guessActivity(5, 7, 4).category, 'walking');
+});
+
+test('multi-segment GPX does not inflate movingAvgSpeedKmh above maxSpeedKmh via disconnected bridge gaps', () => {
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+  <gpx version="1.1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2">
+    <trk><name>Two Leg Ride</name>
+      <trkseg>
+        <trkpt lat="18.5000" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+        <trkpt lat="18.5050" lon="73.8000"><ele>555</ele><time>2026-09-19T06:00:37Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+        <trkpt lat="18.5100" lon="73.8000"><ele>560</ele><time>2026-09-19T06:01:14Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+      </trkseg>
+      <trkseg>
+        <trkpt lat="19.0000" lon="73.8000"><ele>600</ele><time>2026-09-19T07:35:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+        <trkpt lat="19.0050" lon="73.8000"><ele>605</ele><time>2026-09-19T07:35:37Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+        <trkpt lat="19.0100" lon="73.8000"><ele>610</ele><time>2026-09-19T07:36:14Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>15.0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
+      </trkseg>
+    </trk>
+  </gpx>`;
+
+  const analysis = parseGPX(gpx, 90);
+  // 2 continuous legs (~1.11km each = ~2.22km total), must not add the ~54 km unrecorded inter-segment gap
+  assert.ok(analysis.totalDistanceKm > 2.0 && analysis.totalDistanceKm < 3.0, `Expected ~2.22 km, got ${analysis.totalDistanceKm}`);
+  assert.ok(
+    analysis.movingAvgSpeedKmh <= analysis.maxSpeedKmh + 0.01,
+    `Moving avg (${analysis.movingAvgSpeedKmh}) must never exceed max speed (${analysis.maxSpeedKmh})`
+  );
+  assert.ok(analysis.movingAvgSpeedKmh > 45 && analysis.movingAvgSpeedKmh < 60, `Expected ~54 km/h avg, got ${analysis.movingAvgSpeedKmh}`);
+});
+
+test('exportAnalysisToGPX preserves recorded <gpxtpx:lean> angles across Garage re-saves', () => {
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+  <gpx version="1.1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2">
+    <trk><name>Twisties Test</name><trkseg>
+      <trkpt lat="18.5000" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>14.0</gpxtpx:speed><gpxtpx:lean>-26.0</gpxtpx:lean></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="18.5002" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:02Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>14.0</gpxtpx:speed><gpxtpx:lean>-28.0</gpxtpx:lean></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="18.5004" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:04Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>14.0</gpxtpx:speed><gpxtpx:lean>-30.0</gpxtpx:lean></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="18.5006" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:06Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>14.0</gpxtpx:speed><gpxtpx:lean>-28.0</gpxtpx:lean></gpxtpx:TrackPointExtension></extensions></trkpt>
+      <trkpt lat="18.5008" lon="73.8000"><ele>550</ele><time>2026-09-19T06:00:08Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>14.0</gpxtpx:speed><gpxtpx:lean>-24.0</gpxtpx:lean></gpxtpx:TrackPointExtension></extensions></trkpt>
+    </trkseg></trk>
+  </gpx>`;
+
+  const first = parseGPX(gpx);
+  const reExported = exportAnalysisToGPX(first);
+  assert.ok(reExported.includes('<gpxtpx:lean>'), 'Exported GPX must include <gpxtpx:lean>');
+  const reParsed = parseGPX(reExported);
+  assert.ok(reParsed.maxEstimatedLean >= 25, `Expected preserved lean >= 25 deg, got ${reParsed.maxEstimatedLean}`);
 });

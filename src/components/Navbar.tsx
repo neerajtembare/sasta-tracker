@@ -1,12 +1,12 @@
 import React from 'react';
 import {
   Bike,
-  Radio,
+  Gauge,
   HelpCircle,
-  FolderArchive,
+  BarChart3,
   Upload,
   Home,
-  Users,
+  Map as MapIcon,
   Settings,
 } from 'lucide-react';
 import { AppTheme } from '../types';
@@ -38,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header
-      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      style={{ paddingTop: 'var(--safe-top, 0px)' }}
       className={`sticky top-0 z-40 navbar-landscape-offset landscape-compact-hide backdrop-blur-md border-b transition-colors ${
         isLight
           ? 'bg-white/95 border-slate-200 shadow-sm'
@@ -109,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
             title="Live Map & Optional Crew Radar"
           >
-            <Users className="w-3.5 h-3.5" />
+            <MapIcon className="w-3.5 h-3.5" />
             <span>Map</span>
             {groupRideConnected && (
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
@@ -128,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
             title="Live Handlebar GPS Cockpit"
           >
-            <Radio className="w-3.5 h-3.5" />
+            <Gauge className="w-3.5 h-3.5" />
             <span>Cockpit</span>
             {isRecordingLive && (
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-rose-500/30" />
@@ -147,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
             title="Saved Rides & Telemetry Analysis"
           >
-            <FolderArchive className="w-3.5 h-3.5" />
+            <BarChart3 className="w-3.5 h-3.5" />
             <span>Rides</span>
             {hasActiveRide && (
               <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? (isLight ? 'bg-white' : 'bg-slate-950') : 'bg-emerald-400'}`} />

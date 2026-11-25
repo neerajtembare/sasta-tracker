@@ -131,10 +131,12 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const allPoints: TrackPoint[] = [];
   const segments: Segment[] = [];
   let cumulativeDistMeters = 0;
+  let totalMovingDistMeters = 0;
 
   segmentsData.forEach((segData, segIndex) => {
     const segPoints: TrackPoint[] = [];
     let segDistM = 0;
+    let segMovingDistM = 0;
     let segMovingTime = 0;
 
     segData.ptsElements.forEach((ptEl, i) => {
@@ -232,8 +234,9 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         }
 
         if (speedMs >= 0.8) {
-          const movingDt = dt > 60 ? Math.min(dt, effectiveStepDist / Math.max(speedMs, 1.2)) : dt;
+          const movingDt = dt > 300 ? Math.min(dt, effectiveStepDist / Math.max(speedMs, 1.2)) : dt;
           segMovingTime += movingDt;
+          segMovingDistM += effectiveStepDist;
         }
 
         // Recorded gyroscope lean or physics-calculated cornering lean (speedMs >= 4.0 / ~14.4 km/h)
@@ -270,12 +273,16 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         segPoints.push(point);
         allPoints.push(point);
       } else {
-        // First point in this segment: if there was a previous segment, bridge continuous distance
+        // First point in this segment: bridge only brief continuous interruptions (<= 500m & <= 120s),
+        // preventing unrecorded multi-kilometer rest/transport gaps from inflating total distance and moving avg speed
         if (allPoints.length > 0) {
           const prevGlobal = allPoints[allPoints.length - 1];
           const bridgeDistM = haversineDistance(prevGlobal.lat, prevGlobal.lon, lat, lon);
-          // Only bridge if reasonable (< 150 km)
-          if (bridgeDistM < 150000) {
+          const bridgeDtSec =
+            time && prevGlobal.time
+              ? Math.max(0, (new Date(time).getTime() - new Date(prevGlobal.time).getTime()) / 1000)
+              : 0;
+          if (bridgeDistM <= 500 && bridgeDtSec <= 120) {
             cumulativeDistMeters += bridgeDistM;
           }
         }
@@ -316,6 +323,8 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
         segPoints.map(p => p.ele),
         2.5
       );
+
+      totalMovingDistMeters += segMovingDistM;
 
       segments.push({
         index: segIndex,
@@ -370,8 +379,10 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const maxSpeedKmh = allPoints.length ? allPoints.reduce((max, p) => (p.speedKmh > max ? p.speedKmh : max), 0) : 0;
   const rawOverallAvg = totalDurationSeconds > 0 ? (totalDistanceKm / (totalDurationSeconds / 3600)) : 0;
   const overallAvgSpeedKmh = isNaN(rawOverallAvg) ? 0 : rawOverallAvg;
-  const rawMovingAvg = movingTimeSeconds > 0 ? (totalDistanceKm / (movingTimeSeconds / 3600)) : overallAvgSpeedKmh;
-  const movingAvgSpeedKmh = isNaN(rawMovingAvg) ? 0 : rawMovingAvg;
+  const movingDistKm = totalMovingDistMeters / 1000;
+  const rawMovingAvg = movingTimeSeconds > 0 ? (movingDistKm / (movingTimeSeconds / 3600)) : overallAvgSpeedKmh;
+  const boundedMovingAvg = isNaN(rawMovingAvg) ? 0 : (maxSpeedKmh > 0 ? Math.min(rawMovingAvg, maxSpeedKmh) : rawMovingAvg);
+  const movingAvgSpeedKmh = boundedMovingAvg;
 
   const elevations = allPoints.map(p => p.ele).filter((e): e is number => e !== null);
   const elevMinM = elevations.length ? elevations.reduce((min, e) => (e < min ? e : min), elevations[0]) : null;
@@ -673,22 +684,31 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
 
     if (splitPts.length >= 2) {
       let splitMovingSec = 0;
-      let splitGainM = 0;
+      let splitMovingDistKm = 0;
+      const eleValues: Array<number | null> = [splitPts[0].ele];
       for (let s = 1; s < splitPts.length; s++) {
         const p1 = splitPts[s - 1];
         const p2 = splitPts[s];
-        if (p1.time && p2.time) {
-          const dt = Math.max(0, (new Date(p2.time).getTime() - new Date(p1.time).getTime()) / 1000);
-          if (p2.speedKmh > 2.5) {
-            splitMovingSec += dt;
+        eleValues.push(p2.ele);
+        if (p1.segmentIndex === p2.segmentIndex) {
+          const segKm = Math.max(0, p2.distanceFromStartKm - p1.distanceFromStartKm);
+          if (p1.time && p2.time) {
+            const dt = Math.max(0, (new Date(p2.time).getTime() - new Date(p1.time).getTime()) / 1000);
+            if (p2.speedKmh > 2.5 && dt <= 300) {
+              splitMovingSec += dt;
+              splitMovingDistKm += segKm;
+            }
           }
         }
-        if (p1.ele !== null && p2.ele !== null && p2.ele > p1.ele) {
-          splitGainM += p2.ele - p1.ele;
-        }
       }
-      const dist = splitEndKm - splitStartKm;
-      const avgSpd = splitMovingSec > 0 ? dist / (splitMovingSec / 3600) : 0;
+      const { gain: splitGainM } = calculateHysteresisElevation(eleValues, 2.5);
+      const actualDistKm = Math.max(
+        0,
+        splitPts[splitPts.length - 1].distanceFromStartKm - splitPts[0].distanceFromStartKm
+      );
+      const dist = actualDistKm > 0 ? actualDistKm : (splitEndKm - splitStartKm);
+      const speedDistKm = splitMovingDistKm > 0 ? splitMovingDistKm : dist;
+      const avgSpd = splitMovingSec > 0 ? speedDistKm / (splitMovingSec / 3600) : 0;
 
       splits.push({
         splitIndex: splitNum,

@@ -295,7 +295,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
         riderName={riderName}
         myColor={myColor}
         theme={theme}
-        isVisible={isTopBarVisible || !!gpsError || !isTrackingActive}
+        isVisible={isTopBarVisible || !!gpsError || !isTrackingActive || !!sosAlert || !!crewNotification || !!activeCallout}
       />
 
       {/* ─────────────────────────────────────────────────────────────
@@ -315,9 +315,9 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       {(gpsError || !isTrackingActive) && (
         <div 
           style={{
-            bottom: 'max(4.4rem, calc(env(safe-area-inset-bottom, 0px) + 4.35rem))',
-            left: 'max(0.6rem, env(safe-area-inset-left))',
-            right: 'max(4.4rem, calc(env(safe-area-inset-right, 0px) + 4.35rem))',
+            bottom: 'max(4.4rem, calc(var(--safe-bottom, 0px) + 4.35rem))',
+            left: 'max(0.6rem, var(--safe-left, 0px))',
+            right: 'max(4.4rem, calc(var(--safe-right, 0px) + 4.35rem))',
           }}
           className="absolute z-30 pointer-events-none flex flex-col items-start sm:items-center gap-1.5 animate-in slide-in-from-bottom-2 duration-200"
         >
@@ -441,8 +441,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({
       {finishedRideSummary && (
         <div
           style={{
-            paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-            paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+            paddingTop: 'max(0.75rem, var(--safe-top, 0px))',
+            paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))',
           }}
           className="absolute inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
         >

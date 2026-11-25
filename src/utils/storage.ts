@@ -187,10 +187,12 @@ export function initIndexedDB(): Promise<SavedRide[]> {
             } catch {
               // Ignore quota
             }
+            notifyGarageUpdated();
             resolve(merged);
           } else if (clearedAllBeforeIdb) {
             const dirtyOnly = Array.from(dirtyUpserts.values()).sort((a, b) => getRideTimestamp(b) - getRideTimestamp(a));
             memoryCache = dirtyOnly;
+            notifyGarageUpdated();
             resolve(dirtyOnly);
           } else {
             // If IndexedDB is empty on first migration, seed from legacy localStorage
@@ -198,6 +200,7 @@ export function initIndexedDB(): Promise<SavedRide[]> {
             if (local.length > 0) {
               batchPutRidesInIndexedDB(local).catch(() => {});
             }
+            notifyGarageUpdated();
             resolve(local);
           }
         };
@@ -214,6 +217,14 @@ export function initIndexedDB(): Promise<SavedRide[]> {
 // Kick off IndexedDB initialization in browser environment
 if (typeof window !== 'undefined') {
   initIndexedDB().catch(err => console.warn('IndexedDB init notice:', err));
+}
+
+function notifyGarageUpdated(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('throttlelog-garage-updated'));
+    } catch {}
+  }
 }
 
 // Helper to extract timestamp from ride
@@ -328,6 +339,7 @@ export function saveRideToGarage(ride: Omit<SavedRide, 'id' | 'date'> & { id?: s
 
   // Mirror recent rides to localStorage
   syncLocalStorageMirror(updatedList);
+  notifyGarageUpdated();
 
   if (typeof window !== 'undefined') {
     import('./cloudSync').then(m => m.triggerBackgroundAutoSync()).catch(() => {});
@@ -358,6 +370,7 @@ export function updateGarageRide(id: string, updates: Partial<Omit<SavedRide, 'i
   });
 
   syncLocalStorageMirror(updatedList);
+  notifyGarageUpdated();
   return updatedList;
 }
 
@@ -373,6 +386,7 @@ export function deleteGarageRide(id: string): SavedRide[] {
   });
 
   syncLocalStorageMirror(rides);
+  notifyGarageUpdated();
   return rides;
 }
 
@@ -389,6 +403,7 @@ export function clearAllGarageRides(): void {
     localStorage.removeItem(LEGACY_SASTA_STORAGE_KEY);
     localStorage.removeItem(OLD_STORAGE_KEY);
   } catch {}
+  notifyGarageUpdated();
 }
 
 export function importGarageBackup(importedRides: any[]): SavedRide[] {
@@ -433,6 +448,7 @@ export function importGarageBackup(importedRides: any[]): SavedRide[] {
     console.warn('Batch put error in importGarageBackup:', e);
   });
   syncLocalStorageMirror(merged);
+  notifyGarageUpdated();
   return merged;
 }
 

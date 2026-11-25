@@ -23,6 +23,8 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
   const isLight = theme === 'light';
   const [secondsRemaining, setSecondsRemaining] = useState(30);
   const sirenIntervalRef = useRef<any>(null);
+  const onConfirmSosRef = useRef(onConfirmSos);
+  onConfirmSosRef.current = onConfirmSos;
 
   useEffect(() => {
     if (!isOpen) {
@@ -46,7 +48,7 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
         if (prev <= 1) {
           clearInterval(timer);
           if (sirenIntervalRef.current) clearInterval(sirenIntervalRef.current);
-          onConfirmSos();
+          setTimeout(() => onConfirmSosRef.current(), 0);
           return 0;
         }
         return prev - 1;
@@ -57,7 +59,7 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
       clearInterval(timer);
       if (sirenIntervalRef.current) clearInterval(sirenIntervalRef.current);
     };
-  }, [isOpen, onConfirmSos]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

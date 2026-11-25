@@ -49,9 +49,9 @@ import { InAppBrowserBanner } from './components/InAppBrowserBanner';
 import { getGarageRides, saveRideToGarage, updateGarageRide, SavedRide } from './utils/storage';
 import { runConvoyWatchdog, triggerConvoyRollCall, resetConvoyWatchdog } from './utils/convoyWatchdog';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
-import { 
-  Radio, FolderArchive, Home, Users, Settings, AlertTriangle, Play, Navigation, UploadCloud, Sparkles,
-  Map as MapIcon, Activity, History, Bike as BikeIcon, X 
+import {
+  BarChart3, Home, Gauge, Settings, AlertTriangle, Play, Navigation, UploadCloud, Sparkles,
+  Map as MapIcon, Activity, History, Bike as BikeIcon, X
 } from 'lucide-react';
 
 export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
@@ -73,7 +73,7 @@ export default function App() {
         if (profile.defaultStartupScreen === 'map') return 'crew';
         return 'home';
       }
-    } catch {}
+    } catch { }
     return 'home';
   });
 
@@ -84,14 +84,14 @@ export default function App() {
         sessionStorage.setItem('throttlelog_session_tab', next);
         sessionStorage.setItem('sasta_session_tab', next);
         writeMigratedStorageKey('throttlelog_active_tab', 'sasta_active_tab', next);
-      } catch {}
+      } catch { }
 
       if (pushHistory && next !== prev && typeof window !== 'undefined') {
         try {
           const url = new URL(window.location.href);
           url.searchParams.set('tab', next);
           window.history.pushState({ sastaTab: next }, '', url.toString());
-        } catch {}
+        } catch { }
       }
       return next;
     });
@@ -135,6 +135,22 @@ export default function App() {
       return next;
     });
   };
+
+  // Keep <html class="dark">, color-scheme, body bg, and browser theme-color synchronized with theme
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const isLightTheme = theme === 'light';
+    document.documentElement.classList.toggle('dark', !isLightTheme);
+    document.documentElement.style.colorScheme = isLightTheme ? 'light' : 'dark';
+    const bgHex = isLightTheme ? '#f1f5f9' : '#080c10';
+    const fgHex = isLightTheme ? '#0f172a' : '#e2e8f0';
+    document.body.style.backgroundColor = bgHex;
+    document.body.style.color = fgHex;
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', bgHex);
+    }
+  }, [theme]);
 
   // Stop & Ride details editing state
   const [isStopEditorOpen, setIsStopEditorOpen] = useState<boolean>(false);
@@ -231,7 +247,7 @@ export default function App() {
             } else {
               window.history.pushState({ throttlelogModal: entry.key }, '');
             }
-          } catch {}
+          } catch { }
         }
       });
     } else {
@@ -239,14 +255,14 @@ export default function App() {
         try {
           pendingHistoryBacksRef.current += 1;
           window.history.back();
-        } catch {}
+        } catch { }
       }
       openingEntries.forEach((entry) => {
         modalStackRef.current = [...modalStackRef.current.filter(m => m.key !== entry.key), entry];
         if (typeof window !== 'undefined') {
           try {
             window.history.pushState({ throttlelogModal: entry.key }, '');
-          } catch {}
+          } catch { }
         }
       });
     }
@@ -274,7 +290,7 @@ export default function App() {
         if (tab && ['home', 'analysis', 'cockpit', 'crew', 'faq'].includes(tab)) {
           setCurrentTab(tab, false);
         }
-      } catch {}
+      } catch { }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -323,12 +339,15 @@ export default function App() {
     };
   }, []);
 
+  const triggerSosRef = useRef(groupRide.triggerSos);
+  triggerSosRef.current = groupRide.triggerSos;
+
   const handleConfirmCrashSos = useCallback(() => {
     setCrashModalEvent(null);
-    groupRide.triggerSos();
+    triggerSosRef.current();
     setSessionNotice('🚨 Emergency SOS automatically broadcast to squad after impact!');
     setTimeout(() => setSessionNotice(null), 8000);
-  }, [groupRide]);
+  }, []);
 
   const handleCancelCrashSos = useCallback(() => {
     setCrashModalEvent(null);
@@ -536,7 +555,7 @@ export default function App() {
       setTimeout(() => setSessionNotice(null), 6000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
-      } catch {}
+      } catch { }
     }
   }, [groupRide.riderName, groupRide.joinRoom, groupRide.updateRiderName]);
 
@@ -556,7 +575,6 @@ export default function App() {
         gps.currentSpeedKmh,
         gps.currentHeading
       );
-      crashDetector.updateGpsSpeed(gps.currentSpeedKmh);
     } else if (!gps.isTrackingActive) {
       setMyLocation(null);
     }
@@ -572,7 +590,6 @@ export default function App() {
   const handleUpdateMyLocation = useCallback((lat: number, lon: number, kmh: number, bearing: number | null) => {
     setMyLocation({ lat, lon, speedKmh: kmh, heading: bearing });
     groupRide.updateMyLocation(lat, lon, kmh, bearing);
-    crashDetector.updateGpsSpeed(kmh);
   }, [groupRide.updateMyLocation]);
 
   const isLocallyInitiatedRouteRef = useRef<boolean>(true);
@@ -770,7 +787,7 @@ export default function App() {
       if (isNative && !localStorage.getItem('throttlelog_permissions_setup_completed')) {
         setIsPermissionsModalOpen(true);
       }
-    } catch {}
+    } catch { }
     controls.setMountMode(mountMode);
     startNativeRadarKeepAlive(mountMode === 'pocket');
     handleStartRecording();
@@ -1006,11 +1023,10 @@ export default function App() {
   })();
 
   return (
-    <div className={`transition-colors ${
-      currentTab === 'crew'
-        ? 'h-[100dvh] w-screen overflow-hidden flex flex-col m-0 p-0'
-        : 'min-h-[100dvh] flex flex-col pb-16 landscape:pb-1'
-    } ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'}`}>
+    <div className={`transition-colors ${currentTab === 'crew'
+      ? 'h-[100dvh] w-screen overflow-hidden flex flex-col m-0 p-0'
+      : 'min-h-[100dvh] flex flex-col pb-16 landscape:pb-1'
+      } ${theme === 'light' ? 'bg-slate-100 text-slate-900' : 'bg-[#080c10] text-[#e2e8f0]'}`}>
       {/* Hidden Global File Input for Navbar Upload Action */}
       <input
         type="file"
@@ -1050,27 +1066,27 @@ export default function App() {
       {/* In-App Browser Helper Banner (surfaced on non-map views so map top bar stays clear) */}
       {currentTab !== 'crew' && <InAppBrowserBanner />}
 
-      {/* Global Fixed Safe-Area Alert & Notice Stack (never hidden under status bar or Navbar) */}
-      {(convoyAlert || errorMessage || sessionNotice) && (
+      {/* Global Fixed Safe-Area Alert Stack (never hidden under status bar or Navbar) */}
+      {(convoyAlert || errorMessage) && (
         <div
           style={{
             top: currentTab === 'crew'
-              ? 'calc(env(safe-area-inset-top, 0px) + 4.1rem)'
-              : 'calc(env(safe-area-inset-top, 0px) + 3.65rem)',
-            left: 'max(0.6rem, env(safe-area-inset-left))',
-            right: 'max(0.6rem, env(safe-area-inset-right))',
+              ? groupRide.activeCallout
+                ? 'calc(var(--safe-top, 0px) + 9.75rem)'
+                : 'calc(var(--safe-top, 0px) + 4.1rem)'
+              : 'calc(var(--safe-top, 0px) + 3.65rem)',
+            left: 'max(0.6rem, var(--safe-left, 0px))',
+            right: 'max(0.6rem, var(--safe-right, 0px))',
           }}
-          className={`fixed z-[65] pointer-events-none flex flex-col items-center gap-2 ${
-            currentTab !== 'crew' ? 'landscape:pl-14' : ''
-          }`}
+          className={`fixed z-[65] pointer-events-none flex flex-col items-center gap-2 ${currentTab !== 'crew' ? 'landscape:pl-14' : ''
+            }`}
         >
           {convoyAlert && (
             <div
-              className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all p-3 flex items-center justify-between gap-3 animate-in slide-in-from-top-3 duration-300 ${
-                theme === 'light'
-                  ? 'bg-white/95 text-slate-800 shadow-slate-400/50'
-                  : 'bg-[#0d131a]/95 text-white shadow-black/90'
-              }`}
+              className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all p-3 flex items-center justify-between gap-3 animate-in slide-in-from-top-3 duration-300 ${theme === 'light'
+                ? 'bg-white/95 text-slate-800 shadow-slate-400/50'
+                : 'bg-[#0d131a]/95 text-white shadow-black/90'
+                }`}
               style={{ borderColor: convoyAlert.color || '#00f0ff' }}
             >
               <div
@@ -1100,9 +1116,8 @@ export default function App() {
                   setConvoyAlert(null);
                 }}
                 title="Dismiss alert"
-                className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-                  theme === 'light' ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-white/10 text-slate-400 hover:text-white'
-                }`}
+                className={`p-1.5 rounded-lg cursor-pointer transition-colors ${theme === 'light' ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800' : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                  }`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1110,30 +1125,38 @@ export default function App() {
           )}
 
           {errorMessage && (
-            <div className={`pointer-events-auto w-full max-w-md p-3 border font-sans text-xs rounded-2xl flex items-center justify-between shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
-              theme === 'light'
-                ? 'bg-rose-50/95 border-rose-300 text-rose-900'
-                : 'bg-red-950/95 border-red-500/60 text-red-200'
-            }`}>
+            <div className={`pointer-events-auto w-full max-w-md p-3 border font-sans text-xs rounded-2xl flex items-center justify-between shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${theme === 'light'
+              ? 'bg-rose-50/95 border-rose-300 text-rose-900'
+              : 'bg-red-950/95 border-red-500/60 text-red-200'
+              }`}>
               <span className="min-w-0">{errorMessage}</span>
               <button onClick={() => setErrorMessage(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
                 Dismiss
               </button>
             </div>
           )}
+        </div>
+      )}
 
-          {sessionNotice && (
-            <div className={`pointer-events-auto w-full max-w-md px-3.5 py-2.5 border text-xs font-sans rounded-2xl flex items-center justify-between gap-2 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
-              theme === 'light'
-                ? 'bg-sky-50/95 border-sky-300 text-sky-900'
-                : 'bg-[#0d131a]/95 border-sky-500/50 text-sky-200'
+      {/* Non-blocking Session Toast (bottom safe-area so top Cockpit REC / Analysis headers stay clear) */}
+      {sessionNotice && (
+        <div
+          style={{
+            left: 'max(0.75rem, var(--safe-left, 0px))',
+            right: 'max(0.75rem, var(--safe-right, 0px))',
+          }}
+          className={`fixed z-[75] pointer-events-none flex justify-center bottom-[calc(var(--safe-bottom,0px)+4.65rem)] md:bottom-5 landscape:bottom-3 ${currentTab !== 'crew' ? 'landscape:pl-14' : ''
+            }`}
+        >
+          <div className={`pointer-events-auto w-full max-w-md px-3.5 py-2.5 border text-xs font-sans rounded-2xl flex items-center justify-between gap-2 shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-2 duration-200 ${theme === 'light'
+            ? 'bg-sky-50/95 border-sky-300 text-sky-900'
+            : 'bg-[#0d131a]/95 border-sky-500/50 text-sky-200'
             }`}>
-              <span className="min-w-0 leading-snug">{sessionNotice}</span>
-              <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-2 shrink-0">
-                Got it
-              </button>
-            </div>
-          )}
+            <span className="min-w-0 leading-snug">{sessionNotice}</span>
+            <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-2 shrink-0">
+              Got it
+            </button>
+          </div>
         </div>
       )}
 
@@ -1147,16 +1170,14 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className={`w-full transition-all ${
-        currentTab === 'crew'
-          ? 'h-[100dvh] w-full overflow-hidden flex flex-col p-0 m-0 max-w-none'
-          : 'has-landscape-rail max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
-      }`}>
+      <main className={`w-full transition-all ${currentTab === 'crew'
+        ? 'h-[100dvh] w-full overflow-hidden flex flex-col p-0 m-0 max-w-none'
+        : 'has-landscape-rail max-w-7xl mx-auto px-2 sm:px-6 pt-1 sm:pt-4 pb-20 sm:pb-8 landscape:pt-1 landscape:pb-2 space-y-3 sm:space-y-6'
+        }`}>
         {/* Global Interrupted Session Recovery Banner (Surfaced on non-map/non-cockpit views) */}
         {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && currentTab !== 'crew' && (
-          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-sans text-xs animate-in fade-in duration-200 ${
-            theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-          }`}>
+          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-sans text-xs animate-in fade-in duration-200 ${theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+            }`}>
             <div className="flex items-center gap-2.5 w-full sm:w-auto">
               <AlertTriangle className={`w-5 h-5 shrink-0 ${theme === 'light' ? 'text-amber-700' : 'text-amber-400'}`} />
               <div>
@@ -1179,9 +1200,8 @@ export default function App() {
               </button>
               <button
                 onClick={controls.handleDiscardSession}
-                className={`px-3 py-1.5 border rounded-xl transition-colors cursor-pointer ${
-                  theme === 'light' ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-                }`}
+                className={`px-3 py-1.5 border rounded-xl transition-colors cursor-pointer ${theme === 'light' ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                  }`}
               >
                 Discard
               </button>
@@ -1211,6 +1231,7 @@ export default function App() {
               riderName={groupRide.riderName}
               bikeModel={groupRide.bikeModel}
               myColor={groupRide.myColor}
+              isOnRadar={groupRide.isOnRadar}
             />
           </div>
         )}
@@ -1220,15 +1241,13 @@ export default function App() {
           const savedRides: SavedRide[] = getGarageRides();
           return (
             <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in duration-300">
-              <div className={`p-4 sm:p-5 rounded-3xl border shadow-lg space-y-4 ${
-                theme === 'light' ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0d131a] border-[#1e2a38] text-white'
-              }`}>
+              <div className={`p-4 sm:p-5 rounded-3xl border shadow-lg space-y-4 ${theme === 'light' ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0d131a] border-[#1e2a38] text-white'
+                }`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
-                      theme === 'light' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/15 border-sky-500/30 text-sky-400'
-                    }`}>
-                      <FolderArchive className="w-5 h-5" />
+                    <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${theme === 'light' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/15 border-sky-500/30 text-sky-400'
+                      }`}>
+                      <BarChart3 className="w-5 h-5" />
                     </div>
                     <div>
                       <h2 className="font-heading font-black text-base uppercase tracking-wider">My Rides Library</h2>
@@ -1240,9 +1259,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsGarageOpen(true)}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer shrink-0 ${
-                      theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer shrink-0 ${theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                      }`}
                   >
                     Garage &amp; Backups
                   </button>
@@ -1255,23 +1273,20 @@ export default function App() {
                         key={r.id}
                         type="button"
                         onClick={() => handleFileLoaded(r.gpxContent, r.name, r.id)}
-                        className={`w-full text-left p-3.5 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99] ${
-                          theme === 'light'
-                            ? 'bg-slate-50 hover:bg-sky-50 border-slate-200 hover:border-sky-300 text-slate-900'
-                            : 'bg-[#131b24] hover:bg-[#19232f] border-[#1e2a38] hover:border-sky-500/40 text-white'
-                        }`}
+                        className={`w-full text-left p-3.5 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99] ${theme === 'light'
+                          ? 'bg-slate-50 hover:bg-sky-50 border-slate-200 hover:border-sky-300 text-slate-900'
+                          : 'bg-[#131b24] hover:bg-[#19232f] border-[#1e2a38] hover:border-sky-500/40 text-white'
+                          }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
-                            theme === 'light' ? 'bg-white border-slate-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
-                          }`}>
+                          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${theme === 'light' ? 'bg-white border-slate-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+                            }`}>
                             <Navigation className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-xs truncate">{r.name}</div>
-                            <div className={`text-[11px] flex items-center gap-1.5 flex-wrap telemetry-num ${
-                              theme === 'light' ? 'text-slate-600' : 'text-slate-400'
-                            }`}>
+                            <div className={`text-[11px] flex items-center gap-1.5 flex-wrap telemetry-num ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'
+                              }`}>
                               <span>{r.distanceKm.toFixed(1)} km</span>
                               {r.durationSeconds ? (
                                 <>
@@ -1293,9 +1308,8 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className={`p-6 rounded-2xl border border-dashed text-center space-y-2 ${
-                    theme === 'light' ? 'bg-slate-50 border-slate-300 text-slate-600' : 'bg-black/30 border-slate-800 text-slate-400'
-                  }`}>
+                  <div className={`p-6 rounded-2xl border border-dashed text-center space-y-2 ${theme === 'light' ? 'bg-slate-50 border-slate-300 text-slate-600' : 'bg-black/30 border-slate-800 text-slate-400'
+                    }`}>
                     <p className="font-bold text-xs">No saved rides in your Garage yet</p>
                     <p className="text-[11px]">Record a ride from the Cockpit, import a GPX track, or try the demo route.</p>
                   </div>
@@ -1305,9 +1319,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={triggerUploadClick}
-                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                      theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-                    }`}
+                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                      }`}
                   >
                     <UploadCloud className="w-4 h-4" />
                     <span>Import GPX</span>
@@ -1315,9 +1328,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleLoadSample()}
-                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                      theme === 'light' ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-800' : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/40 text-cyan-300'
-                    }`}
+                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${theme === 'light' ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-800' : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/40 text-cyan-300'
+                      }`}
                   >
                     <Sparkles className="w-4 h-4" />
                     <span>Explore Demo Ride</span>
@@ -1329,238 +1341,232 @@ export default function App() {
         })()}
         {currentTab === 'analysis' && analysis && (
           <ErrorBoundary theme={theme} sectionLabel="Ride Telemetry" onResetToHome={() => setCurrentTab('home')}>
-          <div className="space-y-4 animate-in fade-in duration-300">
-            {/* Single Slim Contextual Header Strip */}
-            <div className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs font-sans shadow-xs ${
-              theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0d131a] border-[#1e2a38] text-slate-200'
-            }`}>
-              <button
-                type="button"
-                onClick={handleCloseTrack}
-                className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  theme === 'light'
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Single Slim Contextual Header Strip */}
+              <div className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs font-sans shadow-xs ${theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0d131a] border-[#1e2a38] text-slate-200'
+                }`}>
+                <button
+                  type="button"
+                  onClick={handleCloseTrack}
+                  className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${theme === 'light'
                     ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
                     : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-sky-400'
-                }`}
-              >
-                <FolderArchive className="w-3.5 h-3.5" />
-                <span>All Saved Rides</span>
-              </button>
+                    }`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>All Saved Rides</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={triggerUploadClick}
-                className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  theme === 'light'
+                <button
+                  type="button"
+                  onClick={triggerUploadClick}
+                  className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${theme === 'light'
                     ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                     : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
-                }`}
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>Import GPX</span>
-              </button>
-            </div>
-
-            {/* Hero Metrics Bar with Edit Ride Name, Calibration & Share Story */}
-            <HeroTelemetry
-              analysis={analysis}
-              activeScrubPoint={activeScrubPoint}
-              onEditRideName={() => setIsRideNameEditorOpen(true)}
-              onOpenStops={() => handleOpenAddStop()}
-              onOpenShare={() => setIsShareModalOpen(true)}
-              onOpenReport={() => setIsReportModalOpen(true)}
-              onOpenCompare={() => setIsCompareModalOpen(true)}
-              onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-              onSaveToGarage={handleSaveActiveToGarage}
-              isSavedInGarage={currentRideId !== null}
-              theme={theme}
-              unitSystem={unitSystem}
-            />
-
-            {/* Sticky Segmented Sub-Tab Switcher */}
-            <div className={`sticky top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${
-              theme === 'light' ? 'bg-slate-100/90' : 'bg-[#080c10]/90'
-            }`}>
-              <div className={`flex items-center p-1 rounded-xl border text-xs font-mono font-bold shadow-md overflow-x-auto no-scrollbar gap-1 ${
-                theme === 'light' ? 'bg-white border-slate-200 text-slate-600' : 'bg-[#0d131a] border-[#1e2a38] text-[#8f9ca8]'
-              }`}>
-                <button
-                  onClick={() => setAnalysisSubTab('map')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    analysisSubTab === 'map'
-                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
-                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
-                  }`}
+                    }`}
                 >
-                  <MapIcon className="w-3.5 h-3.5" />
-                  <span>Map</span>
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Import GPX</span>
                 </button>
+              </div>
 
-                <button
-                  onClick={() => setAnalysisSubTab('telemetry')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    analysisSubTab === 'telemetry'
+              {/* Hero Metrics Bar with Edit Ride Name, Calibration & Share Story */}
+              <HeroTelemetry
+                analysis={analysis}
+                activeScrubPoint={activeScrubPoint}
+                onEditRideName={() => setIsRideNameEditorOpen(true)}
+                onOpenStops={() => handleOpenAddStop()}
+                onOpenShare={() => setIsShareModalOpen(true)}
+                onOpenReport={() => setIsReportModalOpen(true)}
+                onOpenCompare={() => setIsCompareModalOpen(true)}
+                onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                onSaveToGarage={handleSaveActiveToGarage}
+                isSavedInGarage={currentRideId !== null}
+                theme={theme}
+                unitSystem={unitSystem}
+              />
+
+              {/* Sticky Segmented Sub-Tab Switcher */}
+              <div className={`sticky top-[calc(var(--safe-top,0px)+3.5rem)] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${theme === 'light' ? 'bg-slate-100/90' : 'bg-[#080c10]/90'
+                }`}>
+                <div className={`grid grid-cols-4 items-center p-1 rounded-xl border text-[11px] sm:text-xs font-mono font-bold shadow-md gap-1 ${theme === 'light' ? 'bg-white border-slate-200 text-slate-600' : 'bg-[#0d131a] border-[#1e2a38] text-[#8f9ca8]'
+                  }`}>
+                  <button
+                    onClick={() => setAnalysisSubTab('map')}
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap min-w-0 ${analysisSubTab === 'map'
                       ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                       : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
-                  }`}
-                >
-                  <Activity className="w-3.5 h-3.5" />
-                  <span>Speed & Lean</span>
-                </button>
+                      }`}
+                  >
+                    <MapIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Map</span>
+                  </button>
 
-                <button
-                  onClick={() => setAnalysisSubTab('timeline')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap relative ${
-                    analysisSubTab === 'timeline'
+                  <button
+                    onClick={() => setAnalysisSubTab('telemetry')}
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap min-w-0 ${analysisSubTab === 'telemetry'
                       ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                       : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
-                  }`}
-                >
-                  <History className="w-3.5 h-3.5" />
-                  <span>Timeline</span>
-                  {analysis.pitStops.length > 0 && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
-                      analysisSubTab === 'timeline'
+                      }`}
+                  >
+                    <Activity className="w-3.5 h-3.5 shrink-0" />
+                    <span className="sm:hidden truncate">Speed</span>
+                    <span className="hidden sm:inline truncate">Speed &amp; Lean</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAnalysisSubTab('timeline')}
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap relative min-w-0 ${analysisSubTab === 'timeline'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
+                      : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
+                      }`}
+                  >
+                    <History className="w-3.5 h-3.5 shrink-0" />
+                    <span className="sm:hidden truncate">Stops</span>
+                    <span className="hidden sm:inline truncate">Timeline</span>
+                    {analysis.pitStops.length > 0 && (
+                      <span className={`px-1 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${analysisSubTab === 'timeline'
                         ? 'bg-slate-950 text-sky-400'
                         : theme === 'light'
-                        ? 'bg-amber-50 text-amber-800 border border-amber-300'
-                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    }`}>
-                      {analysis.pitStops.length}
-                    </span>
-                  )}
-                </button>
+                          ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}>
+                        {analysis.pitStops.length}
+                      </span>
+                    )}
+                  </button>
 
-                <button
-                  onClick={() => setAnalysisSubTab('bike')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                    analysisSubTab === 'bike'
+                  <button
+                    onClick={() => setAnalysisSubTab('bike')}
+                    className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-3 rounded-lg transition-all cursor-pointer whitespace-nowrap min-w-0 ${analysisSubTab === 'bike'
                       ? 'bg-sky-500 text-slate-950 shadow-sm font-black'
                       : theme === 'light' ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-[#15202b] text-slate-300'
-                  }`}
-                >
-                  <BikeIcon className="w-3.5 h-3.5" />
-                  <span>Bike & Fuel</span>
-                </button>
+                      }`}
+                  >
+                    <BikeIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Insights</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* TAB 1: Map Route & Scrubber View */}
-            {analysisSubTab === 'map' && (
-              <div className="space-y-4 animate-in fade-in duration-200">
-                <Suspense fallback={null}>
-                  <MapViewer
+              {/* TAB 1: Map Route & Scrubber View */}
+              {analysisSubTab === 'map' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <Suspense fallback={null}>
+                    <MapViewer
+                      analysis={analysis}
+                      scrubIndex={scrubIndex}
+                      onScrubChange={setScrubIndex}
+                      onEditStop={(stop) => handleOpenEditStop(stop)}
+                      focusedCoordinate={focusedCoordinate}
+                      theme={theme}
+                      onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                      groupMembers={groupRide.members}
+                    />
+                  </Suspense>
+                </div>
+              )}
+
+              {/* TAB 2: Telemetry, Lean Profile & Histograms */}
+              {analysisSubTab === 'telemetry' && (
+                <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                  <CorneringProfileCard
                     analysis={analysis}
-                    scrubIndex={scrubIndex}
-                    onScrubChange={setScrubIndex}
-                    onEditStop={(stop) => handleOpenEditStop(stop)}
-                    focusedCoordinate={focusedCoordinate}
                     theme={theme}
-                    onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-                    groupMembers={groupRide.members}
                   />
-                </Suspense>
-              </div>
-            )}
 
-            {/* TAB 2: Telemetry, Lean Profile & Histograms */}
-            {analysisSubTab === 'telemetry' && (
-              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
-                <CorneringProfileCard 
-                  analysis={analysis}
-                  theme={theme}
-                />
-
-                <SpeedZoneHistogram 
-                  analysis={analysis}
-                  theme={theme} 
-                />
-
-                <Suspense fallback={null}>
-                  <TelemetryCharts
+                  <SpeedZoneHistogram
                     analysis={analysis}
-                    scrubIndex={scrubIndex}
-                    onScrubChange={setScrubIndex}
+                    theme={theme}
+                  />
+
+                  <Suspense fallback={null}>
+                    <TelemetryCharts
+                      analysis={analysis}
+                      scrubIndex={scrubIndex}
+                      onScrubChange={setScrubIndex}
+                      theme={theme}
+                      unitSystem={unitSystem}
+                    />
+                  </Suspense>
+                </div>
+              )}
+
+              {/* TAB 3: Chronological Journey Timeline & Strava Splits */}
+              {analysisSubTab === 'timeline' && (
+                <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                  <JourneyTimeline
+                    analysis={analysis}
+                    onSelectCoordinate={(lat, lon, label) => {
+                      setFocusedCoordinate({ lat, lon, label });
+                      setAnalysisSubTab('map');
+                    }}
+                    onOpenAddStop={() => handleOpenAddStop()}
+                    onEditStop={(stop) => handleOpenEditStop(stop)}
+                    onDeleteStop={(stopId) => handleDeleteStop(stopId)}
+                    theme={theme}
+                  />
+
+                  <SpeedTrapsAndSectors
+                    analysis={analysis}
+                    onSelectCoordinate={(lat, lon, label) => {
+                      setFocusedCoordinate({ lat, lon, label });
+                      setAnalysisSubTab('map');
+                    }}
+                    onOpenAddStop={() => handleOpenAddStop()}
+                    onEditStop={(stop) => handleOpenEditStop(stop)}
+                    onDeleteStop={(stopId) => handleDeleteStop(stopId)}
                     theme={theme}
                     unitSystem={unitSystem}
                   />
-                </Suspense>
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* TAB 3: Chronological Journey Timeline & Strava Splits */}
-            {analysisSubTab === 'timeline' && (
-              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
-                <JourneyTimeline
-                  analysis={analysis}
-                  onSelectCoordinate={(lat, lon, label) => {
-                    setFocusedCoordinate({ lat, lon, label });
-                    setAnalysisSubTab('map');
-                  }}
-                  onOpenAddStop={() => handleOpenAddStop()}
-                  onEditStop={(stop) => handleOpenEditStop(stop)}
-                  onDeleteStop={(stopId) => handleDeleteStop(stopId)}
-                  theme={theme}
-                />
-
-                <SpeedTrapsAndSectors
-                  analysis={analysis}
-                  onSelectCoordinate={(lat, lon, label) => {
-                    setFocusedCoordinate({ lat, lon, label });
-                    setAnalysisSubTab('map');
-                  }}
-                  onOpenAddStop={() => handleOpenAddStop()}
-                  onEditStop={(stop) => handleOpenEditStop(stop)}
-                  onDeleteStop={(stopId) => handleDeleteStop(stopId)}
-                  theme={theme}
-                  unitSystem={unitSystem}
-                />
-              </div>
-            )}
-
-            {/* TAB 4: Motorcycle Machine & Fuel Economics */}
-            {analysisSubTab === 'bike' && (
-              <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
-                <RideInsightsCard
-                  analysis={analysis}
-                  onOpenCalibration={() => setIsCalibrationOpen(true)}
-                  theme={theme}
-                />
-              </div>
-            )}
-          </div>
+              {/* TAB 4: Motorcycle Machine & Fuel Economics */}
+              {analysisSubTab === 'bike' && (
+                <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                  <RideInsightsCard
+                    analysis={analysis}
+                    onOpenCalibration={() => setIsCalibrationOpen(true)}
+                    theme={theme}
+                  />
+                </div>
+              )}
+            </div>
           </ErrorBoundary>
         )}
 
         {/* Tab 2: Live GPS Logger (Kept mounted to maintain uninterrupted background recording & crew location sync when switching tabs) */}
         <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300 space-y-3' : 'hidden'}>
           <ErrorBoundary theme={theme} sectionLabel="Ride Cockpit" onResetToHome={() => setCurrentTab('home')}>
-          <LiveCockpitLogger
-            onRideRecorded={handleLiveRideRecorded}
-            isRecording={gps.isRecording}
-            setIsRecording={setIsRecordingLive}
-            gps={gps}
-            controls={controls}
-            theme={theme}
-            unitSystem={unitSystem}
-            groupRideConnected={groupRide.isConnected}
-            groupRoomCode={groupRide.roomCode}
-            groupMembers={groupRide.members}
-            sosAlert={groupRide.sosAlert}
-            onOpenGroupRideModal={() => setCurrentTab('crew')}
-            onTriggerSos={groupRide.triggerSos}
-            onCancelSos={groupRide.cancelSos}
-            onUpdateMyLocation={handleUpdateMyLocation}
-            activeVoiceBlast={groupRide.activeVoiceBlast}
-            onDismissVoiceBlast={groupRide.dismissVoiceBlast}
-            onSendVoiceBlast={groupRide.sendVoiceBlast}
-            onSwitchToMap={() => setCurrentTab('crew')}
-            onGoToDashboard={() => setCurrentTab('home')}
-            activeRoute={analysis}
-            onClearActiveRoute={handleClearActiveRoute}
-            onOpenGoogleMapsImport={() => setIsGoogleMapsModalOpen(true)}
-            onOpenSettings={() => setIsProfileModalOpen(true)}
-          />
+            <LiveCockpitLogger
+              onRideRecorded={handleLiveRideRecorded}
+              isRecording={gps.isRecording}
+              setIsRecording={setIsRecordingLive}
+              gps={gps}
+              controls={controls}
+              theme={theme}
+              unitSystem={unitSystem}
+              groupRideConnected={groupRide.isConnected}
+              groupRoomCode={groupRide.roomCode}
+              groupMembers={groupRide.members}
+              groupRiderId={groupRide.riderId}
+              groupRiderName={groupRide.riderName}
+              sosAlert={groupRide.sosAlert}
+              onOpenGroupRideModal={() => setCurrentTab('crew')}
+              onTriggerSos={groupRide.triggerSos}
+              onCancelSos={groupRide.cancelSos}
+              onUpdateMyLocation={handleUpdateMyLocation}
+              activeVoiceBlast={groupRide.activeVoiceBlast}
+              onDismissVoiceBlast={groupRide.dismissVoiceBlast}
+              onSendVoiceBlast={groupRide.sendVoiceBlast}
+              onSwitchToMap={() => setCurrentTab('crew')}
+              onGoToDashboard={() => setCurrentTab('home')}
+              activeRoute={analysis}
+              onClearActiveRoute={handleClearActiveRoute}
+              onOpenGoogleMapsImport={() => setIsGoogleMapsModalOpen(true)}
+              onOpenSettings={() => setIsProfileModalOpen(true)}
+            />
           </ErrorBoundary>
         </div>
 
@@ -1568,63 +1574,63 @@ export default function App() {
         {currentTab === 'crew' && (
           <div className="w-full h-full flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
             <ErrorBoundary theme={theme} sectionLabel="Live Map" onResetToHome={() => setCurrentTab('home')}>
-            <Suspense fallback={null}>
-            <CrewDashboard
-              roomCode={groupRide.roomCode}
-              onJoinRoom={groupRide.joinRoom}
-              riderName={groupRide.riderName}
-              riderId={groupRide.riderId}
-              myColor={groupRide.myColor}
-              bikeModel={groupRide.bikeModel}
-              myLocation={myLocation}
-              isHost={groupRide.isHost}
-              leaderId={groupRide.leaderId}
-              onSetSquadLeader={groupRide.setSquadLeader}
-              onClaimSquadLeader={groupRide.claimSquadLeader}
-              isConnected={groupRide.isConnected}
-              members={groupRide.members}
-              sosAlert={groupRide.sosAlert}
-              crewNotification={groupRide.crewNotification}
-              onDismissCrewNotification={groupRide.dismissCrewNotification}
-              onTriggerSos={groupRide.triggerSos}
-              onCancelSos={groupRide.cancelSos}
-              onDismissSos={groupRide.dismissSos}
-              getFriendInviteUrl={groupRide.getFriendInviteUrl}
-              onGoToCockpit={() => setCurrentTab('cockpit')}
-              theme={theme}
-              isRecording={gps.isRecording}
-              onStartRecording={handleStartRecording}
-              onStopRecording={handleStopAndSaveRecording}
-              totalDistanceMeters={gps.totalDistanceMeters}
-              activeRoute={analysis}
-              onClearActiveRoute={handleClearActiveRoute}
-              isOnRadar={groupRide.isOnRadar}
-              onToggleRadar={groupRide.toggleOnRadar}
-              isTrackingActive={gps.isTrackingActive}
-              onToggleTracking={handleToggleTracking}
-              onSendVoiceBlast={groupRide.sendVoiceBlast}
-              onOpenGarage={() => setIsGarageOpen(true)}
-              finishedRideSummary={finishedRideSummary}
-              onDismissRideSummary={() => setFinishedRideSummary(null)}
-              onViewTelemetry={() => {
-                setFinishedRideSummary(null);
-                setCurrentTab('analysis');
-              }}
-              activeCallout={groupRide.activeCallout}
-              onDismissCallout={groupRide.dismissCallout}
-              onSendCallout={groupRide.sendCallout}
-              gpsError={gps.gpsError}
-              onRetryGps={() => {
-                controls.stopGpsTracking();
-                setTimeout(() => controls.startGpsTracking(), 150);
-              }}
-              onTriggerRollCall={handleManualRollCall}
-              mountMode={gps.mountMode}
-              onOpenSoloRide={() => setIsSoloRideModalOpen(true)}
-              onGoToDashboard={() => setCurrentTab('home')}
-              onOpenProfile={() => setIsProfileModalOpen(true)}
-            />
-            </Suspense>
+              <Suspense fallback={null}>
+                <CrewDashboard
+                  roomCode={groupRide.roomCode}
+                  onJoinRoom={groupRide.joinRoom}
+                  riderName={groupRide.riderName}
+                  riderId={groupRide.riderId}
+                  myColor={groupRide.myColor}
+                  bikeModel={groupRide.bikeModel}
+                  myLocation={myLocation}
+                  isHost={groupRide.isHost}
+                  leaderId={groupRide.leaderId}
+                  onSetSquadLeader={groupRide.setSquadLeader}
+                  onClaimSquadLeader={groupRide.claimSquadLeader}
+                  isConnected={groupRide.isConnected}
+                  members={groupRide.members}
+                  sosAlert={groupRide.sosAlert}
+                  crewNotification={groupRide.crewNotification}
+                  onDismissCrewNotification={groupRide.dismissCrewNotification}
+                  onTriggerSos={groupRide.triggerSos}
+                  onCancelSos={groupRide.cancelSos}
+                  onDismissSos={groupRide.dismissSos}
+                  getFriendInviteUrl={groupRide.getFriendInviteUrl}
+                  onGoToCockpit={() => setCurrentTab('cockpit')}
+                  theme={theme}
+                  isRecording={gps.isRecording}
+                  onStartRecording={handleStartRecording}
+                  onStopRecording={handleStopAndSaveRecording}
+                  totalDistanceMeters={gps.totalDistanceMeters}
+                  activeRoute={analysis}
+                  onClearActiveRoute={handleClearActiveRoute}
+                  isOnRadar={groupRide.isOnRadar}
+                  onToggleRadar={groupRide.toggleOnRadar}
+                  isTrackingActive={gps.isTrackingActive}
+                  onToggleTracking={handleToggleTracking}
+                  onSendVoiceBlast={groupRide.sendVoiceBlast}
+                  onOpenGarage={() => setIsGarageOpen(true)}
+                  finishedRideSummary={finishedRideSummary}
+                  onDismissRideSummary={() => setFinishedRideSummary(null)}
+                  onViewTelemetry={() => {
+                    setFinishedRideSummary(null);
+                    setCurrentTab('analysis');
+                  }}
+                  activeCallout={groupRide.activeCallout}
+                  onDismissCallout={groupRide.dismissCallout}
+                  onSendCallout={groupRide.sendCallout}
+                  gpsError={gps.gpsError}
+                  onRetryGps={() => {
+                    controls.stopGpsTracking();
+                    setTimeout(() => controls.startGpsTracking(), 150);
+                  }}
+                  onTriggerRollCall={handleManualRollCall}
+                  mountMode={gps.mountMode}
+                  onOpenSoloRide={() => setIsSoloRideModalOpen(true)}
+                  onGoToDashboard={() => setCurrentTab('home')}
+                  onOpenProfile={() => setIsProfileModalOpen(true)}
+                />
+              </Suspense>
             </ErrorBoundary>
           </div>
         )}
@@ -1643,24 +1649,22 @@ export default function App() {
       {currentTab !== 'crew' && (
         <nav
           aria-label="Mobile Landscape Navigation Dock"
-          className={`hidden mobile-landscape-dock fixed left-0 top-0 bottom-0 w-14 z-50 flex-col items-center justify-around py-2 backdrop-blur-lg border-r shadow-2xl transition-colors ${
-            theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
-          }`}
+          className={`hidden mobile-landscape-dock fixed left-0 top-0 bottom-0 min-w-[3.5rem] w-auto pr-1 z-50 flex-col items-center justify-around py-2 backdrop-blur-lg border-r shadow-2xl transition-colors ${theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
+            }`}
           style={{
-            paddingTop: 'max(0.35rem, env(safe-area-inset-top))',
-            paddingBottom: 'max(0.35rem, env(safe-area-inset-bottom))',
-            paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
+            paddingTop: 'max(0.35rem, var(--safe-top, 0px))',
+            paddingBottom: 'max(0.35rem, var(--safe-bottom, 0px))',
+            paddingLeft: 'max(0.35rem, var(--safe-left, 0px))',
           }}
         >
           {/* Tab 0: Home */}
           <button
             type="button"
             onClick={() => setCurrentTab('home')}
-            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'home'
-                ? theme === 'light' ? 'text-cyan-700 bg-cyan-50 font-black' : 'text-cyan-400 bg-cyan-500/15 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
-            }`}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${currentTab === 'home'
+              ? theme === 'light' ? 'text-cyan-700 bg-cyan-50 font-black' : 'text-cyan-400 bg-cyan-500/15 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
+              }`}
             title="Home Dashboard"
             aria-label="Home Dashboard"
           >
@@ -1672,13 +1676,12 @@ export default function App() {
           <button
             type="button"
             onClick={() => setCurrentTab('crew')}
-            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
-            }`}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
+              }`}
             title="Live Map"
             aria-label="Open Live Map"
           >
-            <Users className="w-4 h-4" />
+            <MapIcon className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Map</span>
           </button>
 
@@ -1686,15 +1689,14 @@ export default function App() {
           <button
             type="button"
             onClick={() => setCurrentTab('cockpit')}
-            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'cockpit'
-                ? theme === 'light' ? 'text-emerald-700 bg-emerald-50 font-black' : 'text-emerald-400 bg-emerald-500/15 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
-            }`}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${currentTab === 'cockpit'
+              ? theme === 'light' ? 'text-emerald-700 bg-emerald-50 font-black' : 'text-emerald-400 bg-emerald-500/15 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
+              }`}
             title="Ride Cockpit"
             aria-label="Open Ride Cockpit"
           >
-            <Radio className="w-4 h-4" />
+            <Gauge className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Ride</span>
           </button>
 
@@ -1702,15 +1704,14 @@ export default function App() {
           <button
             type="button"
             onClick={() => setCurrentTab('analysis')}
-            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'analysis'
-                ? theme === 'light' ? 'text-sky-700 bg-sky-50 font-black' : 'text-sky-400 bg-sky-500/15 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
-            }`}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${currentTab === 'analysis'
+              ? theme === 'light' ? 'text-sky-700 bg-sky-50 font-black' : 'text-sky-400 bg-sky-500/15 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
+              }`}
             title="My Rides"
             aria-label="Open My Rides"
           >
-            <FolderArchive className="w-4 h-4" />
+            <BarChart3 className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Rides</span>
           </button>
 
@@ -1718,9 +1719,8 @@ export default function App() {
           <button
             type="button"
             onClick={() => setIsProfileModalOpen(true)}
-            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'text-slate-600 hover:text-cyan-700 hover:bg-slate-100' : 'hover:text-cyan-300 hover:bg-white/5'
-            }`}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${theme === 'light' ? 'text-slate-600 hover:text-cyan-700 hover:bg-slate-100' : 'hover:text-cyan-300 hover:bg-white/5'
+              }`}
             title="App Settings"
             aria-label="Open App Settings"
           >
@@ -1732,11 +1732,10 @@ export default function App() {
 
       {/* Mobile Bottom Navigation Bar - Only on secondary tabs */}
       {currentTab !== 'crew' && (
-        <nav 
+        <nav
           style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
-          className={`md:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-1.5 flex items-center justify-around font-mono shadow-2xl transition-colors ${
-            theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
-          }`}
+          className={`md:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 z-40 backdrop-blur-lg border-t px-2 py-1.5 flex items-center justify-around font-mono shadow-2xl transition-colors ${theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
+            }`}
           aria-label="Mobile Bottom Navigation"
         >
           {/* Tab 0: Home */}
@@ -1744,11 +1743,10 @@ export default function App() {
             id="mobile-tab-home"
             type="button"
             onClick={() => setCurrentTab('home')}
-            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
-              currentTab === 'home'
-                ? theme === 'light' ? 'text-cyan-700 font-black' : 'text-cyan-400 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
-            }`}
+            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${currentTab === 'home'
+              ? theme === 'light' ? 'text-cyan-700 font-black' : 'text-cyan-400 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
+              }`}
           >
             <div className="relative">
               <Home className="w-5 h-5" />
@@ -1761,12 +1759,11 @@ export default function App() {
             id="mobile-tab-crew"
             type="button"
             onClick={() => setCurrentTab('crew')}
-            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
-              theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
-            }`}
+            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
+              }`}
           >
             <div className="relative">
-              <Users className="w-5 h-5" />
+              <MapIcon className="w-5 h-5" />
               {groupRide.isConnected && groupRide.isOnRadar && (
                 <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-0.5 -right-1" />
               )}
@@ -1779,14 +1776,13 @@ export default function App() {
             id="mobile-tab-cockpit"
             type="button"
             onClick={() => setCurrentTab('cockpit')}
-            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
-              currentTab === 'cockpit'
-                ? theme === 'light' ? 'text-emerald-700 font-black' : 'text-emerald-400 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-emerald-700' : 'text-[#8f9ca8] hover:text-emerald-400'
-            }`}
+            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${currentTab === 'cockpit'
+              ? theme === 'light' ? 'text-emerald-700 font-black' : 'text-emerald-400 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-emerald-700' : 'text-[#8f9ca8] hover:text-emerald-400'
+              }`}
           >
             <div className="relative">
-              <Radio className="w-5 h-5" />
+              <Gauge className="w-5 h-5" />
               {isRecordingLive && (
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-rose-500/30 absolute -top-0.5 -right-1" />
               )}
@@ -1799,14 +1795,13 @@ export default function App() {
             id="mobile-tab-rides"
             type="button"
             onClick={() => setCurrentTab('analysis')}
-            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
-              currentTab === 'analysis'
-                ? theme === 'light' ? 'text-sky-700 font-black' : 'text-sky-400 font-black'
-                : theme === 'light' ? 'text-slate-600 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
-            }`}
+            className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${currentTab === 'analysis'
+              ? theme === 'light' ? 'text-sky-700 font-black' : 'text-sky-400 font-black'
+              : theme === 'light' ? 'text-slate-600 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
+              }`}
           >
             <div className="relative">
-              <FolderArchive className="w-5 h-5" />
+              <BarChart3 className="w-5 h-5" />
               {analysis && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 absolute -top-0.5 -right-1" />
               )}
@@ -2021,9 +2016,9 @@ export default function App() {
             onOpenDownloadApp={handleOpenDownloadApp}
             onOpenFaq={() => setCurrentTab('faq')}
             onStartupScreenChanged={(screen) => {
-              if (screen === 'dashboard') setCurrentTab('home');
-              else if (screen === 'cockpit') setCurrentTab('cockpit');
-              else if (screen === 'map') setCurrentTab('crew');
+              const label = screen === 'dashboard' ? 'Home' : screen === 'cockpit' ? 'Ride Cockpit' : 'Live Map';
+              setSessionNotice(`Default startup screen saved as ${label} (applies on next launch).`);
+              setTimeout(() => setSessionNotice(null), 3500);
             }}
           />
         </Suspense>

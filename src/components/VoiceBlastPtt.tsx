@@ -181,8 +181,8 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
         className={`rounded-xl font-mono text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 select-none ${
           compact
             ? isLight
-              ? 'h-8 px-2.5 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-800'
-              : 'h-8 px-2.5 bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-300'
+              ? 'h-8 px-2 sm:px-2.5 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-800'
+              : 'h-8 px-2 sm:px-2.5 bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-300'
             : 'h-9 px-3.5 bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 text-slate-950 shadow-cyan-500/25'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         title="Push-to-Talk: Tap (or hold) to record up to 8s walkie-talkie voice note to Squad Intercom"

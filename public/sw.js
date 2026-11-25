@@ -116,8 +116,8 @@ self.addEventListener('fetch', event => {
 
         try {
           const networkResponse = await fetch(event.request);
-          if (networkResponse && networkResponse.status === 200) {
-            cache.put(event.request, networkResponse.clone());
+          if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
+            cache.put(event.request, networkResponse.clone()).catch(() => {});
             tileFetchCounter++;
             if (tileFetchCounter % 50 === 0) {
               trimTileCache();
@@ -143,9 +143,11 @@ self.addEventListener('fetch', event => {
       fetch(event.request)
         .then(networkResponse => {
           if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
+            const cloneIndex = networkResponse.clone();
+            const cloneRoot = networkResponse.clone();
             caches.open(CACHE_NAME).then(cache => {
-              cache.put('/index.html', clone).catch(() => {});
+              cache.put('/index.html', cloneIndex).catch(() => {});
+              cache.put('/', cloneRoot).catch(() => {});
             });
           }
           return networkResponse;
@@ -153,7 +155,7 @@ self.addEventListener('fetch', event => {
         .catch(async () => {
           const cachedPage = await caches.match(event.request);
           if (cachedPage) return cachedPage;
-          const cachedShell = await caches.match('/index.html');
+          const cachedShell = (await caches.match('/index.html')) || (await caches.match('/'));
           return cachedShell || new Response('Offline', { status: 503, statusText: 'Offline' });
         })
     );

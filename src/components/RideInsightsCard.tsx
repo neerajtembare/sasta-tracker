@@ -225,8 +225,10 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
                   isLight ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                 }`}
               >
-                {analysis.movingAvgSpeedKmh > 0
-                  ? `+${Math.max(0, analysis.maxSpeedKmh - analysis.movingAvgSpeedKmh).toFixed(1)} km/h burst over moving avg`
+                {analysis.movingAvgSpeedKmh > 0 && analysis.maxSpeedKmh - analysis.movingAvgSpeedKmh >= 0.5
+                  ? `+${(analysis.maxSpeedKmh - analysis.movingAvgSpeedKmh).toFixed(1)} km/h burst over moving avg`
+                  : analysis.movingAvgSpeedKmh > 0
+                  ? 'Steady cruise pace'
                   : 'Recorded Peak'}
               </span>
             </div>

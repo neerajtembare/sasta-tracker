@@ -218,8 +218,10 @@ export class SimpleMqttClient {
   private rxBuffer: Uint8Array = new Uint8Array(0);
   private pingInterval: any = null;
   private reconnectTimeout: any = null;
+  private connackTimeout: any = null;
   private onlineDebounceTimer: any = null;
   private reconnectAttempts = 0;
+  private consecutiveFailures = 0;
   private isDestroyed = false;
 
   private lastPingSent = 0;
@@ -293,6 +295,13 @@ export class SimpleMqttClient {
           return;
         }
         this.reconnectAttempts = 0;
+        clearTimeout(this.connackTimeout);
+        this.connackTimeout = setTimeout(() => {
+          if (!this.isDestroyed && this.ws === socket) {
+            console.warn('MQTT CONNACK handshake timeout (6s) - forcing socket close');
+            try { socket.close(); } catch {}
+          }
+        }, 6000);
         const packet = encodeMqttConnectPacket(this.clientId, this.keepAlive, this.will);
         try {
           socket.send(packet);
@@ -331,7 +340,9 @@ export class SimpleMqttClient {
           }
 
           if (frame.type === 'CONNACK') {
+            clearTimeout(this.connackTimeout);
             if (frame.returnCode === 0x00) {
+              this.consecutiveFailures = 0;
               this.onStatusChange('connected', 'Live on Global Crew Radar');
               this.startPing();
               this.subscribedTopics.forEach(topic => this.sendSubscribe(topic));
@@ -377,12 +388,18 @@ export class SimpleMqttClient {
         this.ws = null;
         this.rxBuffer = new Uint8Array(0);
         this.stopPing();
+        clearTimeout(this.connackTimeout);
         if (this.isDestroyed) return;
 
         this.onStatusChange('disconnected', 'Radar relay reconnecting...');
-        this.currentBrokerIndex++;
-
+        this.consecutiveFailures++;
         this.reconnectAttempts++;
+        // Failover to backup broker only after 3 consecutive failures on current broker,
+        // and periodically retry primary (index 0) so squad mates avoid un-bridged split-brain.
+        if (this.consecutiveFailures >= 3) {
+          this.consecutiveFailures = 0;
+          this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.brokerUrls.length;
+        }
         const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 12000);
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = setTimeout(() => {
@@ -475,15 +492,19 @@ export class SimpleMqttClient {
 
       // Check if previous ping timed out (zombie socket in mountain dead zone)
       if (this.isAwaitingPong && (now - this.lastPingSent) >= 8000) {
-        console.warn('MQTT ping watchdog timeout (8s) - forcing broker failover reconnect');
+        console.warn('MQTT ping watchdog timeout (8s) - reconnecting');
         this.stopPing();
+        this.consecutiveFailures++;
+        if (this.consecutiveFailures >= 3) {
+          this.consecutiveFailures = 0;
+          this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.brokerUrls.length;
+        }
         const staleWs = this.ws;
         this.ws = null;
         this.rxBuffer = new Uint8Array(0);
         if (staleWs) {
           try { staleWs.close(); } catch {}
         }
-        this.currentBrokerIndex++;
         this.connect();
         return;
       }
@@ -509,6 +530,7 @@ export class SimpleMqttClient {
   public destroy(): void {
     this.isDestroyed = true;
     this.stopPing();
+    clearTimeout(this.connackTimeout);
     clearTimeout(this.reconnectTimeout);
     clearTimeout(this.onlineDebounceTimer);
     if (typeof window !== 'undefined' && this.boundOnlineHandler) {

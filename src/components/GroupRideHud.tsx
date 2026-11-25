@@ -9,6 +9,8 @@ interface GroupRideHudProps {
   roomCode: string;
   members: GroupMemberInfo[];
   sosAlert: SosAlert | null;
+  riderId?: string;
+  riderName?: string;
   onOpenModal: () => void;
   onTriggerSos: () => void;
   onCancelSos?: () => void;
@@ -21,6 +23,8 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
   roomCode,
   members,
   sosAlert,
+  riderId,
+  riderName,
   onOpenModal,
   onTriggerSos,
   onCancelSos,
@@ -29,6 +33,17 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
 }) => {
   if (!roomCode) return null;
   const isLight = theme === 'light';
+  const isMySos = Boolean(
+    sosAlert && (
+      (riderId && sosAlert.fromId)
+        ? sosAlert.fromId === riderId
+        : Boolean(
+            sosAlert.fromName &&
+            riderName &&
+            sosAlert.fromName.trim().toLowerCase() === riderName.trim().toLowerCase()
+          )
+    )
+  );
 
   return (
     <div className={`w-full backdrop-blur-md border rounded-xl p-2 px-3 flex items-center justify-between gap-2 shadow-lg font-sans text-xs ${
@@ -125,7 +140,7 @@ export const GroupRideHud: React.FC<GroupRideHudProps> = ({
             theme={theme}
           />
         )}
-        {sosAlert ? (
+        {isMySos ? (
           <button
             type="button"
             onClick={() => (onCancelSos ? onCancelSos() : onTriggerSos())}

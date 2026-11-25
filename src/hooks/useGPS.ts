@@ -183,18 +183,25 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     return enabled;
   });
 
-  const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState(() => {
+  const readVoiceFeedbackPref = () => {
     try {
-      return (localStorage.getItem('throttlelog_voice_feedback') || localStorage.getItem('sasta_voice_feedback')) === 'true';
+      const v1 = localStorage.getItem('throttlelog_voice_feedback_v1');
+      if (v1 !== null) return v1 !== 'false';
+      const legacy = localStorage.getItem('throttlelog_voice_feedback') ?? localStorage.getItem('sasta_voice_feedback');
+      if (legacy !== null) return legacy === 'true';
+      return true;
     } catch {
-      return false;
+      return true;
     }
-  });
+  };
+
+  const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState(readVoiceFeedbackPref);
 
   const recordedPointsRef = useRef<LiveGpsPoint[]>([]);
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const lastFixCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
+  const lastFixTimestampRef = useRef<number | null>(null);
   const wakeLockRef = useRef<any>(null);
   const leanAngleRef = useRef(0);
   const currentSpeedRef = useRef(0);
@@ -205,6 +212,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const startTimeRef = useRef<number | null>(null);
   const pausedDurationRef = useRef<number>(0);
   const pauseStartRef = useRef<number | null>(null);
+  const lastTimerTickRef = useRef<number>(Date.now());
   const elapsedSecondsRef = useRef<number>(0);
   const movingSecondsRef = useRef<number>(0);
   const stoppedSecondsRef = useRef<number>(0);
@@ -217,11 +225,13 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const mountModeRef = useRef<'handlebar' | 'pocket'>(mountMode);
   const lastStorageSnapshotTsRef = useRef<number>(0);
   const lastFlushedPointCountRef = useRef<number>(0);
+  const recoveryEpochRef = useRef<number>(0);
 
   const flushRecoveryDelta = useCallback((overrideWaypoints?: any[], forceReset: boolean = false) => {
     const pts = recordedPointsRef.current;
     if (pts.length === 0 && !forceReset) return;
 
+    const epoch = recoveryEpochRef.current;
     const startIdx = forceReset ? 0 : Math.min(lastFlushedPointCountRef.current, pts.length);
     const newPoints: Array<{ idx: number; point: LiveGpsPoint }> = [];
     for (let i = startIdx; i < pts.length; i++) {
@@ -244,6 +254,10 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         mountMode: mountModeRef.current,
       },
     }).then(idbSaved => {
+      if (epoch !== recoveryEpochRef.current) {
+        clearRecoverySnapshot().catch(() => {});
+        return;
+      }
       if (!idbSaved) {
         lastFlushedPointCountRef.current = Math.min(lastFlushedPointCountRef.current, startIdx);
       }
@@ -270,12 +284,24 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
   }, []);
 
+  // Sync Voice Distance Callouts preference live from Settings modal
+  useEffect(() => {
+    const onPrefsUpdate = () => {
+      setVoiceFeedbackEnabled(readVoiceFeedbackPref());
+    };
+    window.addEventListener('throttlelog-hud-prefs', onPrefsUpdate);
+    return () => window.removeEventListener('throttlelog-hud-prefs', onPrefsUpdate);
+  }, []);
+
   // ── Wall-Clock Accurate Timer (survives phone pocket / sleep throttling) ──
   useEffect(() => {
     let timer: any = null;
     if (isRecording && !isPaused) {
+      lastTimerTickRef.current = Date.now();
       timer = setInterval(() => {
         const now = Date.now();
+        const dtSec = Math.max(0, Math.round((now - lastTimerTickRef.current) / 1000));
+        lastTimerTickRef.current = now;
         const start = startTimeRef.current || now;
         const currentPauseOffset = pauseStartRef.current ? now - pauseStartRef.current : 0;
         const realElapsed = Math.max(
@@ -285,12 +311,14 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         setElapsedSeconds(realElapsed);
         elapsedSecondsRef.current = realElapsed;
 
-        if (currentSpeedRef.current >= 2.5) {
-          movingSecondsRef.current += 1;
-          setMovingSeconds(movingSecondsRef.current);
-        } else {
-          stoppedSecondsRef.current += 1;
-          setStoppedSeconds(stoppedSecondsRef.current);
+        if (dtSec > 0) {
+          if (currentSpeedRef.current >= 2.5) {
+            movingSecondsRef.current += dtSec;
+            setMovingSeconds(movingSecondsRef.current);
+          } else {
+            stoppedSecondsRef.current += dtSec;
+            setStoppedSeconds(stoppedSecondsRef.current);
+          }
         }
       }, 1000);
     }
@@ -595,8 +623,23 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       return;
     }
 
-    // 2. Speed acceleration anomaly filter: clamp spikes > 14 m/s² (~50 km/h per second)
-    let kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
+    // 2. Speed calculation & acceleration anomaly filter (fallback to coordinate delta when Doppler speed is null)
+    let rawSpeedKmh = speed !== null && speed >= 0 && !isNaN(speed) ? speed * 3.6 : -1;
+    if (rawSpeedKmh < 0 && lastFixCoordsRef.current && lastFixTimestampRef.current !== null) {
+      const dtFixSec = (fixTimestamp - lastFixTimestampRef.current) / 1000;
+      if (dtFixSec >= 0.4 && dtFixSec <= 15) {
+        const distFixM = haversineMeters(
+          lastFixCoordsRef.current.lat,
+          lastFixCoordsRef.current.lon,
+          latitude,
+          longitude
+        );
+        rawSpeedKmh = distFixM >= 2.0 ? (distFixM / dtFixSec) * 3.6 : 0;
+      } else {
+        rawSpeedKmh = 0;
+      }
+    }
+    let kmh = rawSpeedKmh >= 0 ? rawSpeedKmh : 0;
     const lastPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
     if (isRecordingRef.current && lastPt) {
       const dtSec = Math.max(0.3, (fixTimestamp - lastPt.timestamp) / 1000);
@@ -612,6 +655,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       if (prev && prev.lat === latitude && prev.lon === longitude) return prev;
       return { lat: latitude, lon: longitude };
     });
+    currentSpeedRef.current = kmh;
     setCurrentSpeedKmh(kmh);
     // Directly feed crash detector sensor fusion pipeline at hardware fix rate
     crashDetector.updateGpsSpeed(kmh);
@@ -629,9 +673,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       }
     }
 
-    // Always keep lastFixCoordsRef updated on every fix with movement >= 2m
+    // Always keep lastFixCoordsRef updated on every fix with movement >= 2m (and track timestamp for fallback speed)
     if (!lastFixCoordsRef.current || haversineMeters(lastFixCoordsRef.current.lat, lastFixCoordsRef.current.lon, latitude, longitude) >= 2.0) {
       lastFixCoordsRef.current = { lat: latitude, lon: longitude };
+      lastFixTimestampRef.current = fixTimestamp;
+    } else if (lastFixTimestampRef.current === null) {
+      lastFixTimestampRef.current = fixTimestamp;
     }
 
     // Tier 3: Stationary compass orientation (alpha) from device magnetometer
@@ -774,6 +821,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   // ── Standby / Live Web GPS Watcher (Browser Fallback) ──
   const startGpsWatch = useCallback(() => {
+    if (Capacitor.isNativePlatform()) return;
     if (!enabled || !isTrackingActive) return;
     if (watchIdRef.current !== null) return;
     if (!navigator.geolocation) {
@@ -822,6 +870,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   // Auto-start standby GPS fix on mount so satellite lock & accuracy are ready before user hits start
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
     if (!enabled || !isTrackingActive) {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
@@ -901,6 +950,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   // ── Public controls ──
   const startNewRecording = useCallback(() => {
+    recoveryEpochRef.current += 1;
     recordedPointsRef.current = [];
     lastFlushedPointCountRef.current = 0;
     lastStorageSnapshotTsRef.current = 0;
@@ -911,6 +961,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     setStoppedSeconds(0);
     setMaxRecordedSpeed(0);
     startTimeRef.current = Date.now();
+    lastTimerTickRef.current = Date.now();
     pausedDurationRef.current = 0;
     pauseStartRef.current = null;
     elapsedSecondsRef.current = 0;
@@ -935,6 +986,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const pauseRecording = useCallback(() => {
     setIsPaused(true);
     pauseStartRef.current = Date.now();
+    lastPositionRef.current = null;
     pauseSilentAudio();
     try {
       if (recordedPointsRef.current.length > 0) {
@@ -946,6 +998,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
   const resumeRecording = useCallback(() => {
     setIsPaused(false);
+    lastTimerTickRef.current = Date.now();
     if (pauseStartRef.current) {
       pausedDurationRef.current += Date.now() - pauseStartRef.current;
       pauseStartRef.current = null;
@@ -956,6 +1009,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   }, [startGpsWatch, playSilentAudio]);
 
   const stopAndGetPoints = useCallback((): LiveGpsPoint[] => {
+    recoveryEpochRef.current += 1;
     pauseSilentAudio();
     setIsRecording(false);
     setIsPaused(false);
@@ -1014,10 +1068,12 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   }, []);
 
   const setMountMode = useCallback(async (mode: 'handlebar' | 'pocket') => {
+    mountModeRef.current = mode;
     setMountModeState(mode);
     setNativeScreenKeepOn(mode !== 'pocket');
     if (mode === 'handlebar') {
       await requestDeviceOrientationPermission();
+      await crashDetector.requestMotionPermission();
     }
   }, [requestDeviceOrientationPermission]);
 
@@ -1078,6 +1134,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   }, [recoverableData, startGpsWatch, playSilentAudio, isTrackingActive, flushRecoveryDelta]);
 
   const handleDiscardSession = useCallback(() => {
+    recoveryEpochRef.current += 1;
     pauseSilentAudio();
     lastFlushedPointCountRef.current = 0;
     clearRecoverySnapshot().catch(() => {});

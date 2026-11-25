@@ -180,10 +180,12 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
   const [isDownloadingMap, setIsDownloadingMap] = useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = useState<CacheProgress | null>(null);
   const [cacheNotice, setCacheNotice] = useState<string | null>(null);
+  const [confirmClearCache, setConfirmClearCache] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       setSubMenu('root');
+      setConfirmClearCache(false);
       const profile = getRiderProfile();
       setNameInput(riderName || profile.callsign);
       setBikeInput(bikeModel || profile.bikeModel);
@@ -326,6 +328,7 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
     try {
       localStorage.setItem('throttlelog_voice_feedback_v1', String(next));
     } catch {}
+    emitHudPrefUpdate();
   };
 
   const toggleStopIntent = () => {
@@ -340,18 +343,24 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
 
   const handleDownloadRegionalMap = async () => {
     triggerHaptic(30);
+    const routeOrigin = activeRoute?.points?.[0];
+    const targetLat = myLocation?.lat ?? routeOrigin?.lat;
+    const targetLon = myLocation?.lon ?? routeOrigin?.lon;
+    if (targetLat === undefined || targetLon === undefined || !Number.isFinite(targetLat) || !Number.isFinite(targetLon)) {
+      setCacheNotice('Enable GPS location or load a route first so we know which region to cache.');
+      setTimeout(() => setCacheNotice(null), 4000);
+      return;
+    }
     setIsDownloadingMap(true);
     setCacheNotice(null);
-    const lat = myLocation?.lat ?? 18.5204;
-    const lon = myLocation?.lon ?? 73.8567;
     try {
-      const result = await preCacheRegionalArea(lat, lon, 25, (p) => setDownloadProgress(p));
+      const result = await preCacheRegionalArea(targetLat, targetLon, 25, (p) => setDownloadProgress(p));
       const count = await getOfflineTileCount();
       setCachedTileCount(count);
       setCacheNotice(
         myLocation
           ? `Cached ${result.cached} tiles (25 km radius around current GPS)!`
-          : `Cached ${result.cached} tiles (25 km baseline area).`
+          : `Cached ${result.cached} tiles (25 km radius around active route start)!`
       );
       triggerHaptic([50, 40, 50]);
     } catch {
@@ -397,7 +406,14 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
   };
 
   const handleClearCache = async () => {
+    if (!confirmClearCache) {
+      triggerHaptic(20);
+      setConfirmClearCache(true);
+      setTimeout(() => setConfirmClearCache(false), 4000);
+      return;
+    }
     triggerHaptic(25);
+    setConfirmClearCache(false);
     await clearOfflineTileCache();
     setCachedTileCount(0);
     setDownloadProgress(null);
@@ -424,8 +440,8 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
   return (
     <div
       style={{
-        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+        paddingTop: 'max(0.75rem, var(--safe-top, 0px))',
+        paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))',
       }}
       className="fixed inset-0 z-[9000] flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={(e) => {
@@ -1299,13 +1315,18 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
                       type="button"
                       disabled={isDownloadingMap}
                       onClick={handleClearCache}
-                      className={`p-2 rounded-xl border cursor-pointer ${
-                        isLight ? 'bg-white border-slate-300 text-rose-600 hover:bg-rose-50' : 'bg-slate-800 border-slate-700 text-rose-400 hover:bg-rose-950/60'
+                      className={`px-2.5 py-2 rounded-xl border cursor-pointer text-[11px] font-bold flex items-center gap-1 transition-all ${
+                        confirmClearCache
+                          ? 'bg-rose-600 border-rose-500 text-white shadow-sm'
+                          : isLight
+                          ? 'bg-white border-slate-300 text-rose-600 hover:bg-rose-50'
+                          : 'bg-slate-800 border-slate-700 text-rose-400 hover:bg-rose-950/60'
                       }`}
-                      title="Clear cached tiles"
+                      title={confirmClearCache ? 'Tap again to confirm clearing cached tiles' : 'Clear cached tiles'}
                       aria-label="Clear cached map tiles"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4 shrink-0" />
+                      {confirmClearCache && <span>Confirm</span>}
                     </button>
                   )}
                 </div>

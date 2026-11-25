@@ -9,13 +9,14 @@
     --font-space: 'Space Grotesk', sans-serif;
     --font-chivo: 'Chivo', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left: env(safe-area-inset-left, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-top: max(env(safe-area-inset-top, 0px), var(--native-safe-top, 0px));
+    --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--native-safe-bottom, 0px));
+    --safe-left: max(env(safe-area-inset-left, 0px), var(--native-safe-left, 0px));
+    --safe-right: max(env(safe-area-inset-right, 0px), var(--native-safe-right, 0px));
   }
 
-  html, body {
+  html,
+  body {
     font-family: var(--font-chivo);
     background-color: #080c10;
     color: #e2e8f0;
@@ -32,11 +33,17 @@
     min-height: 100dvh;
   }
 
-  h1, h2, h3, h4, .font-heading {
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-heading {
     font-family: var(--font-space);
   }
 
-  code, pre, .font-mono {
+  code,
+  pre,
+  .font-mono {
     font-family: var(--font-mono);
   }
 
@@ -51,6 +58,7 @@
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -66,13 +74,16 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(100, 116, 139, 0.35);
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.7);
 }
@@ -95,6 +106,31 @@
   filter: brightness(0.65) invert(1) contrast(2.8) hue-rotate(200deg) saturate(0.25) !important;
 }
 
+.leaflet-tooltip {
+  background: #0d131a !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45) !important;
+  padding: 4px 8px !important;
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: #334155 !important;
+}
+
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: #334155 !important;
+}
+
+.leaflet-tooltip-left::before {
+  border-left-color: #334155 !important;
+}
+
+.leaflet-tooltip-right::before {
+  border-right-color: #334155 !important;
+}
+
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
   background: #0f172a !important;
@@ -102,6 +138,28 @@
   border: 1px solid #334155 !important;
   border-radius: 12px !important;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+}
+
+.light-leaflet-container .leaflet-tooltip {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.14) !important;
+}
+
+.light-leaflet-container .leaflet-tooltip-top::before {
+  border-top-color: #cbd5e1 !important;
+}
+
+.light-leaflet-container .leaflet-tooltip-bottom::before {
+  border-bottom-color: #cbd5e1 !important;
+}
+
+.light-leaflet-container .leaflet-popup-content-wrapper,
+.light-leaflet-container .leaflet-popup-tip {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
 }
 
 .leaflet-popup-content {
@@ -132,7 +190,7 @@
 
 /* Subtle telemetry grid pattern */
 .bg-telemetry-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(56, 189, 248, 0.04) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
   background-size: 28px 28px;
@@ -145,7 +203,8 @@
     margin: 12mm 10mm;
   }
 
-  html, body {
+  html,
+  body {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #0f172a !important;
@@ -155,12 +214,15 @@
     font-size: 11pt;
   }
 
-  header, nav, [role="navigation"], .no-print {
+  header,
+  nav,
+  [role="navigation"],
+  .no-print {
     display: none !important;
   }
 
   /* Hide background elements outside modal when printing dossier */
-  #root > *:not(.print-modal-overlay) {
+  #root>*:not(.print-modal-overlay) {
     display: none !important;
   }
 
@@ -234,21 +296,26 @@
   .mobile-bottom-nav {
     display: none !important;
   }
+
   .mobile-landscape-dock {
     display: flex !important;
   }
+
   main.has-landscape-rail {
     margin-left: 0 !important;
     padding-left: calc(4rem + var(--safe-left)) !important;
     padding-right: max(0.5rem, var(--safe-right)) !important;
     max-width: 100% !important;
   }
+
   header.navbar-landscape-offset {
     padding-left: calc(3.5rem + var(--safe-left)) !important;
   }
+
   .landscape-compact-hide {
     display: none !important;
   }
+
   .mobile-landscape-hidden {
     display: none !important;
   }
@@ -260,13 +327,14 @@
 .safe-top {
   padding-top: env(safe-area-inset-top, 0px);
 }
+
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
 .safe-area-padding {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
-

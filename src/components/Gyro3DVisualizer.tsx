@@ -36,10 +36,10 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
   const isAggressive = absLean > 22 && !isExtreme;
 
   const leanColor = isExtreme
-    ? 'text-rose-500'
+    ? (isLight ? 'text-rose-700' : 'text-rose-500')
     : isAggressive
-    ? 'text-amber-400'
-    : 'text-emerald-400';
+    ? (isLight ? 'text-amber-700' : 'text-amber-400')
+    : (isLight ? 'text-emerald-700' : 'text-emerald-400');
 
   const leanGlowColor = isExtreme
     ? 'rgba(239, 68, 68, 0.4)'
@@ -121,7 +121,11 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
           {/* ─────────────────────────────────────────────────────────────
               3D MOTORCYCLE HORIZON GAUGE (Hardware-accelerated 3D CSS)
           ───────────────────────────────────────────────────────────── */}
-          <div className="relative w-full h-28 sm:h-32 landscape:h-22 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-slate-950 to-[#0b1017] border border-slate-800">
+          <div className={`relative w-full h-28 sm:h-32 landscape:h-24 flex items-center justify-center overflow-hidden rounded-xl border ${
+            isLight
+              ? 'bg-gradient-to-b from-slate-100 to-slate-200 border-slate-300'
+              : 'bg-gradient-to-b from-slate-950 to-[#0b1017] border-slate-800'
+          }`}>
             
             {/* Artificial Horizon Background Grid */}
             <div 
@@ -136,14 +140,16 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
             </div>
 
             {/* Dial Tick Arcs (-50° to +50°) */}
-            <div className="absolute inset-x-4 top-2 flex justify-between text-[8px] font-mono telemetry-num text-slate-500 font-bold pointer-events-none select-none">
-              <span className="text-rose-400/80 flex items-center gap-0.5"><ArrowLeft className="w-2.5 h-2.5" />50°</span>
-              <span className="text-amber-400/80">35°</span>
-              <span className="text-slate-400">20°</span>
-              <span className="text-emerald-400 font-black">0°</span>
-              <span className="text-slate-400">20°</span>
-              <span className="text-amber-400/80">35°</span>
-              <span className="text-rose-400/80 flex items-center gap-0.5">50°<ArrowRight className="w-2.5 h-2.5" /></span>
+            <div className={`absolute inset-x-4 top-2 flex justify-between text-[8px] font-mono telemetry-num font-bold pointer-events-none select-none ${
+              isLight ? 'text-slate-600' : 'text-slate-500'
+            }`}>
+              <span className={`${isLight ? 'text-rose-600' : 'text-rose-400/80'} flex items-center gap-0.5`}><ArrowLeft className="w-2.5 h-2.5" />50°</span>
+              <span className={isLight ? 'text-amber-700' : 'text-amber-400/80'}>35°</span>
+              <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>20°</span>
+              <span className={`${isLight ? 'text-emerald-700' : 'text-emerald-400'} font-black`}>0°</span>
+              <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>20°</span>
+              <span className={isLight ? 'text-amber-700' : 'text-amber-400/80'}>35°</span>
+              <span className={`${isLight ? 'text-rose-600' : 'text-rose-400/80'} flex items-center gap-0.5`}>50°<ArrowRight className="w-2.5 h-2.5" /></span>
             </div>
 
             {/* 3D MOTORCYCLE SILHOUETTE (Rotates & Banks in true 3D space) */}
@@ -197,15 +203,19 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
             </div>
 
             {/* Live Lean Readout Center Tag */}
-            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-20 px-3 py-0.5 rounded-full bg-slate-950/90 border border-slate-700/80 shadow-lg flex items-center gap-2 font-mono telemetry-num">
+            <div className={`absolute bottom-1.5 left-1/2 -translate-x-1/2 z-20 px-3 py-0.5 rounded-full border shadow-lg flex items-center gap-2 font-mono telemetry-num ${
+              isLight ? 'bg-white/95 border-slate-300 text-slate-800' : 'bg-slate-950/90 border-slate-700/80 text-white'
+            }`}>
               <span className={`text-base font-black tracking-tight ${leanColor}`}>
                 {absLean}°
               </span>
-              <span className="text-[10px] font-bold text-slate-300 flex items-center gap-0.5">
+              <span className={`text-[10px] font-bold flex items-center gap-0.5 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                 {leanAngle < 0 ? (<>LEFT <ArrowLeft className="w-2.5 h-2.5" /></>) : leanAngle > 0 ? (<><ArrowRight className="w-2.5 h-2.5" /> RIGHT</>) : 'UPRIGHT'}
               </span>
               {gForceLateral > 0.05 && (
-                <span className="text-[10px] text-cyan-400 font-bold border-l border-slate-700 pl-2">
+                <span className={`text-[10px] font-bold border-l pl-2 ${
+                  isLight ? 'text-cyan-700 border-slate-300' : 'text-cyan-400 border-slate-700'
+                }`}>
                   {gForceLateral} G
                 </span>
               )}
@@ -213,7 +223,9 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
 
             {/* Pitch Tag (Climb / Dive) */}
             {Math.abs(pitchAngle) >= 3 && (
-              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-slate-900/85 border border-slate-700 text-[9px] font-mono telemetry-num font-bold text-slate-300 flex items-center gap-0.5">
+              <div className={`absolute top-2 right-2 px-2 py-0.5 rounded border text-[9px] font-mono telemetry-num font-bold flex items-center gap-0.5 ${
+                isLight ? 'bg-white/90 border-slate-300 text-slate-700' : 'bg-slate-900/85 border-slate-700 text-slate-300'
+              }`}>
                 {pitchAngle > 0 ? (<><ArrowUp className="w-2.5 h-2.5" /> +{pitchAngle}°</>) : (<><ArrowDown className="w-2.5 h-2.5" /> {pitchAngle}°</>)}
               </div>
             )}
@@ -242,7 +254,9 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
             </div>
 
             {/* Bipolar Bar */}
-            <div className="relative w-full h-2.5 rounded-full bg-slate-900 border border-slate-700/80 overflow-hidden flex items-center justify-center">
+            <div className={`relative w-full h-2.5 rounded-full border overflow-hidden flex items-center justify-center ${
+              isLight ? 'bg-slate-200 border-slate-300' : 'bg-slate-900 border-slate-700/80'
+            }`}>
               {/* Zero Center Line */}
               <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-cyan-400/80 z-10" />
 

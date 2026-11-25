@@ -39,7 +39,11 @@ export function exportAnalysisToGPX(analysis: RideAnalysis): string {
       if (pt.time) {
         gpx += `        <time>${pt.time}</time>\n`;
       }
-      if (pt.speed !== null || pt.bearing !== null) {
+      if (
+        pt.speed !== null ||
+        pt.bearing !== null ||
+        (pt.estimatedLeanAngle !== undefined && pt.estimatedLeanAngle !== 0)
+      ) {
         gpx += `        <extensions>\n`;
         gpx += `          <gpxtpx:TrackPointExtension>\n`;
         if (pt.speed !== null) {
@@ -47,6 +51,9 @@ export function exportAnalysisToGPX(analysis: RideAnalysis): string {
         }
         if (pt.bearing !== null) {
           gpx += `            <gpxtpx:bearing>${pt.bearing.toFixed(1)}</gpxtpx:bearing>\n`;
+        }
+        if (pt.estimatedLeanAngle !== undefined && pt.estimatedLeanAngle !== 0) {
+          gpx += `            <gpxtpx:lean>${pt.estimatedLeanAngle.toFixed(1)}</gpxtpx:lean>\n`;
         }
         gpx += `          </gpxtpx:TrackPointExtension>\n`;
         gpx += `        </extensions>\n`;

@@ -9,7 +9,7 @@ import {
   FileText,
   BookmarkPlus,
   CheckCircle2,
-  Zap,
+  GitCompareArrows,
   Coffee,
   Sunrise,
   Sun,
@@ -211,7 +211,7 @@ export const HeroTelemetry: React.FC<HeroTelemetryProps> = ({
                 }`}
                 title="Compare this ride side-by-side with another run"
               >
-                <Zap className={`w-3.5 h-3.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
+                <GitCompareArrows className={`w-3.5 h-3.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
                 <span>Compare</span>
               </button>
             )}

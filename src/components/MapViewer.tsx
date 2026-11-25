@@ -6,7 +6,6 @@ import {
   Layers,
   MapPin,
   Coffee,
-  Navigation,
   Play,
   Pause,
   RotateCcw,
@@ -17,7 +16,6 @@ import {
   ChevronUp,
   ChevronDown,
   Check,
-  Flag,
   Zap,
   Mountain,
   Gauge,
@@ -133,8 +131,14 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
   // Base Map Tile Style initialized from Settings default
   const initialLayerPref = getRiderProfile().defaultMapLayer;
-  const [mapStyle, setMapStyle] = useState<'osm' | 'satellite' | 'dark'>(
-    initialLayerPref === 'satellite' ? 'satellite' : initialLayerPref === 'dark' ? 'dark' : 'osm'
+  const [mapStyle, setMapStyle] = useState<'osm' | 'satellite' | 'dark' | 'sunlight'>(
+    initialLayerPref === 'satellite'
+      ? 'satellite'
+      : initialLayerPref === 'dark'
+      ? 'dark'
+      : initialLayerPref === 'sunlight'
+      ? 'sunlight'
+      : 'osm'
   );
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   // Default pit stops to TRUE so riders immediately see and can click/edit stops
@@ -509,6 +513,12 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           attribution: '&copy; OpenStreetMap Dark',
           className: 'dark-map-tiles',
         }).addTo(map);
+      } else if (mapStyle === 'sunlight') {
+        tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap High-Contrast',
+          className: 'sunlight-map-tiles',
+        }).addTo(map);
       }
       currentMapStyleRef.current = mapStyle;
     }
@@ -836,7 +846,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         // Hover tooltip for quick preview
         const stopTooltipEl = document.createElement('div');
         stopTooltipEl.style.cssText = 'font-family:monospace; font-size:11px; padding:2px 6px;';
-        stopTooltipEl.textContent = `${pit.name} (${Math.round(pit.durationSeconds / 60)} min) — Click to edit`;
+        const mins = Math.round(pit.durationSeconds / 60);
+        const hasDurationInName = /\(\d+\s*m(?:in)?\)/i.test(pit.name);
+        stopTooltipEl.textContent = `${pit.name}${!hasDurationInName && mins > 0 ? ` (${mins} min)` : ''} — Click to edit`;
         marker.bindTooltip(stopTooltipEl, { direction: 'top', offset: [0, -14] });
 
         // Click opens StopEditorModal instead of a static popup
@@ -976,13 +988,13 @@ export const MapViewer: React.FC<MapViewerProps> = ({
 
     if (focusedCoordinate.label) {
       const popupDiv = document.createElement('div');
-      popupDiv.style.cssText = 'font-family:monospace; font-size:12px; font-weight:bold; color:#0f172a; padding:3px 6px;';
+      popupDiv.style.cssText = `font-family:monospace; font-size:12px; font-weight:bold; color:${isLight ? '#0f172a' : '#f1f5f9'}; padding:3px 6px;`;
       popupDiv.textContent = focusedCoordinate.label;
       marker.bindPopup(popupDiv).openPopup();
     }
 
     focusedMarkerRef.current = marker;
-  }, [focusedCoordinate]);
+  }, [focusedCoordinate, isLight]);
 
   // Live Crew Friend Markers on Map
   const friendMarkersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -1117,40 +1129,6 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             </div>
           )}
 
-          {/* Milestones Toggle */}
-          <button
-            type="button"
-            id="btn-toggle-milestones"
-            onClick={() => setShowMilestones(!showMilestones)}
-            title="Toggle Distance Milestones on Route"
-            aria-label="Toggle distance milestones"
-            className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${showMilestones
-                ? 'bg-sky-500 text-slate-950 font-bold border-sky-400'
-                : buttonBg
-              }`}
-          >
-            <Flag className="w-3 h-3" />
-            <span className="hidden sm:inline">Milestones</span>
-          </button>
-
-          {/* Speed Heatmap Legend Toggle */}
-          <button
-            type="button"
-            id="btn-toggle-heatmap-legend"
-            onClick={() => setShowHeatmapLegend(!showHeatmapLegend)}
-            title="Toggle Speed Heatmap Legend"
-            aria-label="Toggle speed legend"
-            className={`px-2 py-1 text-[11px] font-mono rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${showHeatmapLegend
-                ? isLight
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold'
-                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
-                : buttonBg
-              }`}
-          >
-            <Zap className="w-3 h-3 sm:hidden" />
-            <span className="hidden sm:inline">Legend</span>
-          </button>
-
           {/* Toggle Stops */}
           <button
             type="button"
@@ -1164,8 +1142,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             aria-label="Toggle pit stops"
           >
             <MapPin className="w-3 h-3" />
-            <span className="hidden sm:inline">Stops ({analysis.pitStops.length})</span>
-            <span className="sm:hidden">{analysis.pitStops.length}</span>
+            <span>Stops ({analysis.pitStops.length})</span>
           </button>
         </div>
       </div>
@@ -1175,7 +1152,9 @@ export const MapViewer: React.FC<MapViewerProps> = ({
         <div
           ref={mapContainerRef}
           id="leaflet-map-canvas"
-          className="w-full h-[280px] sm:h-[380px] md:h-[460px] transition-all"
+          className={`w-full h-[280px] sm:h-[360px] md:h-[440px] landscape:h-[220px] sm:landscape:h-[230px] transition-all ${
+            isLight ? 'light-leaflet-container' : ''
+          }`}
         />
 
         {/* Floating Map Layer FAB */}
@@ -1194,7 +1173,7 @@ export const MapViewer: React.FC<MapViewerProps> = ({
           </button>
 
           {isLayersOpen && (
-            <div className={`absolute right-0 top-11 border rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 w-32 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 ${isLight ? 'bg-white/95 border-slate-300' : 'bg-slate-900/95 border-slate-700'
+            <div className={`absolute right-0 top-11 border rounded-xl p-1.5 shadow-2xl flex flex-col gap-1 w-40 backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 ${isLight ? 'bg-white/95 border-slate-300' : 'bg-slate-900/95 border-slate-700'
               }`}>
               <button
                 type="button"
@@ -1228,6 +1207,47 @@ export const MapViewer: React.FC<MapViewerProps> = ({
               >
                 <span>Dark</span>
                 {mapStyle === 'dark' && <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMapStyle('sunlight'); setIsLayersOpen(false); }}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${mapStyle === 'sunlight'
+                    ? 'bg-sky-500 text-slate-950'
+                    : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+              >
+                <span>Sunlight</span>
+                {mapStyle === 'sunlight' && <Check className="w-3.5 h-3.5" />}
+              </button>
+
+              <div className={`my-0.5 border-t ${isLight ? 'border-slate-200' : 'border-slate-800'}`} />
+
+              <button
+                type="button"
+                id="btn-toggle-milestones"
+                onClick={() => setShowMilestones(!showMilestones)}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  showMilestones
+                    ? isLight ? 'bg-sky-50 text-sky-700' : 'bg-sky-500/20 text-sky-300'
+                    : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Km Markers</span>
+                {showMilestones && <Check className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                type="button"
+                id="btn-toggle-heatmap-legend"
+                onClick={() => setShowHeatmapLegend(!showHeatmapLegend)}
+                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                  showHeatmapLegend
+                    ? isLight ? 'bg-emerald-50 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'
+                    : isLight ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>Speed Legend</span>
+                {showHeatmapLegend && <Check className="w-3.5 h-3.5" />}
               </button>
             </div>
           )}
@@ -1272,15 +1292,15 @@ export const MapViewer: React.FC<MapViewerProps> = ({
             className={`w-9 h-9 rounded-xl border shadow-xl flex items-center justify-center transition-all cursor-pointer active:scale-95 ${isLight ? 'bg-white/95 hover:bg-slate-50 text-sky-700 border-slate-300' : 'bg-slate-900/90 hover:bg-slate-800 text-sky-400 border-slate-700/80'
               }`}
           >
-            <Navigation className="w-4 h-4" />
+            <Crosshair className="w-4 h-4" />
           </button>
         </div>
 
         {/* Floating Speed Heatmap Legend */}
         {showHeatmapLegend && routeMode === 'all' && (
-          <div className={`absolute top-3 left-3 z-[400] backdrop-blur-md border rounded-lg px-2.5 py-1.5 shadow-xl flex items-center gap-2 text-[10px] font-mono select-none ${isLight ? 'bg-white/95 border-slate-300 text-slate-700' : 'bg-slate-900/90 border-slate-700/80 text-slate-300'
+          <div className={`absolute top-3 left-3 z-[400] max-w-[calc(100%-3.75rem)] flex-wrap backdrop-blur-md border rounded-lg px-2 py-1 shadow-xl flex items-center gap-x-2 gap-y-1 text-[10px] font-mono select-none ${isLight ? 'bg-white/95 border-slate-300 text-slate-700' : 'bg-slate-900/90 border-slate-700/80 text-slate-300'
             }`}>
-            <span className="font-bold">Speed:</span>
+            <span className="font-bold hidden sm:inline">Speed:</span>
             <div className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shadow-xs" />
               <span className="telemetry-num">&le; {lowThreshKmh} km/h</span>

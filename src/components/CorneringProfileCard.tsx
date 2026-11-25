@@ -86,9 +86,17 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
         <span className={`px-2 py-0.5 text-[10px] font-sans font-bold border rounded uppercase ${
           isLight ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
         }`}>
-          Apex Telemetry
+          {corneringStats.maxLeft === 0 && corneringStats.maxRight === 0 ? 'Minimal Lean' : 'Apex Telemetry'}
         </span>
       </div>
+
+      {corneringStats.maxLeft === 0 && corneringStats.maxRight === 0 && (
+        <div className={`px-3 py-2 rounded-xl border text-[11px] font-sans ${
+          isLight ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-slate-900/60 border-slate-800 text-slate-400'
+        }`}>
+          No high-angle cornering lean detected (straight cruise, slow speed &lt;14 km/h, or sparse GPX points without gyroscope data).
+        </div>
+      )}
 
       {/* Visual Lean Comparison Meter */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 telemetry-num">

@@ -22,6 +22,8 @@ import {
   checkAppForUpdates,
   CURRENT_APP_VERSION,
 } from '../src/utils/appUpdater.ts';
+import { getBikeLifetimeStats } from '../src/utils/riderProfile.ts';
+import { formatDurationSummary } from '../src/utils/units.ts';
 
 test('Garage storage CRUD preserves createdAt when updating older rides', () => {
   resetTestEnvironment();
@@ -116,4 +118,27 @@ test('appUpdater semver comparison and release API parsing handle updates and ne
   } finally {
     globalThis.fetch = origFetch;
   }
+});
+
+test('getBikeLifetimeStats tracks short ride Saddle Time in exact seconds for concise formatting', () => {
+  resetTestEnvironment();
+  clearAllGarageRides();
+
+  saveRideToGarage({
+    name: 'Morning Chai Run',
+    distanceKm: 4.5,
+    maxSpeedKmh: 58,
+    durationSeconds: 720,
+    movingTimeSeconds: 615,
+    avgSpeedKmh: 26,
+    elevGainM: 35,
+    gpxContent: '<gpx/>',
+  });
+
+  const stats = getBikeLifetimeStats();
+  assert.equal(stats.totalRides, 1);
+  assert.equal(stats.totalDurationSeconds, 720);
+  assert.equal(stats.totalMovingSeconds, 615);
+  assert.equal(formatDurationSummary(stats.totalDurationSeconds), '12m');
+  clearAllGarageRides();
 });

@@ -188,9 +188,9 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
   return (
     <div
       style={{
-        bottom: 'max(0.75rem, calc(env(safe-area-inset-bottom) + 0.25rem))',
-        left: 'max(0.6rem, env(safe-area-inset-left))',
-        right: 'max(0.6rem, env(safe-area-inset-right))',
+        bottom: 'max(0.75rem, calc(var(--safe-bottom, 0px) + 0.25rem))',
+        left: 'max(0.6rem, var(--safe-left, 0px))',
+        right: 'max(0.6rem, var(--safe-right, 0px))',
       }}
       className="absolute z-40 pointer-events-none flex justify-center"
     >
@@ -642,7 +642,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
         )}
 
         {/* MINIMALIST BOTTOM STRIP (Solo Private hides Crew-only clutter) */}
-        <div className={`h-12 px-2 sm:px-3 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-2 shadow-2xl transition-all ${
+        <div className={`h-12 px-1.5 sm:px-3 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-1 sm:gap-2 shadow-2xl transition-all ${
           isLight
             ? 'bg-white/95 border-slate-300 text-slate-800'
             : 'bg-[#0d131a]/95 border-[#1e2a38] text-white'
@@ -676,7 +676,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   type="button"
                   onClick={handleStartSosCountdown}
                   title={sosCountdown !== null ? 'Tap to cancel SOS countdown' : 'Broadcast Emergency SOS (3s countdown)'}
-                  className={`h-10 px-2.5 sm:px-3 min-w-[48px] sm:min-w-[54px] rounded-xl text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0 ${
+                  className={`h-10 px-2 sm:px-3 min-w-[44px] sm:min-w-[54px] rounded-xl text-white font-black text-xs flex items-center justify-center gap-1 shadow-lg cursor-pointer transition-all active:scale-95 shrink-0 ${
                     sosCountdown !== null
                       ? 'bg-rose-700 ring-2 ring-white animate-pulse'
                       : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/60'
@@ -698,7 +698,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   }}
                   aria-label="Open squad callouts"
                   title="Quick Callout to Crew"
-                  className={`h-10 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0 border ${
+                  className={`h-10 px-2 sm:px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0 border ${
                     isCalloutOpen
                       ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md font-black'
                       : isLight
@@ -707,7 +707,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                   }`}
                 >
                   <Megaphone className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">Ping</span>
+                  <span className="hidden sm:inline">Ping</span>
                 </button>
               )}
 
@@ -731,7 +731,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               setIsExpanded(prev => !prev);
             }}
             aria-label={isExpanded ? 'Collapse squad panel' : 'Expand squad or mode controls'}
-            className={`flex-1 min-w-0 h-10 flex items-center justify-center gap-1.5 px-2 rounded-xl cursor-pointer transition-colors ${
+            className={`flex-1 min-w-0 h-10 flex items-center justify-center gap-1 sm:gap-1.5 px-1 sm:px-2 rounded-xl cursor-pointer transition-colors ${
               isLight ? 'hover:bg-slate-200/70' : 'hover:bg-white/5'
             }`}
           >
@@ -753,19 +753,19 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
                 )}
               </div>
             ) : isOnRadar ? (
-              <div className={`text-xs tracking-tight flex items-center gap-1.5 whitespace-nowrap ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
-                <Radio className={`w-3.5 h-3.5 shrink-0 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
-                <span className="font-bold font-mono telemetry-num truncate max-w-[150px]">
+              <div className={`text-[11px] sm:text-xs tracking-tight flex items-center gap-1 whitespace-nowrap min-w-0 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                <Radio className={`w-3.5 h-3.5 shrink-0 hidden sm:inline ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
+                <span className="font-bold font-mono telemetry-num truncate max-w-[100px] sm:max-w-[155px]">
                   {isRecording
                     ? `${(recordedDistanceMeters / 1000).toFixed(1)} km`
-                    : (roomCode && roomCode !== DEFAULT_SQUAD_NAME ? roomCode : 'Crew Ready')}
+                    : (roomCode && roomCode !== DEFAULT_SQUAD_NAME ? `Crew · ${roomCode}` : 'Crew Mode')}
                 </span>
               </div>
             ) : (
               <div className={`text-xs tracking-tight flex items-center gap-1.5 whitespace-nowrap ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                 <Shield className={`w-3.5 h-3.5 shrink-0 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
                 <span className="font-bold font-mono telemetry-num">
-                  {isRecording ? `Solo · ${(recordedDistanceMeters / 1000).toFixed(1)} km` : 'Solo · Squad'}
+                  {isRecording ? `Solo · ${(recordedDistanceMeters / 1000).toFixed(1)} km` : 'Solo Mode'}
                 </span>
               </div>
             )}
@@ -780,7 +780,7 @@ export const ConvoyBottomStrip: React.FC<ConvoyBottomStripProps> = ({
               type="button"
               onClick={handleRecordButtonClick}
               title={isRecording ? 'Stop & save ride track' : 'Start tracking GPS ride'}
-              className={`h-10 px-3 min-w-[64px] rounded-xl font-mono text-xs font-black flex items-center justify-center gap-1 cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
+              className={`h-10 px-2 sm:px-3 min-w-[52px] sm:min-w-[64px] rounded-xl font-mono text-xs font-black flex items-center justify-center gap-1 cursor-pointer shadow-md transition-all active:scale-95 shrink-0 ${
                 isRecording
                   ? isLight
                     ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'

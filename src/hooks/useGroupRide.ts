@@ -368,10 +368,13 @@ export function useGroupRide() {
   const myLocationRef = useRef<{ lat: number; lon: number; speedKmh: number; bearing: number | null; leanAngle?: number } | null>(null);
   const mqttClientRef = useRef<SimpleMqttClient | null>(null);
   const activeCryptoRef = useRef<SquadCryptoContext | null>(null);
+  const sentOfflineClientsRef = useRef<WeakSet<SimpleMqttClient>>(new WeakSet());
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<any>(null);
   const notificationTimeoutRef = useRef<any>(null);
   const lastLocationBroadcastTimeRef = useRef<number>(0);
+  const lastDistanceRecalcRef = useRef<number>(0);
+  const lastDistanceCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
 
   const commitMembers = useCallback((next: Map<string, GroupMemberInfo>) => {
     membersRef.current = next;
@@ -392,14 +395,45 @@ export function useGroupRide() {
     }, 4500);
   }, []);
 
+  const gracefulOfflineAndDestroy = useCallback(async (
+    client: SimpleMqttClient | null,
+    cryptoCtx: SquadCryptoContext | null,
+    riderId: string
+  ) => {
+    if (!client || sentOfflineClientsRef.current.has(client)) return;
+    sentOfflineClientsRef.current.add(client);
+    if (cryptoCtx) {
+      try {
+        const envelope = await encryptCrewPayload(cryptoCtx.secret, cryptoCtx.roomHash, {
+          type: 'OFFLINE',
+          riderId,
+          timestamp: Date.now(),
+        });
+        client.publish(cryptoCtx.topic, envelope, false);
+      } catch {}
+      setTimeout(() => client.destroy(), 180);
+    } else {
+      client.destroy();
+    }
+  }, []);
+
   // Handle incoming data message from encrypted MQTT relay or same-room BroadcastChannel
   const handleIncomingMessage = useCallback((data: any) => {
     if (!data || typeof data !== 'object') return;
     const currentMyId = profileRef.current.id;
 
     if (data.type === 'LOCATION' || data.type === 'HEARTBEAT') {
-      const loc: GroupRiderLocation = data.payload;
+      const loc: GroupRiderLocation & { leaderId?: string } = data.payload;
       if (!loc || !loc.riderId || loc.riderId === currentMyId) return;
+
+      if (typeof loc.leaderId === 'string' && loc.leaderId.trim() && !leaderIdRef.current) {
+        const syncedLeader = loc.leaderId.trim();
+        leaderIdRef.current = syncedLeader;
+        setLeaderId(syncedLeader);
+        try {
+          localStorage.setItem(getLeaderStorageKey(profileRef.current.squadName), syncedLeader);
+        } catch {}
+      }
 
       const prev = membersRef.current;
       const next = new Map(prev);
@@ -774,6 +808,31 @@ export function useGroupRide() {
                   ? `Squad [${profile.squadName}] Encrypted • Private squad radar live`
                   : 'Crew Radar Active • Encrypted global relay live'
               );
+              const helloPayload: any = {
+                riderId: profileRef.current.id,
+                name: profileRef.current.name,
+                color: profileRef.current.color,
+                bikeModel: profileRef.current.bikeModel,
+                leaderId: leaderIdRef.current || undefined,
+                timestamp: Date.now(),
+                status: 'stopped',
+                batteryPct: batteryPctRef.current,
+                isCharging: isChargingRef.current,
+              };
+              if (myLocationRef.current) {
+                Object.assign(helloPayload, myLocationRef.current);
+                helloPayload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
+              }
+              encryptCrewPayload(cryptoCtx.secret, cryptoCtx.roomHash, {
+                type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+                payload: helloPayload,
+              })
+                .then(envelope => {
+                  if (!cancelled && client && mqttClientRef.current === client) {
+                    client.publish(cryptoCtx.topic, envelope, false);
+                  }
+                })
+                .catch(() => {});
             } else if (status === 'connecting') {
               setIsConnected(false);
               setStatusMessage(detail || 'Connecting to Crew Radar...');
@@ -802,16 +861,17 @@ export function useGroupRide() {
 
     return () => {
       cancelled = true;
+      const closingCrypto = activeCryptoRef.current;
       activeCryptoRef.current = null;
-      if (client) {
-        client.destroy();
-      }
       if (mqttClientRef.current === client) {
         mqttClientRef.current = null;
       }
+      if (client) {
+        gracefulOfflineAndDestroy(client, closingCrypto, profileRef.current.id);
+      }
       resetConvoyWatchdog();
     };
-  }, [profile.isLoggedIn, profile.id, profile.squadName, isOnRadar, handleIncomingMessage, commitMembers]);
+  }, [profile.isLoggedIn, profile.id, profile.squadName, isOnRadar, handleIncomingMessage, commitMembers, gracefulOfflineAndDestroy]);
 
   // Unified idle heartbeat every 2.5s (skips if movement broadcast just sent within 2.3s)
   useEffect(() => {
@@ -826,6 +886,7 @@ export function useGroupRide() {
         name: profile.name,
         color: profile.color,
         bikeModel: profile.bikeModel,
+        leaderId: leaderIdRef.current || undefined,
         timestamp: now,
         status: 'stopped',
         batteryPct: batteryPctRef.current,
@@ -926,10 +987,31 @@ export function useGroupRide() {
   const updateMyLocation = useCallback((lat: number, lon: number, speedKmh: number, bearing: number | null, leanAngle?: number) => {
     myLocationRef.current = { lat, lon, speedKmh, bearing, leanAngle };
 
+    const now = Date.now();
+    const prevDistPos = lastDistanceCoordsRef.current;
+    const movedSinceRecalc = !prevDistPos || haversineDistance(prevDistPos.lat, prevDistPos.lon, lat, lon) >= 5;
+    if (movedSinceRecalc && now - lastDistanceRecalcRef.current >= 1000 && membersRef.current.size > 0) {
+      lastDistanceRecalcRef.current = now;
+      lastDistanceCoordsRef.current = { lat, lon };
+      const nextMembers = new Map<string, GroupMemberInfo>();
+      let distChanged = false;
+      membersRef.current.forEach((m, id) => {
+        if (m.location && typeof m.location.lat === 'number' && typeof m.location.lon === 'number') {
+          const updatedDist = haversineDistance(lat, lon, m.location.lat, m.location.lon);
+          nextMembers.set(id, { ...m, distanceFromMeMeters: updatedDist });
+          distChanged = true;
+        } else {
+          nextMembers.set(id, m);
+        }
+      });
+      if (distChanged) {
+        commitMembers(nextMembers);
+      }
+    }
+
     if (!isOnRadarRef.current) return;
 
     // Rate-limit position broadcasts to 1500ms to preserve mobile battery and avoid public broker burst-disconnects
-    const now = Date.now();
     if (now - lastLocationBroadcastTimeRef.current < 1500) {
       return;
     }
@@ -943,6 +1025,7 @@ export function useGroupRide() {
         name: profileRef.current.name,
         color: profileRef.current.color,
         bikeModel: profileRef.current.bikeModel,
+        leaderId: leaderIdRef.current || undefined,
         lat,
         lon,
         speedKmh,
@@ -954,7 +1037,7 @@ export function useGroupRide() {
         isCharging: isChargingRef.current,
       },
     });
-  }, [broadcastPayload]);
+  }, [broadcastPayload, commitMembers]);
 
   const toggleOnRadar = useCallback((enable?: boolean) => {
     const next = enable !== undefined ? enable : !isOnRadarRef.current;
@@ -965,11 +1048,22 @@ export function useGroupRide() {
     } catch {}
 
     if (!next) {
-      // Going off radar: send OFFLINE packet so friends see us disappear from live radar immediately
-      broadcastPayload({
-        type: 'OFFLINE',
-        riderId: profileRef.current.id,
-      });
+      // Going off radar: notify local BroadcastChannel AND flush encrypted OFFLINE before closing MQTT socket
+      if (broadcastChannelRef.current) {
+        try {
+          broadcastChannelRef.current.postMessage({
+            squadKey: sanitizeSquadKey(profileRef.current.squadName) || 'global',
+            data: { type: 'OFFLINE', riderId: profileRef.current.id },
+          });
+        } catch {}
+      }
+      const activeClient = mqttClientRef.current;
+      const activeCrypto = activeCryptoRef.current;
+      mqttClientRef.current = null;
+      activeCryptoRef.current = null;
+      if (activeClient) {
+        gracefulOfflineAndDestroy(activeClient, activeCrypto, profileRef.current.id);
+      }
       resetConvoyWatchdog('solo');
       postCrewNotification('👻 Off Radar (Ghost mode) enabled. You are hidden from friends.', 'info');
     } else {
@@ -981,6 +1075,7 @@ export function useGroupRide() {
         name: profileRef.current.name,
         color: profileRef.current.color,
         bikeModel: profileRef.current.bikeModel,
+        leaderId: leaderIdRef.current || undefined,
         timestamp: Date.now(),
         status: 'stopped',
         batteryPct: batteryPctRef.current,
@@ -995,7 +1090,7 @@ export function useGroupRide() {
         payload,
       });
     }
-  }, [broadcastPayload, postCrewNotification]);
+  }, [broadcastPayload, postCrewNotification, gracefulOfflineAndDestroy]);
 
   const broadcastActiveRoute = useCallback((route: { name?: string; distanceKm?: number; destination?: { lat: number; lon: number }; points?: Array<{ lat: number; lon: number }> } | null) => {
     if (!route) {
@@ -1047,7 +1142,11 @@ export function useGroupRide() {
   }, [broadcastPayload, postCrewNotification]);
 
   const triggerSos = useCallback(() => {
-    const loc = myLocationRef.current || { lat: 18.5204, lon: 73.8567 };
+    const hasValidLoc =
+      myLocationRef.current !== null &&
+      Number.isFinite(myLocationRef.current.lat) &&
+      Number.isFinite(myLocationRef.current.lon);
+    const loc = hasValidLoc ? myLocationRef.current! : { lat: 0, lon: 0 };
     const senderName = profile.name && profile.name.trim() ? profile.name.trim() : 'Rider';
     const alert: SosAlert = {
       fromId: profile.id,
@@ -1065,7 +1164,12 @@ export function useGroupRide() {
     playSosChime();
     triggerHaptic([200, 100, 200, 100, 400]);
     speakAlert(`Emergency S O S alert broadcast to squad for ${senderName}.`);
-    postCrewNotification(`🚨 You broadcast an EMERGENCY S O S alert!`, 'alert');
+    postCrewNotification(
+      hasValidLoc
+        ? '🚨 You broadcast an EMERGENCY S O S alert!'
+        : '🚨 Emergency S O S broadcast (awaiting live GPS fix)',
+      'alert'
+    );
   }, [profile.id, profile.name, broadcastPayload, postCrewNotification]);
 
   const cancelSos = useCallback(() => {
@@ -1112,6 +1216,7 @@ export function useGroupRide() {
       isLoggedIn: true,
     };
     setProfile(newProfile);
+    profileRef.current = newProfile;
 
     saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
     saveIdentity('sasta_rider_name', cleanName);
@@ -1365,8 +1470,15 @@ export function useGroupRide() {
     updateProfile,
     createRoom: (name: string) => loginRider(name),
     joinRoom: (code: string, name?: string) => {
-      loginRider(name || profile.name, undefined, undefined, code);
-      toggleOnRadar(true);
+      loginRider(name || profileRef.current.name, undefined, undefined, code);
+      if (!isOnRadarRef.current) {
+        isOnRadarRef.current = true;
+        setIsOnRadar(true);
+        try {
+          localStorage.setItem('sasta_on_radar', 'true');
+        } catch {}
+      }
+      postCrewNotification(`🛰️ Joined Squad [${code}] on Crew Radar`, 'join');
     },
     rejoinRoom: () => loginRider(profile.name),
     leaveRoom: logoutRider,

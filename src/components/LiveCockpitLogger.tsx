@@ -50,6 +50,8 @@ interface LiveCockpitLoggerProps {
   groupRideConnected?: boolean;
   groupRoomCode?: string;
   groupMembers?: GroupMemberInfo[];
+  groupRiderId?: string;
+  groupRiderName?: string;
   sosAlert?: SosAlert | null;
   gps?: GPSState;
   controls?: GPSControls;
@@ -77,6 +79,8 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   groupRideConnected,
   groupRoomCode,
   groupMembers,
+  groupRiderId,
+  groupRiderName,
   sosAlert,
   gps: externalGps,
   controls: externalControls,
@@ -163,7 +167,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   onUpdateMyLocationRef.current = onUpdateMyLocation;
 
   useEffect(() => {
-    if (gps.currentCoords && onUpdateMyLocationRef.current) {
+    if (!externalGps && gps.currentCoords && onUpdateMyLocationRef.current) {
       onUpdateMyLocationRef.current(
         gps.currentCoords.lat,
         gps.currentCoords.lon,
@@ -172,6 +176,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
       );
     }
   }, [
+    externalGps,
     gps.currentCoords?.lat,
     gps.currentCoords?.lon,
     gps.currentSpeedKmh,
@@ -195,7 +200,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
   const handleFinishAndSave = (downloadAlso: boolean = false) => {
     setShowFinishModal(false);
     triggerHaptic(50);
-    if (gps.pointsCount < 2) {
+    if (gps.pointsCount < 2 || (!downloadAlso && gps.totalDistanceMeters < 80)) {
       controls.stopAndGetPoints();
       _externalSetIsRecording(false);
       setShortRideWarning(null);
@@ -323,8 +328,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
       {/* Toast Alert Banner */}
       {toastMessage && (
         <div
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 3.65rem)' }}
-          className="fixed left-1/2 -translate-x-1/2 landscape:top-[calc(env(safe-area-inset-top,0px)+1rem)] z-[7500] px-4 py-2 bg-emerald-500 text-slate-950 font-sans font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-2 duration-200 border border-emerald-400 max-w-[90vw]"
+          className="fixed left-1/2 -translate-x-1/2 bottom-[calc(var(--safe-bottom,0px)+4.75rem)] md:bottom-5 landscape:bottom-3 z-[7500] px-4 py-2 bg-emerald-500 text-slate-950 font-sans font-bold text-xs rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-bottom-2 duration-200 border border-emerald-400 max-w-[90vw]"
         >
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
@@ -472,13 +476,15 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
           </div>
         )}
 
-        {/* Group Ride Live Crew HUD (Available in both Portrait & Handlebar Landscape) */}
-        {groupRideConnected && groupRoomCode && !isCleanHud && (
+        {/* Group Ride Live Crew HUD (SOS + PTT kept accessible even in Clean HUD mode) */}
+        {groupRideConnected && groupRoomCode && (
           <div>
             <GroupRideHud
               roomCode={groupRoomCode}
               members={groupMembers || []}
               sosAlert={sosAlert || null}
+              riderId={groupRiderId}
+              riderName={groupRiderName}
               onOpenModal={() => onOpenGroupRideModal?.()}
               onSendVoiceBlast={onSendVoiceBlast}
               onTriggerSos={() => {
@@ -584,39 +590,41 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
             </div>
 
             {/* Unified Glance Telemetry Ribbon */}
-            <div className={`p-2 sm:p-2.5 landscape:p-1 rounded-xl border flex items-center justify-around font-mono telemetry-num text-center ${innerCardBg}`}>
-              <div className="flex-1">
-                <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>DISTANCE</div>
-                <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 ${speedTextColor}`}>
-                  {distanceConverted.value.toFixed(2)}
-                  <span className={`text-[9px] font-bold ml-1 ${isSunlightMode ? 'text-yellow-400' : isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>km</span>
+            {!isCleanHud && (
+              <div className={`p-2 sm:p-2.5 landscape:p-1 rounded-xl border flex items-center justify-around font-mono telemetry-num text-center ${innerCardBg}`}>
+                <div className="flex-1">
+                  <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>DISTANCE</div>
+                  <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 ${speedTextColor}`}>
+                    {distanceConverted.value.toFixed(2)}
+                    <span className={`text-[9px] font-bold ml-1 ${isSunlightMode ? 'text-yellow-400' : isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>km</span>
+                  </div>
+                </div>
+
+                <div className={`w-px h-7 ${isLight ? 'bg-slate-300' : 'bg-slate-700/60'}`} />
+
+                <div className="flex-1">
+                  <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>TIME</div>
+                  <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 flex items-center justify-center gap-1 ${
+                    isSunlightMode ? 'text-emerald-300' : isLight ? 'text-emerald-700' : 'text-emerald-400'
+                  }`}>
+                    <span>{formatSec(gps.elapsedSeconds)}</span>
+                    {gps.stoppedSeconds > 0 && <Pause className={`w-3 h-3 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />}
+                  </div>
+                </div>
+
+                <div className={`w-px h-7 ${isLight ? 'bg-slate-300' : 'bg-slate-700/60'}`} />
+
+                <div className="flex-1">
+                  <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>TOP SPD</div>
+                  <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 ${
+                    isSunlightMode ? 'text-rose-400' : isLight ? 'text-rose-700' : 'text-rose-400'
+                  }`}>
+                    {maxSpeedConverted.value.toFixed(1)}
+                    <span className="text-[9px] font-bold ml-1 opacity-80">km/h</span>
+                  </div>
                 </div>
               </div>
-
-              <div className={`w-px h-7 ${isLight ? 'bg-slate-300' : 'bg-slate-700/60'}`} />
-
-              <div className="flex-1">
-                <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>TIME</div>
-                <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 flex items-center justify-center gap-1 ${
-                  isSunlightMode ? 'text-emerald-300' : isLight ? 'text-emerald-700' : 'text-emerald-400'
-                }`}>
-                  <span>{formatSec(gps.elapsedSeconds)}</span>
-                  {gps.stoppedSeconds > 0 && <Pause className={`w-3 h-3 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />}
-                </div>
-              </div>
-
-              <div className={`w-px h-7 ${isLight ? 'bg-slate-300' : 'bg-slate-700/60'}`} />
-
-              <div className="flex-1">
-                <div className={`text-[9px] font-sans uppercase font-semibold ${subTextColor}`}>TOP SPD</div>
-                <div className={`font-black text-base sm:text-xl landscape:text-base mt-0.5 ${
-                  isSunlightMode ? 'text-rose-400' : isLight ? 'text-rose-700' : 'text-rose-400'
-                }`}>
-                  {maxSpeedConverted.value.toFixed(1)}
-                  <span className="text-[9px] font-bold ml-1 opacity-80">km/h</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Altitude & Heading Pill */}
             {!isCleanHud && (
@@ -691,7 +699,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                         controls.markWaypoint('Rest Break');
                         showToast('Rest waypoint marked');
                       }}
-                      className="bg-amber-500/10 hover:bg-amber-500 hover:text-black text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                      className={`bg-amber-500/10 hover:bg-amber-500 hover:text-black ${isLight ? 'text-amber-700' : 'text-amber-400'} border border-amber-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]`}
                     >
                       <Coffee className="w-3 h-3" /> Rest
                     </button>
@@ -701,7 +709,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                         controls.markWaypoint('Fuel');
                         showToast('Fuel stop marked');
                       }}
-                      className="bg-sky-500/10 hover:bg-sky-500 hover:text-black text-sky-600 dark:text-sky-400 border border-sky-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                      className={`bg-sky-500/10 hover:bg-sky-500 hover:text-black ${isLight ? 'text-sky-700' : 'text-sky-400'} border border-sky-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]`}
                     >
                       <Fuel className="w-3 h-3" /> Fuel
                     </button>
@@ -711,7 +719,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                         controls.markWaypoint('Photo');
                         showToast('Photo point marked');
                       }}
-                      className="bg-emerald-500/10 hover:bg-emerald-500 hover:text-black text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                      className={`bg-emerald-500/10 hover:bg-emerald-500 hover:text-black ${isLight ? 'text-emerald-700' : 'text-emerald-400'} border border-emerald-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]`}
                     >
                       <Camera className="w-3 h-3" /> Photo
                     </button>
@@ -721,7 +729,7 @@ export const LiveCockpitLogger: React.FC<LiveCockpitLoggerProps> = ({
                         controls.markWaypoint('Food');
                         showToast('Food stop marked');
                       }}
-                      className="bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]"
+                      className={`bg-rose-500/10 hover:bg-rose-500 hover:text-white ${isLight ? 'text-rose-700' : 'text-rose-400'} border border-rose-500/30 rounded-lg font-sans font-bold flex items-center justify-center gap-1 transition-all cursor-pointer p-1.5 text-[10px]`}
                     >
                       <Utensils className="w-3 h-3" /> Food
                     </button>

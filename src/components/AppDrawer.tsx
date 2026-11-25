@@ -1,13 +1,11 @@
 import React from 'react';
 import {
   X,
-  Bike,
   Home,
-  FolderArchive,
-  Radio,
+  Gauge,
+  BarChart3,
   Share2,
   ArrowRight,
-  Shield,
   Volume2,
   Settings,
 } from 'lucide-react';
@@ -46,11 +44,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
   onOpenGarage,
   onOpenCockpit,
   isOnRadar = false,
-  onToggleRadar,
   isTrackingActive = true,
-  onToggleTracking,
   onTriggerRollCall,
-  onOpenSoloRide,
   onOpenDashboard,
   onOpenSettings,
 }) => {
@@ -81,10 +76,10 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             : 'bg-[#0b1016] border-r border-[#1e2a38] text-white'
         }`}
         style={{
-          paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-          paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
-          paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+          paddingTop: 'max(0.75rem, var(--safe-top, 0px))',
+          paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))',
+          paddingLeft: 'max(0.75rem, var(--safe-left, 0px))',
+          paddingRight: 'max(0.5rem, var(--safe-right, 0px))',
         }}
       >
         {/* Header */}
@@ -123,54 +118,9 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
           </button>
         </div>
 
-        {/* Focused During-Ride Actions (Non-riding prefs & tile settings consolidated in Settings) */}
+        {/* Focused During-Ride Navigation (Mode & tile controls stay on Map bar; full config in Settings) */}
         <div className="flex-1 px-3 py-3 space-y-3.5 text-xs">
-          {/* 1. Solo Private vs Crew Radar Mode */}
-          <div className={`p-3 rounded-2xl border space-y-2.5 ${
-            isLiveOnCrew
-              ? (isLight ? 'bg-emerald-50 border-emerald-300' : 'bg-emerald-950/20 border-emerald-500/30')
-              : (isLight ? 'bg-cyan-50 border-cyan-200' : 'bg-cyan-950/20 border-cyan-500/30')
-          }`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-[10px] uppercase tracking-wider font-bold flex items-center gap-1.5 ${
-                isLight ? 'text-slate-700' : 'text-slate-300'
-              }`}>
-                <Shield className={`w-3.5 h-3.5 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
-                <span>Ride Visibility</span>
-              </span>
-              <span className={`text-[10px] font-black ${
-                isLiveOnCrew ? (isLight ? 'text-emerald-700' : 'text-emerald-400') : (isLight ? 'text-cyan-700' : 'text-cyan-400')
-              }`}>
-                {isLiveOnCrew ? 'CREW RADAR LIVE' : 'SOLO PRIVATE'}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic(30);
-                if (!isTrackingActive && onToggleTracking) {
-                  onToggleTracking(true);
-                } else if (onToggleRadar) {
-                  onToggleRadar();
-                } else if (onToggleTracking) {
-                  onToggleTracking();
-                }
-              }}
-              className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 ${
-                isLiveOnCrew
-                  ? isLight
-                    ? 'bg-white hover:bg-slate-100 border border-slate-300 text-slate-800'
-                    : 'bg-slate-800 hover:bg-slate-700 border border-slate-600 text-cyan-300'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5" />
-              <span>{isLiveOnCrew ? 'Switch to Solo Private' : 'Go Live on Crew Radar'}</span>
-            </button>
-          </div>
-
-          {/* 2. Crew Actions */}
+          {/* 1. Crew Actions */}
           <div className="space-y-2">
             <button
               type="button"
@@ -202,28 +152,8 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
             )}
           </div>
 
-          {/* 3. Navigation */}
+          {/* 2. Quick Navigation */}
           <div className="space-y-1.5">
-            {onOpenSoloRide && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(25);
-                  onClose();
-                  onOpenSoloRide();
-                }}
-                className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition-colors cursor-pointer ${
-                  isLight ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900' : 'bg-cyan-950/35 hover:bg-cyan-950/60 border-cyan-500/40 text-cyan-300'
-                }`}
-              >
-                <span className="font-bold text-xs flex items-center gap-2">
-                  <Bike className={`w-4 h-4 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
-                  <span>Start Solo Ride</span>
-                </span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            )}
-
             {onOpenDashboard && (
               <button
                 type="button"
@@ -256,7 +186,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               }`}
             >
               <span className="font-bold text-xs flex items-center gap-2">
-                <Radio className={`w-4 h-4 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+                <Gauge className={`w-4 h-4 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
                 <span>Cockpit HUD</span>
               </span>
               <ArrowRight className="w-4 h-4 text-slate-400" />
@@ -274,7 +204,7 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
               }`}
             >
               <span className="font-bold text-xs flex items-center gap-2">
-                <FolderArchive className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
+                <BarChart3 className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
                 <span>Saved Rides &amp; Garage</span>
               </span>
               <ArrowRight className="w-4 h-4 text-slate-400" />

@@ -28,6 +28,8 @@ export interface BikeLifetimeStats {
   totalRides: number;
   maxSpeedKmh: number;
   totalDurationHours: number;
+  totalDurationSeconds: number;
+  totalMovingSeconds: number;
   totalElevGainM: number;
   lastRideDate: string | null;
 }
@@ -208,6 +210,7 @@ export function getBikeLifetimeStats(): BikeLifetimeStats {
   let totalTrackedKm = 0;
   let maxSpeedKmh = 0;
   let totalDurationSec = 0;
+  let totalMovingSec = 0;
   let totalElevGainM = 0;
   let lastRideDate: string | null = null;
 
@@ -220,6 +223,10 @@ export function getBikeLifetimeStats(): BikeLifetimeStats {
     }
     if (ride.durationSeconds && !isNaN(ride.durationSeconds)) {
       totalDurationSec += ride.durationSeconds;
+    }
+    const moveSec = ride.movingTimeSeconds ?? ride.durationSeconds;
+    if (moveSec && !isNaN(moveSec)) {
+      totalMovingSec += moveSec;
     }
     if (ride.elevGainM && !isNaN(ride.elevGainM)) {
       totalElevGainM += ride.elevGainM;
@@ -239,6 +246,8 @@ export function getBikeLifetimeStats(): BikeLifetimeStats {
     totalRides: rides.length,
     maxSpeedKmh: Math.round(maxSpeedKmh),
     totalDurationHours,
+    totalDurationSeconds: Math.round(totalDurationSec),
+    totalMovingSeconds: Math.round(totalMovingSec),
     totalElevGainM: Math.round(totalElevGainM),
     lastRideDate,
   };

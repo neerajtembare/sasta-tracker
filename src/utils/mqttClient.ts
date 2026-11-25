@@ -9,26 +9,216 @@
 
 export type MqttConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+export interface MqttWillOptions {
+  topic: string;
+  payload: any;
+  qos?: 0 | 1;
+  retain?: boolean;
+}
+
 export interface MqttClientOptions {
   brokerUrls?: string[];
   clientId?: string;
+  will?: MqttWillOptions;
   onMessage?: (topic: string, data: any) => void;
   onStatusChange?: (status: MqttConnectionStatus, detail?: string) => void;
   keepAliveSeconds?: number;
+}
+
+export type DecodedMqttFrame =
+  | { type: 'CONNACK'; returnCode: number }
+  | { type: 'PINGRESP' }
+  | { type: 'SUBACK'; packetId: number; returnCodes: number[] }
+  | { type: 'PUBLISH'; qos: number; topic: string; packetId?: number; payload: any }
+  | { type: 'OTHER'; packetType: number };
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+const MAX_RX_BUFFER_BYTES = 512 * 1024;
+
+export function encodeMqttRemainingLength(length: number): number[] {
+  const bytes: number[] = [];
+  let l = length;
+  do {
+    let digit = l % 128;
+    l = Math.floor(l / 128);
+    if (l > 0) digit |= 0x80;
+    bytes.push(digit);
+  } while (l > 0);
+  return bytes;
+}
+
+export function encodeMqttConnectPacket(
+  clientId: string,
+  keepAlive: number,
+  will: MqttWillOptions | null = null
+): Uint8Array {
+  const clientIdBytes = textEncoder.encode(clientId);
+  let connectFlags = 0x02; // Clean Session
+
+  let willTopicBytes: Uint8Array | null = null;
+  let willPayloadBytes: Uint8Array | null = null;
+
+  if (will && will.topic) {
+    willTopicBytes = textEncoder.encode(will.topic);
+    const willStr = typeof will.payload === 'string' ? will.payload : JSON.stringify(will.payload);
+    willPayloadBytes = textEncoder.encode(willStr);
+    connectFlags |= 0x04; // Will Flag
+    if (will.qos === 1) connectFlags |= 0x08;
+    if (will.retain) connectFlags |= 0x20;
+  }
+
+  const variableHeader = [
+    0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, // 'MQTT'
+    0x04,                               // Protocol Level 4 (v3.1.1)
+    connectFlags,
+    (keepAlive >> 8) & 0xff,
+    keepAlive & 0xff,
+  ];
+
+  const payloadParts: number[] = [
+    (clientIdBytes.length >> 8) & 0xff,
+    clientIdBytes.length & 0xff,
+    ...clientIdBytes,
+  ];
+
+  if (willTopicBytes && willPayloadBytes) {
+    payloadParts.push(
+      (willTopicBytes.length >> 8) & 0xff,
+      willTopicBytes.length & 0xff,
+      ...willTopicBytes,
+      (willPayloadBytes.length >> 8) & 0xff,
+      willPayloadBytes.length & 0xff,
+      ...willPayloadBytes,
+    );
+  }
+
+  const remaining = new Uint8Array([...variableHeader, ...payloadParts]);
+  const fixedHeader = new Uint8Array([0x10, ...encodeMqttRemainingLength(remaining.length)]);
+  const packet = new Uint8Array(fixedHeader.length + remaining.length);
+  packet.set(fixedHeader, 0);
+  packet.set(remaining, fixedHeader.length);
+  return packet;
+}
+
+/**
+ * Decodes one or more MQTT 3.1.1 control packets from a combined byte stream,
+ * returning decoded frames and any trailing incomplete bytes for future WS chunks.
+ */
+export function decodeMqttFrames(buf: Uint8Array): {
+  frames: DecodedMqttFrame[];
+  remainder: Uint8Array;
+  malformed: boolean;
+} {
+  const frames: DecodedMqttFrame[] = [];
+  let cursor = 0;
+
+  while (cursor < buf.length) {
+    if (cursor + 2 > buf.length) {
+      return { frames, remainder: buf.slice(cursor), malformed: false };
+    }
+
+    const packetType = buf[cursor] >> 4;
+    let offset = cursor + 1;
+    let multiplier = 1;
+    let remLen = 0;
+    let varBytes = 0;
+    let digit = 0;
+    let incomplete = false;
+
+    do {
+      if (offset >= buf.length) {
+        incomplete = true;
+        break;
+      }
+      digit = buf[offset++];
+      remLen += (digit & 0x7f) * multiplier;
+      multiplier *= 128;
+      varBytes++;
+      if (varBytes > 4) {
+        return { frames, remainder: new Uint8Array(0), malformed: true };
+      }
+    } while ((digit & 0x80) !== 0);
+
+    if (incomplete) {
+      return { frames, remainder: buf.slice(cursor), malformed: false };
+    }
+
+    const varHeaderStart = offset;
+    const packetEnd = varHeaderStart + remLen;
+    if (packetEnd > buf.length) {
+      return { frames, remainder: buf.slice(cursor), malformed: false };
+    }
+
+    if (packetType === 13) {
+      frames.push({ type: 'PINGRESP' });
+    } else if (packetType === 2) {
+      if (remLen >= 2 && varHeaderStart + 2 <= packetEnd) {
+        frames.push({ type: 'CONNACK', returnCode: buf[varHeaderStart + 1] });
+      }
+    } else if (packetType === 9) {
+      if (remLen >= 3 && varHeaderStart + 3 <= packetEnd) {
+        const packetId = (buf[varHeaderStart] << 8) | buf[varHeaderStart + 1];
+        const returnCodes = Array.from(buf.subarray(varHeaderStart + 2, packetEnd));
+        frames.push({ type: 'SUBACK', packetId, returnCodes });
+      }
+    } else if (packetType === 3) {
+      if (offset + 2 <= packetEnd) {
+        const qos = (buf[cursor] & 0x06) >> 1;
+        const topicLen = (buf[offset] << 8) | buf[offset + 1];
+        offset += 2;
+        if (offset + topicLen <= packetEnd) {
+          const topic = textDecoder.decode(buf.subarray(offset, offset + topicLen));
+          offset += topicLen;
+
+          let packetId: number | undefined;
+          if (qos > 0) {
+            if (offset + 2 <= packetEnd) {
+              packetId = (buf[offset] << 8) | buf[offset + 1];
+              offset += 2;
+            } else {
+              cursor = packetEnd;
+              continue;
+            }
+          }
+
+          const payloadStr = textDecoder.decode(buf.subarray(offset, packetEnd));
+          let parsed: any;
+          try {
+            parsed = JSON.parse(payloadStr);
+          } catch {
+            parsed = payloadStr;
+          }
+          frames.push({ type: 'PUBLISH', qos, topic, packetId, payload: parsed });
+        }
+      }
+    } else {
+      frames.push({ type: 'OTHER', packetType });
+    }
+
+    cursor = packetEnd;
+  }
+
+  return { frames, remainder: new Uint8Array(0), malformed: false };
 }
 
 export class SimpleMqttClient {
   private brokerUrls: string[];
   private currentBrokerIndex = 0;
   private clientId: string;
+  private will: MqttWillOptions | null;
   private onMessage: (topic: string, data: any) => void;
   private onStatusChange: (status: MqttConnectionStatus, detail?: string) => void;
   private keepAlive: number;
 
   private ws: WebSocket | null = null;
   private subscribedTopics = new Set<string>();
+  private pendingSubacks = new Map<number, string>();
+  private nextPacketId = 1;
+  private rxBuffer: Uint8Array = new Uint8Array(0);
   private pingInterval: any = null;
   private reconnectTimeout: any = null;
+  private onlineDebounceTimer: any = null;
   private reconnectAttempts = 0;
   private isDestroyed = false;
 
@@ -36,8 +226,7 @@ export class SimpleMqttClient {
   private isAwaitingPong = false;
   private boundOnlineHandler: any = null;
 
-  private encoder = new TextEncoder();
-  private decoder = new TextDecoder();
+  private encoder = textEncoder;
   private pendingCriticalQueue: Array<{ topic: string; payload: any; timestamp: number }> = [];
 
   constructor(options: MqttClientOptions = {}) {
@@ -48,15 +237,16 @@ export class SimpleMqttClient {
           'wss://broker.emqx.io:8084/mqtt',
         ];
     this.clientId = options.clientId || 'rider_' + Math.random().toString(36).substring(2, 9);
+    this.will = options.will || null;
     this.onMessage = options.onMessage || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
     this.keepAlive = options.keepAliveSeconds || 30;
 
     if (typeof window !== 'undefined') {
-      let onlineDebounceTimer: any = null;
       this.boundOnlineHandler = () => {
-        clearTimeout(onlineDebounceTimer);
-        onlineDebounceTimer = setTimeout(() => {
+        clearTimeout(this.onlineDebounceTimer);
+        this.onlineDebounceTimer = setTimeout(() => {
+          if (this.isDestroyed) return;
           if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             this.reconnectAttempts = 0;
             this.connect();
@@ -67,16 +257,18 @@ export class SimpleMqttClient {
     }
   }
 
+  public setWill(will: MqttWillOptions | null): void {
+    this.will = will;
+  }
+
+  private allocatePacketId(): number {
+    const id = this.nextPacketId;
+    this.nextPacketId = this.nextPacketId >= 65535 ? 1 : this.nextPacketId + 1;
+    return id;
+  }
+
   private encodeRemainingLength(length: number): number[] {
-    const bytes: number[] = [];
-    let l = length;
-    do {
-      let digit = l % 128;
-      l = Math.floor(l / 128);
-      if (l > 0) digit |= 0x80;
-      bytes.push(digit);
-    } while (l > 0);
-    return bytes;
+    return encodeMqttRemainingLength(length);
   }
 
   public connect(): void {
@@ -89,138 +281,107 @@ export class SimpleMqttClient {
     this.onStatusChange('connecting', `Connecting to radar relay (${new URL(currentUrl).hostname})...`);
 
     try {
-      this.ws = new WebSocket(currentUrl, 'mqtt');
-      this.ws.binaryType = 'arraybuffer';
+      const socket = new WebSocket(currentUrl, 'mqtt');
+      socket.binaryType = 'arraybuffer';
+      this.ws = socket;
+      this.rxBuffer = new Uint8Array(0);
+      this.pendingSubacks.clear();
 
-      this.ws.onopen = () => {
-        if (this.isDestroyed) {
-          this.ws?.close();
+      socket.onopen = () => {
+        if (this.isDestroyed || this.ws !== socket) {
+          try { socket.close(); } catch {}
           return;
         }
         this.reconnectAttempts = 0;
-
-        // Send MQTT 3.1.1 CONNECT packet
-        const clientIdBytes = this.encoder.encode(this.clientId);
-        const variableHeader = [
-          0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, // 'MQTT'
-          0x04,                               // Protocol Level 4 (v3.1.1)
-          0x02,                               // Clean Session flag
-          (this.keepAlive >> 8) & 0xff,       // Keepalive MSB
-          this.keepAlive & 0xff,              // Keepalive LSB
-        ];
-
-        const payload = [
-          (clientIdBytes.length >> 8) & 0xff,
-          clientIdBytes.length & 0xff,
-          ...clientIdBytes,
-        ];
-
-        const remaining = new Uint8Array([...variableHeader, ...payload]);
-        const fixedHeader = new Uint8Array([0x10, ...this.encodeRemainingLength(remaining.length)]);
-
-        const packet = new Uint8Array(fixedHeader.length + remaining.length);
-        packet.set(fixedHeader, 0);
-        packet.set(remaining, fixedHeader.length);
-
-        this.ws?.send(packet);
+        const packet = encodeMqttConnectPacket(this.clientId, this.keepAlive, this.will);
+        try {
+          socket.send(packet);
+        } catch {}
       };
 
-      this.ws.onmessage = (event: MessageEvent) => {
-        if (this.isDestroyed) return;
-        const buf = new Uint8Array(event.data);
-        if (buf.length === 0) return;
+      socket.onmessage = (event: MessageEvent) => {
+        if (this.isDestroyed || this.ws !== socket) return;
+        const incoming = event.data instanceof ArrayBuffer
+          ? new Uint8Array(event.data)
+          : (event.data instanceof Uint8Array ? event.data : new Uint8Array(0));
+        if (incoming.length === 0) return;
 
-        const packetType = buf[0] >> 4;
-        this.isAwaitingPong = false;
-
-        if (packetType === 13) {
-          // PINGRESP received from broker: socket is healthy & responsive
-          return;
-        }
-
-        if (packetType === 2) {
-          // CONNACK
-          const returnCode = buf[3];
-          if (returnCode === 0x00) {
-            this.onStatusChange('connected', 'Live on Global Crew Radar');
-            this.startPing();
-            // Re-subscribe all active topics
-            this.subscribedTopics.forEach(topic => this.sendSubscribe(topic));
-
-            // Flush queued critical messages that were blocked during temporary blackout
-            const now = Date.now();
-            const toFlush = this.pendingCriticalQueue.filter(m => (now - m.timestamp) < 90000);
-            this.pendingCriticalQueue = [];
-            toFlush.forEach(item => {
-              this.publish(item.topic, item.payload, false);
-            });
+        let combined: Uint8Array;
+        if (this.rxBuffer.length > 0) {
+          if (this.rxBuffer.length + incoming.length > MAX_RX_BUFFER_BYTES) {
+            this.rxBuffer = new Uint8Array(0);
+            combined = incoming;
           } else {
-            this.onStatusChange('error', `Connection rejected (code ${returnCode})`);
+            combined = new Uint8Array(this.rxBuffer.length + incoming.length);
+            combined.set(this.rxBuffer, 0);
+            combined.set(incoming, this.rxBuffer.length);
           }
-        } else if (packetType === 3) {
-          // PUBLISH packet received
-          try {
-            const qos = (buf[0] & 0x06) >> 1;
-            let offset = 1;
-            let multiplier = 1;
-            let remLen = 0;
-            let digit: number;
-            do {
-              digit = buf[offset++];
-              remLen += (digit & 0x7f) * multiplier;
-              multiplier *= 128;
-            } while ((digit & 0x80) !== 0 && offset < buf.length);
+        } else {
+          combined = incoming;
+        }
 
-            const varHeaderStart = offset;
-            const endOfPacket = Math.min(buf.length, varHeaderStart + remLen);
+        const decoded = decodeMqttFrames(combined);
+        this.rxBuffer = decoded.malformed ? new Uint8Array(0) : decoded.remainder;
 
-            const topicLen = (buf[offset] << 8) | buf[offset + 1];
-            offset += 2;
-            const topic = this.decoder.decode(buf.subarray(offset, offset + topicLen));
-            offset += topicLen;
+        for (const frame of decoded.frames) {
+          this.isAwaitingPong = false;
 
-            // If QoS > 0, MQTT 3.1.1 inserts a 2-byte Packet Identifier here
-            if (qos > 0 && offset + 2 <= endOfPacket) {
-              const packetId = (buf[offset] << 8) | buf[offset + 1];
-              offset += 2;
-              // Acknowledge QoS 1 to stop broker retry flood
-              if (qos === 1 && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                const puback = new Uint8Array([0x40, 0x02, (packetId >> 8) & 0xff, packetId & 0xff]);
-                try {
-                  this.ws.send(puback);
-                } catch {}
-              }
+          if (frame.type === 'PINGRESP') {
+            continue;
+          }
+
+          if (frame.type === 'CONNACK') {
+            if (frame.returnCode === 0x00) {
+              this.onStatusChange('connected', 'Live on Global Crew Radar');
+              this.startPing();
+              this.subscribedTopics.forEach(topic => this.sendSubscribe(topic));
+
+              const now = Date.now();
+              const toFlush = this.pendingCriticalQueue.filter(m => (now - m.timestamp) < 90000);
+              this.pendingCriticalQueue = [];
+              toFlush.forEach(item => {
+                this.publish(item.topic, item.payload, true);
+              });
+            } else {
+              this.onStatusChange('error', `Connection rejected (code ${frame.returnCode})`);
             }
-
-            const payloadBytes = buf.subarray(offset, endOfPacket);
-            const payloadStr = this.decoder.decode(payloadBytes);
-
-            let parsed: any;
+          } else if (frame.type === 'SUBACK') {
+            const topic = this.pendingSubacks.get(frame.packetId);
+            this.pendingSubacks.delete(frame.packetId);
+            if (frame.returnCodes.some(code => code === 0x80)) {
+              console.warn('MQTT subscription rejected for topic:', topic);
+            }
+          } else if (frame.type === 'PUBLISH') {
+            if (frame.qos === 1 && frame.packetId !== undefined && socket.readyState === WebSocket.OPEN) {
+              const puback = new Uint8Array([0x40, 0x02, (frame.packetId >> 8) & 0xff, frame.packetId & 0xff]);
+              try {
+                socket.send(puback);
+              } catch {}
+            }
             try {
-              parsed = JSON.parse(payloadStr);
-            } catch {
-              parsed = payloadStr;
+              this.onMessage(frame.topic, frame.payload);
+            } catch (e) {
+              console.warn('MQTT onMessage handler error', e);
             }
-
-            this.onMessage(topic, parsed);
-          } catch (e) {
-            console.warn('Failed parsing MQTT packet', e);
           }
         }
       };
 
-      this.ws.onerror = () => {
+      socket.onerror = () => {
+        if (this.isDestroyed || this.ws !== socket) return;
         this.onStatusChange('error', 'Radar relay network error');
       };
 
-      this.ws.onclose = () => {
+      socket.onclose = () => {
+        if (this.ws !== socket) return;
+        this.ws = null;
+        this.rxBuffer = new Uint8Array(0);
         this.stopPing();
         if (this.isDestroyed) return;
 
         this.onStatusChange('disconnected', 'Radar relay reconnecting...');
-        this.currentBrokerIndex++; // Try failover broker on next attempt
+        this.currentBrokerIndex++;
 
-        // Exponential backoff reconnect
         this.reconnectAttempts++;
         const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 12000);
         clearTimeout(this.reconnectTimeout);
@@ -228,27 +389,34 @@ export class SimpleMqttClient {
           this.connect();
         }, delay);
       };
-    } catch (err) {
+    } catch {
       this.onStatusChange('error', 'Unable to initialize radar socket');
     }
   }
 
   private sendSubscribe(topic: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const packetId = this.allocatePacketId();
     const topicBytes = this.encoder.encode(topic);
     const body = new Uint8Array([
-      0x00, 0x01, // Packet ID
+      (packetId >> 8) & 0xff,
+      packetId & 0xff,
       (topicBytes.length >> 8) & 0xff,
       topicBytes.length & 0xff,
       ...topicBytes,
       0x00, // Requested QoS 0
     ]);
 
+    this.pendingSubacks.set(packetId, topic);
     const header = new Uint8Array([0x82, ...this.encodeRemainingLength(body.length)]);
     const packet = new Uint8Array(header.length + body.length);
     packet.set(header, 0);
     packet.set(body, header.length);
-    this.ws.send(packet);
+    try {
+      this.ws.send(packet);
+    } catch {
+      this.pendingSubacks.delete(packetId);
+    }
   }
 
   public subscribe(topic: string): void {
@@ -261,7 +429,7 @@ export class SimpleMqttClient {
   }
 
   public publish(topic: string, payload: any, isCritical?: boolean): void {
-    const isCriticalMessage = isCritical !== undefined ? isCritical : 
+    const isCriticalMessage = isCritical !== undefined ? isCritical :
       (typeof payload === 'object' && payload !== null && (payload.type === 'SOS_PING' || payload.type === 'CALLOUT' || payload.type === 'ROUTE_SHARE'));
 
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -309,9 +477,11 @@ export class SimpleMqttClient {
       if (this.isAwaitingPong && (now - this.lastPingSent) >= 8000) {
         console.warn('MQTT ping watchdog timeout (8s) - forcing broker failover reconnect');
         this.stopPing();
-        if (this.ws) {
-          try { this.ws.close(); } catch {}
-          this.ws = null;
+        const staleWs = this.ws;
+        this.ws = null;
+        this.rxBuffer = new Uint8Array(0);
+        if (staleWs) {
+          try { staleWs.close(); } catch {}
         }
         this.currentBrokerIndex++;
         this.connect();
@@ -319,7 +489,6 @@ export class SimpleMqttClient {
       }
 
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        // Send MQTT PINGREQ
         this.lastPingSent = now;
         this.isAwaitingPong = true;
         try {
@@ -341,14 +510,18 @@ export class SimpleMqttClient {
     this.isDestroyed = true;
     this.stopPing();
     clearTimeout(this.reconnectTimeout);
+    clearTimeout(this.onlineDebounceTimer);
     if (typeof window !== 'undefined' && this.boundOnlineHandler) {
       window.removeEventListener('online', this.boundOnlineHandler);
     }
-    if (this.ws) {
+    const staleWs = this.ws;
+    this.ws = null;
+    this.rxBuffer = new Uint8Array(0);
+    this.pendingSubacks.clear();
+    if (staleWs) {
       try {
-        this.ws.close();
+        staleWs.close();
       } catch {}
-      this.ws = null;
     }
   }
 }

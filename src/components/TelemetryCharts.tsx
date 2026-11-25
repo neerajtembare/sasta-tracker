@@ -1,7 +1,6 @@
 import React, { useRef, useMemo } from 'react';
 import { RideAnalysis, AppTheme, UnitSystem } from '../types';
-import { convertSpeed, convertDistance, convertElevation } from '../utils/units';
-import { Mountain, Zap, MoveHorizontal, TrendingUp } from 'lucide-react';
+import { Mountain, Zap, MoveHorizontal } from 'lucide-react';
 
 interface TelemetryChartsProps {
   analysis: RideAnalysis;
@@ -16,14 +15,34 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
   scrubIndex,
   onScrubChange,
   theme = 'dark',
-  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
   const elevChartRef = useRef<SVGSVGElement>(null);
   const speedChartRef = useRef<SVGSVGElement>(null);
 
-  const points = analysis.points;
-  if (!points || points.length < 2) return null;
+  const points = analysis.points || [];
+
+  // Max steep climb slope encountered during ride (computed before any early return)
+  const maxGradientPct = useMemo(() => {
+    if (!points || points.length < 5) return null;
+    let maxSlope = 0;
+    for (let i = 2; i < points.length - 2; i += 2) {
+      const p1 = points[i - 2];
+      const p2 = points[i + 2];
+      if (p1.ele !== null && p2.ele !== null) {
+        const dDist = (p2.distanceFromStartKm - p1.distanceFromStartKm) * 1000;
+        if (dDist >= 15) {
+          const slope = ((p2.ele - p1.ele) / dDist) * 100;
+          if (slope > maxSlope && slope <= 35) {
+            maxSlope = slope;
+          }
+        }
+      }
+    }
+    return maxSlope > 1.5 ? Math.round(maxSlope * 10) / 10 : null;
+  }, [points]);
+
+  if (points.length < 2) return null;
 
   const totalDist = analysis.totalDistanceKm || 1;
   const maxSpeed = Math.max(analysis.maxSpeedKmh, 50);
@@ -119,8 +138,14 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
     onScrubChange(closestIndex);
   };
 
-  // Pointer event handlers (desktop mouse / pen)
+  // Pointer event handlers (scrub on click/drag/touch, never passive mouse hover)
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>, targetRef: React.RefObject<SVGSVGElement | null>) => {
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    updateScrubFromClientX(e.clientX, targetRef.current);
+  };
+
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>, targetRef: React.RefObject<SVGSVGElement | null>) => {
+    if (e.pointerType === 'mouse' && e.buttons === 0) return;
     updateScrubFromClientX(e.clientX, targetRef.current);
   };
 
@@ -140,25 +165,11 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
     ? padding.top + graphHeight - (activePt.speedKmh / maxSpeed) * graphHeight
     : null;
 
-  // Unit definitions and conversions
-  const isImperial = unitSystem === 'imperial';
-  const distUnit = isImperial ? 'mi' : 'km';
-  const elevUnit = isImperial ? 'ft' : 'm';
-  const speedUnit = isImperial ? 'mph' : 'km/h';
-
-  const totalDistConverted = convertDistance(totalDist, unitSystem).value;
   const xTickSteps = [0.05, 0.2, 0.4, 0.6, 0.8, 1];
-  const xTicks = xTickSteps.map(f => (f * totalDistConverted).toFixed(1));
+  const xTicks = xTickSteps.map(f => (f * totalDist).toFixed(1));
 
-  const elevYTicks = [0, 0.25, 0.5, 0.75, 1].map(f => {
-    const rawVal = minElev + elevRange * (1 - f);
-    return isImperial ? Math.round(rawVal * 3.28084) : Math.round(rawVal);
-  });
-
-  const speedYTicks = [0, 0.25, 0.5, 0.75, 1].map(f => {
-    const rawVal = maxSpeed * (1 - f);
-    return isImperial ? Math.round(rawVal * 0.621371) : Math.round(rawVal);
-  });
+  const elevYTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(minElev + elevRange * (1 - f)));
+  const speedYTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(maxSpeed * (1 - f)));
 
   // Road gradient / slope % calculation for active scrub point
   const getGradientPercent = (idx: number | null): number | null => {
@@ -176,64 +187,42 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
     return Math.max(-35, Math.min(35, Math.round(slope * 10) / 10));
   };
 
-  // Max steep climb slope encountered during ride
-  const maxGradientPct = useMemo(() => {
-    if (!points || points.length < 5) return null;
-    let maxSlope = 0;
-    for (let i = 2; i < points.length - 2; i += 2) {
-      const p1 = points[i - 2];
-      const p2 = points[i + 2];
-      if (p1.ele !== null && p2.ele !== null) {
-        const dDist = (p2.distanceFromStartKm - p1.distanceFromStartKm) * 1000;
-        if (dDist >= 15) {
-          const slope = ((p2.ele - p1.ele) / dDist) * 100;
-          if (slope > maxSlope && slope <= 35) {
-            maxSlope = slope;
-          }
-        }
-      }
-    }
-    return maxSlope > 1.5 ? Math.round(maxSlope * 10) / 10 : null;
-  }, [points]);
-
   const activeGradient = getGradientPercent(scrubIndex);
-  const elevMaxConverted = convertElevation(analysis.elevMaxM, unitSystem).value;
-  const elevGainConverted = convertElevation(analysis.elevGainM, unitSystem).value;
-  const maxSpeedConverted = convertSpeed(analysis.maxSpeedKmh, unitSystem);
-  const movingAvgConverted = convertSpeed(analysis.movingAvgSpeedKmh, unitSystem);
+  const elevMaxVal = analysis.elevMaxM !== null && analysis.elevMaxM !== undefined ? Math.round(analysis.elevMaxM) : null;
+  const elevGainVal = Math.round(analysis.elevGainM ?? 0);
 
   // Theme-specific colors
   const cardBg = isLight ? 'bg-white border-slate-200 text-slate-900 shadow-slate-100' : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-black/40';
   const headerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#141d26] border-[#1e2a38]';
-  const subText = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
-  const gridLineColor = isLight ? '#f1f5f9' : '#141d26';
-  const axisTextColor = isLight ? '#64748b' : '#8f9ca8';
+  const subText = isLight ? 'text-slate-600' : 'text-[#8f9ca8]';
+  const gridLineColor = isLight ? '#e2e8f0' : '#141d26';
+  const axisTextColor = isLight ? '#475569' : '#8f9ca8';
   const tooltipBg = isLight ? '#ffffff' : '#0d131a';
   const tooltipText = isLight ? '#0f172a' : '#ffffff';
 
   return (
-    <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-4 telemetry-num">
       {/* 1. ELEVATION & ALTITUDE PROFILE */}
       <div className={`rounded-xl border p-4 shadow-lg space-y-3 transition-colors ${cardBg}`}>
         {/* Header */}
         <div className={`p-2.5 rounded-lg border flex items-center justify-between ${headerBg}`}>
           <div className="flex items-center gap-2">
-            <Mountain className="w-4 h-4 text-sky-400" />
+            <Mountain className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
             <span className="font-heading font-black text-xs uppercase tracking-wider">
-              Elevation & Altitude Profile
+              Elevation &amp; Altitude Profile
             </span>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono">
             <span>
-              <strong className="text-sky-400 font-bold">{elevMaxConverted ?? '—'}{elevUnit}</strong> peak
+              <strong className={`font-bold ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>{elevMaxVal ?? '—'} m</strong> peak
             </span>
             <span className={subText}>•</span>
-            <span className="text-emerald-400 font-bold">+{elevGainConverted ?? 0}{elevUnit}</span>
+            <span className={`font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>+{elevGainVal} m</span>
             {maxGradientPct !== null && (
               <>
                 <span className={subText}>•</span>
-                <span className="text-amber-400 font-bold" title="Maximum sustained road climb grade">
+                <span className={`font-bold ${isLight ? 'text-amber-700' : 'text-amber-400'}`} title="Maximum sustained road climb grade">
                   {maxGradientPct}% climb
                 </span>
               </>
@@ -242,16 +231,16 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
         </div>
 
         {/* Mobile touch hint */}
-        <div className="flex items-center justify-between text-[11px] font-mono px-1">
+        <div className="flex items-center justify-between text-[11px] font-sans px-1">
           <span className={`flex items-center gap-1 ${subText}`}>
-            <MoveHorizontal className="w-3.5 h-3.5 text-sky-400" />
-            <span>Drag or swipe anywhere to inspect route point</span>
+            <MoveHorizontal className={`w-3.5 h-3.5 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
+            <span>Click or swipe anywhere to inspect route point</span>
           </span>
           {activePt && (
-            <span className="text-sky-400 font-bold">
-              {convertDistance(activePt.distanceFromStartKm, unitSystem).value.toFixed(1)} {distUnit} mark
+            <span className={`font-mono font-bold ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
+              {activePt.distanceFromStartKm.toFixed(1)} km mark
               {activeGradient !== null && (
-                <span className={activeGradient > 0 ? ' text-emerald-400 font-semibold' : activeGradient < 0 ? ' text-rose-400 font-semibold' : ''}>
+                <span className={activeGradient > 0 ? (isLight ? 'text-emerald-700 font-semibold' : 'text-emerald-400 font-semibold') : activeGradient < 0 ? (isLight ? 'text-rose-700 font-semibold' : 'text-rose-400 font-semibold') : ''}>
                   {' '}({activeGradient > 0 ? `+${activeGradient}%` : `${activeGradient}%`} grade)
                 </span>
               )}
@@ -266,6 +255,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
             className="w-full h-auto cursor-crosshair touch-none"
             style={{ touchAction: 'none' }}
+            onPointerDown={e => handlePointerDown(e, elevChartRef)}
             onPointerMove={e => handlePointerMove(e, elevChartRef)}
             onTouchStart={e => handleTouchMove(e, elevChartRef)}
             onTouchMove={e => handleTouchMove(e, elevChartRef)}
@@ -300,7 +290,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
               fontFamily="system-ui"
               textAnchor="middle"
             >
-              Altitude ({elevUnit})
+              Altitude (m)
             </text>
 
             {elevYTicks.map((val, idx) => {
@@ -387,7 +377,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
                       fontWeight="bold"
                       textAnchor="middle"
                     >
-                      {activePt.ele !== null ? `${convertElevation(activePt.ele, unitSystem).value}${elevUnit}` : '—'}
+                      {activePt.ele !== null ? `${Math.round(activePt.ele)} m` : '—'}
                       {activeGradient !== null ? ` • ${activeGradient > 0 ? `+${activeGradient}%` : `${activeGradient}%`}` : ''}
                     </text>
                   </g>
@@ -429,7 +419,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
               fontFamily="system-ui"
               textAnchor="middle"
             >
-              Track Distance ({distUnit.toUpperCase()})
+              Track Distance (KM)
             </text>
           </svg>
         </div>
@@ -442,28 +432,28 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-rose-500" />
             <span className="font-heading font-black text-xs uppercase tracking-wider">
-              Speed & Velocity Profile
+              Speed &amp; Velocity Profile
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono">
             <span>
-              <strong className="text-rose-500 font-bold">{maxSpeedConverted.value.toFixed(1)}</strong> {speedUnit} peak
+              <strong className={`font-bold ${isLight ? 'text-rose-700' : 'text-rose-500'}`}>{analysis.maxSpeedKmh.toFixed(1)}</strong> km/h peak
             </span>
             <span className={subText}>•</span>
-            <span className="text-emerald-400 font-bold">{movingAvgConverted.value.toFixed(1)} {speedUnit} avg</span>
+            <span className={`font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{analysis.movingAvgSpeedKmh.toFixed(1)} km/h avg</span>
           </div>
         </div>
 
         {/* Mobile touch hint */}
-        <div className="flex items-center justify-between text-[11px] font-mono px-1">
+        <div className="flex items-center justify-between text-[11px] font-sans px-1">
           <span className={`flex items-center gap-1 ${subText}`}>
-            <MoveHorizontal className="w-3.5 h-3.5 text-rose-400" />
-            <span>Drag or swipe anywhere to inspect speed</span>
+            <MoveHorizontal className={`w-3.5 h-3.5 ${isLight ? 'text-rose-700' : 'text-rose-400'}`} />
+            <span>Click or swipe anywhere to inspect speed</span>
           </span>
           {activePt && (
-            <span className="text-rose-400 font-bold">
-              {convertSpeed(activePt.speedKmh, unitSystem).value.toFixed(1)} {speedUnit}
+            <span className={`font-mono font-bold ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>
+              {activePt.speedKmh.toFixed(1)} km/h
             </span>
           )}
         </div>
@@ -475,6 +465,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
             className="w-full h-auto cursor-crosshair touch-none"
             style={{ touchAction: 'none' }}
+            onPointerDown={e => handlePointerDown(e, speedChartRef)}
             onPointerMove={e => handlePointerMove(e, speedChartRef)}
             onTouchStart={e => handleTouchMove(e, speedChartRef)}
             onTouchMove={e => handleTouchMove(e, speedChartRef)}
@@ -509,7 +500,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
               fontFamily="system-ui"
               textAnchor="middle"
             >
-              Speed ({speedUnit.toUpperCase()})
+              Speed (KM/H)
             </text>
 
             {speedYTicks.map((val, idx) => {
@@ -596,7 +587,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
                       fontWeight="bold"
                       textAnchor="middle"
                     >
-                      {convertSpeed(activePt.speedKmh, unitSystem).value.toFixed(1)} {speedUnit}
+                      {activePt.speedKmh.toFixed(1)} km/h
                     </text>
                   </g>
                 )}
@@ -637,7 +628,7 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({
               fontFamily="system-ui"
               textAnchor="middle"
             >
-              Track Distance ({distUnit.toUpperCase()})
+              Track Distance (KM)
             </text>
           </svg>
         </div>

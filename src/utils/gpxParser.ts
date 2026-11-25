@@ -136,13 +136,14 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     const segPoints: TrackPoint[] = [];
     let segDistM = 0;
     let segMovingTime = 0;
-    let segElevGain = 0;
-    let segElevLoss = 0;
 
     segData.ptsElements.forEach((ptEl, i) => {
-      const lat = parseFloat(ptEl.getAttribute('lat') || '0');
-      const lon = parseFloat(ptEl.getAttribute('lon') || '0');
-      if (isNaN(lat) || isNaN(lon)) return;
+      const rawLat = ptEl.getAttribute('lat');
+      const rawLon = ptEl.getAttribute('lon');
+      if (rawLat === null || rawLon === null) return;
+      const lat = parseFloat(rawLat);
+      const lon = parseFloat(rawLon);
+      if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) return;
 
       const eleEl = ptEl.querySelector('ele');
       const ele = eleEl && eleEl.textContent ? parseFloat(eleEl.textContent) : null;
@@ -199,14 +200,22 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
           speedMs = dt > 0 ? stepDistM / dt : 0;
         }
 
-        // Outlier protection: if instantaneous speed exceeds 80 m/s (~288 km/h) due to GPS multipath jitter
-        if (speedMs > 80 && prev.speed > 0) {
-          speedMs = Math.min(speedMs, prev.speed * 1.4);
+        // Outlier protection: reject extreme GPS multipath spikes (>65 m/s / ~234 km/h or unphysical acceleration jumps)
+        if (speedMs > 65 || (prev.speed > 0 && dt > 0 && speedMs - prev.speed > 18 * Math.max(1, dt))) {
+          speedMs = prev.speed > 0
+            ? Math.min(62, Math.max(prev.speed * 1.25, prev.speed + 12 * Math.max(0.5, dt)))
+            : 0;
         }
 
-        // Stationary Noise Gate: filter out random GPS walk when bike is parked/stopped (< 2.5m displacement and < 2.5 km/h)
+        // Stationary Noise Gate & Physical Teleport Guard:
+        // Ignore GPS walk when stopped AND clamp physical displacement if coords teleported (>85 m/s / ~306 km/h)
         const isStationaryJitter = stepDistM < 2.5 && speedMs < 0.7;
-        const effectiveStepDist = isStationaryJitter ? 0 : stepDistM;
+        const isTeleportJump = dt > 0 && (stepDistM / dt) > 85;
+        const effectiveStepDist = isStationaryJitter
+          ? 0
+          : isTeleportJump
+            ? Math.min(stepDistM, Math.max(0, speedMs) * dt)
+            : stepDistM;
         if (isStationaryJitter) {
           speedMs = 0;
         }
@@ -415,7 +424,39 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   }
 
   // Pass B: Continuous stationary clusters (< 2.5 km/h) lasting >= minStopSeconds
+  // Allows brief 1-2 point GPS speed jitter spikes (<= 5.5 km/h within 35m) without shattering pit stops
   let clusterStartIndex = -1;
+  let lastStationaryIndex = -1;
+  let jitterStreak = 0;
+
+  const finalizeCluster = (startIdx: number, endIdx: number) => {
+    if (startIdx < 0 || endIdx <= startIdx) return;
+    const pStart = allPoints[startIdx];
+    const pEnd = allPoints[endIdx];
+    if (pStart.time && pEnd.time) {
+      const duration = (new Date(pEnd.time).getTime() - new Date(pStart.time).getTime()) / 1000;
+      if (duration >= minStopSeconds) {
+        let sumLat = 0;
+        let sumLon = 0;
+        const count = endIdx - startIdx + 1;
+        for (let c = startIdx; c <= endIdx; c++) {
+          sumLat += allPoints[c].lat;
+          sumLon += allPoints[c].lon;
+        }
+        rawStops.push({
+          startTime: pStart.time,
+          durationSeconds: duration,
+          lat: sumLat / count,
+          lon: sumLon / count,
+          ele: pStart.ele,
+          segmentIndex: pStart.segmentIndex,
+          distanceKm: pStart.distanceFromStartKm,
+          isCluster: true,
+        });
+      }
+    }
+  };
+
   for (let i = 0; i < allPoints.length; i++) {
     const pt = allPoints[i];
     const isStationary = pt.speedKmh <= 2.5;
@@ -424,57 +465,25 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
       if (clusterStartIndex === -1) {
         clusterStartIndex = i;
       }
-    } else {
-      if (clusterStartIndex !== -1) {
-        const pStart = allPoints[clusterStartIndex];
-        const pEnd = allPoints[i - 1];
-        if (pStart.time && pEnd.time) {
-          const duration = (new Date(pEnd.time).getTime() - new Date(pStart.time).getTime()) / 1000;
-          if (duration >= minStopSeconds) {
-            // Calculate centroid coordinates of the cluster
-            let sumLat = 0;
-            let sumLon = 0;
-            const count = i - clusterStartIndex;
-            for (let c = clusterStartIndex; c < i; c++) {
-              sumLat += allPoints[c].lat;
-              sumLon += allPoints[c].lon;
-            }
-            rawStops.push({
-              startTime: pStart.time,
-              durationSeconds: duration,
-              lat: sumLat / count,
-              lon: sumLon / count,
-              ele: pStart.ele,
-              segmentIndex: pStart.segmentIndex,
-              distanceKm: pStart.distanceFromStartKm,
-              isCluster: true,
-            });
-          }
-        }
+      lastStationaryIndex = i;
+      jitterStreak = 0;
+    } else if (clusterStartIndex !== -1) {
+      const anchor = allPoints[clusterStartIndex];
+      const distFromAnchorM = haversineDistance(anchor.lat, anchor.lon, pt.lat, pt.lon);
+      if (pt.speedKmh <= 5.5 && distFromAnchorM <= 35 && jitterStreak < 2) {
+        jitterStreak++;
+      } else {
+        finalizeCluster(clusterStartIndex, lastStationaryIndex);
         clusterStartIndex = -1;
+        lastStationaryIndex = -1;
+        jitterStreak = 0;
       }
     }
   }
 
   // Check tail cluster if ride ended stationary
   if (clusterStartIndex !== -1) {
-    const pStart = allPoints[clusterStartIndex];
-    const pEnd = allPoints[allPoints.length - 1];
-    if (pStart.time && pEnd.time) {
-      const duration = (new Date(pEnd.time).getTime() - new Date(pStart.time).getTime()) / 1000;
-      if (duration >= minStopSeconds) {
-        rawStops.push({
-          startTime: pStart.time,
-          durationSeconds: duration,
-          lat: pStart.lat,
-          lon: pStart.lon,
-          ele: pStart.ele,
-          segmentIndex: pStart.segmentIndex,
-          distanceKm: pStart.distanceFromStartKm,
-          isCluster: true,
-        });
-      }
-    }
+    finalizeCluster(clusterStartIndex, lastStationaryIndex >= clusterStartIndex ? lastStationaryIndex : allPoints.length - 1);
   }
 
   // Merge stops within 150m of each other ONLY if they are also close in route progress (< 2.5 km)
@@ -546,9 +555,12 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   const wptEls = Array.from(doc.querySelectorAll('wpt'));
   const explicitWaypoints: PitStop[] = [];
   wptEls.forEach((wptEl, idx) => {
-    const lat = parseFloat(wptEl.getAttribute('lat') || '0');
-    const lon = parseFloat(wptEl.getAttribute('lon') || '0');
-    if (isNaN(lat) || isNaN(lon)) return;
+    const rawLat = wptEl.getAttribute('lat');
+    const rawLon = wptEl.getAttribute('lon');
+    if (rawLat === null || rawLon === null) return;
+    const lat = parseFloat(rawLat);
+    const lon = parseFloat(rawLon);
+    if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) return;
 
     const nameEl = wptEl.querySelector('name');
     const name = nameEl?.textContent?.trim() || `Waypoint #${idx + 1}`;
@@ -704,7 +716,7 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
     boundingBox = { minLat, maxLat, minLon, maxLon };
   }
 
-  const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh);
+  const activityType = guessActivity(movingAvgSpeedKmh, maxSpeedKmh, totalDistanceKm);
 
   return {
     name: trackName,
@@ -737,7 +749,7 @@ export function parseGPX(xmlText: string, minStopSeconds: number = 300): RideAna
   };
 }
 
-export function guessActivity(avgKmh: number, maxKmh: number): {
+export function guessActivity(avgKmh: number, maxKmh: number, totalDistanceKm: number = 0): {
   label: string;
   emoji: string;
   category: 'walking' | 'cycling' | 'motorbike' | 'racing';
@@ -745,10 +757,11 @@ export function guessActivity(avgKmh: number, maxKmh: number): {
   if (maxKmh > 130 || avgKmh > 75) {
     return { label: 'High-Speed Track', emoji: '🏎️', category: 'racing' };
   }
-  if (avgKmh >= 24 || maxKmh > 55) {
+  // Account for slow technical ADV / mountain ghat motorcycling where avg < 24 km/h
+  if (avgKmh >= 24 || maxKmh > 44 || (avgKmh >= 15 && totalDistanceKm >= 25)) {
     return { label: 'Motorbike / Vehicle', emoji: '🏍️', category: 'motorbike' };
   }
-  if (avgKmh >= 8 || maxKmh > 20) {
+  if (avgKmh >= 8 || maxKmh > 16) {
     return { label: 'Cycling Ride', emoji: '🚴', category: 'cycling' };
   }
   return { label: 'Walking / Hike', emoji: '🚶', category: 'walking' };

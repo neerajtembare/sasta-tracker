@@ -17,8 +17,6 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
   onSaveName,
   theme = 'dark',
 }) => {
-  if (!isOpen) return null;
-
   const isLight = theme === 'light';
   const [name, setName] = useState(currentName);
 
@@ -27,6 +25,8 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
       setName(currentName);
     }
   }, [isOpen, currentName]);
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +44,7 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
   return (
     <div 
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
+      className="fixed inset-0 z-[9000] flex items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
     >
       <div 
         className={`w-full max-w-md border rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain cursor-default ${modalBg}`}
@@ -56,8 +56,10 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
             <span>Edit Ride Name</span>
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1c2633]'}`}
+            aria-label="Close edit ride name modal"
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1c2633]'}`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -65,14 +67,15 @@ export const RideDetailsEditorModal: React.FC<RideDetailsEditorModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto">
           <div>
-            <label className={`block text-xs font-bold mb-1.5 uppercase tracking-wide ${labelColor}`}>
+            <label htmlFor="ride-title-input" className={`block text-xs font-bold mb-1.5 uppercase tracking-wide ${labelColor}`}>
               Ride Title
             </label>
             <input
+              id="ride-title-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Sunday Morning Breakfast Ride to Lonavala"
+              placeholder="e.g. Sunday Morning Breakfast Ride"
               required
               className={`w-full px-3.5 py-2.5 border rounded-xl text-sm font-medium focus:outline-none ${inputBg}`}
             />

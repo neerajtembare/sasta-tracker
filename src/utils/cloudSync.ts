@@ -10,15 +10,46 @@ export interface GistSyncConfig {
   lastSyncMessage?: string;
 }
 
-const CONFIG_STORAGE_KEY = 'sasta_cloud_sync_config_v1';
+const CONFIG_STORAGE_KEY = 'throttlelog_cloud_sync_config_v2';
+const LEGACY_CONFIG_STORAGE_KEY = 'sasta_cloud_sync_config_v1';
+const SESSION_TOKEN_KEY = 'throttlelog_gh_pat_session';
+
+// Hold GitHub PAT in memory / sessionStorage only (never persisted in plaintext localStorage)
+let inMemoryPatToken = '';
+
+function getSessionPatToken(): string {
+  if (inMemoryPatToken) return inMemoryPatToken;
+  try {
+    const s = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    if (s) {
+      inMemoryPatToken = s;
+      return s;
+    }
+  } catch {}
+  return '';
+}
+
+function setSessionPatToken(token: string): void {
+  const clean = token.trim();
+  inMemoryPatToken = clean;
+  try {
+    if (clean) {
+      sessionStorage.setItem(SESSION_TOKEN_KEY, clean);
+    } else {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    }
+  } catch {}
+}
 
 export function getCloudSyncConfig(): GistSyncConfig {
   try {
-    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    const rawNew = localStorage.getItem(CONFIG_STORAGE_KEY);
+    const rawLegacy = !rawNew ? localStorage.getItem(LEGACY_CONFIG_STORAGE_KEY) : null;
+    const raw = rawNew || rawLegacy;
     if (!raw) {
       return {
         enabled: false,
-        token: '',
+        token: getSessionPatToken(),
         gistId: '',
         autoSync: false,
         lastSyncTime: null,
@@ -26,9 +57,28 @@ export function getCloudSyncConfig(): GistSyncConfig {
       };
     }
     const parsed = JSON.parse(raw);
+
+    // Strip any legacy plaintext PAT stored in localStorage on prior versions and move to session only
+    if (parsed.token && typeof parsed.token === 'string' && parsed.token.trim()) {
+      if (!getSessionPatToken()) {
+        setSessionPatToken(parsed.token.trim());
+      }
+      const sanitized = { ...parsed };
+      delete sanitized.token;
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(sanitized));
+        if (rawLegacy) localStorage.removeItem(LEGACY_CONFIG_STORAGE_KEY);
+      } catch {}
+    } else if (rawLegacy) {
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, rawLegacy);
+        localStorage.removeItem(LEGACY_CONFIG_STORAGE_KEY);
+      } catch {}
+    }
+
     return {
       enabled: Boolean(parsed.enabled),
-      token: parsed.token || '',
+      token: getSessionPatToken(),
       gistId: parsed.gistId || '',
       autoSync: Boolean(parsed.autoSync),
       lastSyncTime: parsed.lastSyncTime || null,
@@ -38,7 +88,7 @@ export function getCloudSyncConfig(): GistSyncConfig {
   } catch {
     return {
       enabled: false,
-      token: '',
+      token: getSessionPatToken(),
       gistId: '',
       autoSync: false,
       lastSyncTime: null,
@@ -49,12 +99,26 @@ export function getCloudSyncConfig(): GistSyncConfig {
 
 export function saveCloudSyncConfig(config: Partial<GistSyncConfig>): GistSyncConfig {
   const current = getCloudSyncConfig();
+  if (config.token !== undefined) {
+    setSessionPatToken(config.token);
+  }
   const updated: GistSyncConfig = {
     ...current,
     ...config,
+    token: config.token !== undefined ? config.token.trim() : getSessionPatToken(),
   };
   try {
-    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(updated));
+    // Strip raw PAT before saving non-sensitive metadata to localStorage
+    const persisted = {
+      enabled: updated.enabled,
+      gistId: updated.gistId,
+      autoSync: updated.autoSync,
+      lastSyncTime: updated.lastSyncTime,
+      lastSyncStatus: updated.lastSyncStatus,
+      lastSyncMessage: updated.lastSyncMessage,
+    };
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(persisted));
+    localStorage.removeItem(LEGACY_CONFIG_STORAGE_KEY);
   } catch (err) {
     console.error('Failed to save cloud sync config:', err);
   }
@@ -288,6 +352,25 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const slice = bytes.subarray(i, i + CHUNK_SIZE);
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
+}
+
 /**
  * Encrypt Garage rides JSON with password
  */
@@ -313,10 +396,11 @@ export async function exportEncryptedGarage(password: string): Promise<string> {
   const buffer = new Uint8Array(ciphertext);
   const payload = {
     app: 'ThrottleLog Encrypted Backup',
-    version: 1,
-    salt: Array.from(salt),
-    iv: Array.from(iv),
-    data: Array.from(buffer),
+    version: 2,
+    encoding: 'base64',
+    salt: uint8ToBase64(salt),
+    iv: uint8ToBase64(iv),
+    data: uint8ToBase64(buffer),
     count: rides.length,
     timestamp: new Date().toISOString(),
   };
@@ -337,17 +421,17 @@ export async function importEncryptedGarage(jsonString: string, password: string
     throw new Error('Invalid encrypted backup file format.');
   }
 
-  const salt = new Uint8Array(payload.salt);
-  const iv = new Uint8Array(payload.iv);
-  const ciphertext = new Uint8Array(payload.data);
+  const salt = typeof payload.salt === 'string' ? base64ToUint8(payload.salt) : new Uint8Array(payload.salt);
+  const iv = typeof payload.iv === 'string' ? base64ToUint8(payload.iv) : new Uint8Array(payload.iv);
+  const ciphertext = typeof payload.data === 'string' ? base64ToUint8(payload.data) : new Uint8Array(payload.data);
 
   const key = await deriveKey(password, salt);
 
   try {
     const decrypted = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: iv as any },
       key,
-      ciphertext
+      ciphertext as any
     );
     const dec = new TextDecoder();
     const jsonStr = dec.decode(decrypted);

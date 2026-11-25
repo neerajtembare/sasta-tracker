@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { RideAnalysis, AppTheme } from '../types';
-import { Compass, Flame, ArrowLeft, ArrowRight, Zap, Info } from 'lucide-react';
+import { Compass, ArrowLeft, ArrowRight, Info } from 'lucide-react';
 
 interface CorneringProfileCardProps {
   analysis: RideAnalysis;
@@ -29,11 +29,11 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
       if (lean < 0) {
         const absL = Math.abs(lean);
         if (absL > maxLeft) maxLeft = absL;
-        if (absL >= 28) deepLeft++;
+        if (absL >= 25) deepLeft++;
         else if (absL >= 14) moderateSweeps++;
       } else if (lean > 0) {
         if (lean > maxRight) maxRight = lean;
-        if (lean >= 28) deepRight++;
+        if (lean >= 25) deepRight++;
         else if (lean >= 14) moderateSweeps++;
       }
 
@@ -75,47 +75,51 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
           </div>
           <div>
             <h3 className="font-heading font-black text-sm uppercase tracking-wider">
-              Cornering & Tire Lean Profile
+              Cornering &amp; Tire Lean Profile
             </h3>
-            <p className={`text-[11px] font-mono ${subText}`}>
+            <p className={`text-[11px] font-sans ${subText}`}>
               Apex roll angles, lateral acceleration Gs, and twisty road dynamics
             </p>
           </div>
         </div>
 
-        <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded uppercase">
+        <span className={`px-2 py-0.5 text-[10px] font-sans font-bold border rounded uppercase ${
+          isLight ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+        }`}>
           Apex Telemetry
         </span>
       </div>
 
       {/* Visual Lean Comparison Meter */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 telemetry-num">
         {/* Left Lean */}
         <div className={`p-4 rounded-xl border relative overflow-hidden space-y-2 ${innerCardBg}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-mono font-bold uppercase flex items-center gap-1 ${subText}`}>
-              <ArrowLeft className="w-3.5 h-3.5 text-sky-400" />
+            <span className={`text-[11px] font-sans font-bold uppercase flex items-center gap-1 ${subText}`}>
+              <ArrowLeft className={`w-3.5 h-3.5 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
               <span>MAX LEFT LEAN</span>
             </span>
-            <span className="text-[10px] font-mono text-sky-400 font-bold">{corneringStats.deepLeft} hairpins</span>
+            <span className={`text-[10px] font-sans font-bold ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>{corneringStats.deepLeft} corners</span>
           </div>
 
           <div className="flex items-baseline justify-between flex-wrap gap-1">
             <div className="flex items-baseline gap-2">
-              <div className="text-3xl sm:text-4xl font-mono font-black text-sky-400">
+              <div className={`text-3xl sm:text-4xl font-mono font-black ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
                 {corneringStats.maxLeft}°
               </div>
-              <span className="text-xs font-mono text-sky-500 font-bold">LEFT</span>
+              <span className={`text-xs font-sans font-bold ${isLight ? 'text-sky-700' : 'text-sky-500'}`}>LEFT</span>
             </div>
-            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+            <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border ${
+              isLight ? 'bg-sky-50 text-sky-800 border-sky-300' : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+            }`}>
               {corneringStats.leftG}G
             </span>
           </div>
 
           {/* Bar indicator */}
-          <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex justify-end">
+          <div className={`w-full h-2.5 rounded-full overflow-hidden flex justify-end ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`}>
             <div 
-              className="bg-sky-400 h-full rounded-full transition-all"
+              className="bg-sky-500 h-full rounded-full transition-all"
               style={{ width: `${Math.min(100, (corneringStats.maxLeft / 55) * 100)}%` }}
             />
           </div>
@@ -124,81 +128,83 @@ export const CorneringProfileCard: React.FC<CorneringProfileCardProps> = ({
         {/* Right Lean */}
         <div className={`p-4 rounded-xl border relative overflow-hidden space-y-2 ${innerCardBg}`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[11px] font-mono font-bold uppercase flex items-center gap-1 ${subText}`}>
+            <span className={`text-[11px] font-sans font-bold uppercase flex items-center gap-1 ${subText}`}>
               <span>MAX RIGHT LEAN</span>
-              <ArrowRight className="w-3.5 h-3.5 text-rose-400" />
+              <ArrowRight className={`w-3.5 h-3.5 ${isLight ? 'text-rose-700' : 'text-rose-400'}`} />
             </span>
-            <span className="text-[10px] font-mono text-rose-400 font-bold">{corneringStats.deepRight} hairpins</span>
+            <span className={`text-[10px] font-sans font-bold ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>{corneringStats.deepRight} corners</span>
           </div>
 
           <div className="flex items-baseline justify-between flex-wrap gap-1">
             <div className="flex items-baseline gap-2">
-              <div className="text-3xl sm:text-4xl font-mono font-black text-rose-400">
+              <div className={`text-3xl sm:text-4xl font-mono font-black ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>
                 {corneringStats.maxRight}°
               </div>
-              <span className="text-xs font-mono text-rose-500 font-bold">RIGHT</span>
+              <span className={`text-xs font-sans font-bold ${isLight ? 'text-rose-700' : 'text-rose-500'}`}>RIGHT</span>
             </div>
-            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+            <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border ${
+              isLight ? 'bg-rose-50 text-rose-800 border-rose-300' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+            }`}>
               {corneringStats.rightG}G
             </span>
           </div>
 
           {/* Bar indicator */}
-          <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+          <div className={`w-full h-2.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`}>
             <div 
-              className="bg-rose-400 h-full rounded-full transition-all"
+              className="bg-rose-500 h-full rounded-full transition-all"
               style={{ width: `${Math.min(100, (corneringStats.maxRight / 55) * 100)}%` }}
             />
           </div>
         </div>
       </div>
 
-      {/* Highlights: Apex Speed & Turn Counts (Comments placed on right to eliminate vertical scrolling) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+      {/* Highlights: Apex Speed & Turn Counts */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 telemetry-num">
         <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
           <div>
-            <div className={`text-[10px] uppercase font-bold ${subText}`}>MAX APEX SPEED</div>
-            <div className="text-xl font-black text-emerald-400 mt-0.5">
-              {corneringStats.maxApexSpeedKmh} <span className="text-xs font-normal">KM/H</span>
+            <div className={`text-[10px] font-sans uppercase font-bold ${subText}`}>MAX APEX SPEED</div>
+            <div className={`text-xl font-black mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
+              {corneringStats.maxApexSpeedKmh} <span className="text-xs font-normal">km/h</span>
             </div>
           </div>
-          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
-            Carried through &gt;15° lean
+          <div className={`text-[10px] font-sans text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+            Carried through ≥20° lean
           </div>
         </div>
 
         <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
           <div>
-            <div className={`text-[10px] uppercase font-bold ${subText}`}>DEEP CORNERS (&gt;20°)</div>
-            <div className="text-xl font-black text-amber-400 mt-0.5">
-              {corneringStats.deepLeft + corneringStats.deepRight} <span className="text-xs font-normal">TURNS</span>
+            <div className={`text-[10px] font-sans uppercase font-bold ${subText}`}>DEEP CORNERS (≥25°)</div>
+            <div className={`text-xl font-black mt-0.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
+              {corneringStats.deepLeft + corneringStats.deepRight} <span className="text-xs font-normal">POINTS</span>
             </div>
           </div>
-          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
-            Ghat / mountain switchbacks
+          <div className={`text-[10px] font-sans text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+            Tight mountain switchbacks
           </div>
         </div>
 
         <div className={`p-3 sm:p-3.5 rounded-xl border font-mono flex items-center justify-between gap-2 ${innerCardBg}`}>
           <div>
-            <div className={`text-[10px] uppercase font-bold ${subText}`}>MODERATE SWEEPS</div>
-            <div className="text-xl font-black text-sky-400 mt-0.5">
-              {corneringStats.moderateSweeps} <span className="text-xs font-normal">CURVES</span>
+            <div className={`text-[10px] font-sans uppercase font-bold ${subText}`}>MODERATE SWEEPS (14–24°)</div>
+            <div className={`text-xl font-black mt-0.5 ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
+              {corneringStats.moderateSweeps} <span className="text-xs font-normal">POINTS</span>
             </div>
           </div>
-          <div className={`text-[10px] text-right font-medium max-w-[130px] leading-tight ${subText}`}>
+          <div className={`text-[10px] font-sans text-right font-medium max-w-[130px] leading-tight ${subText}`}>
             Highway high-speed bends
           </div>
         </div>
       </div>
 
       {/* Physics explainer note */}
-      <div className={`p-3 rounded-xl border flex items-start gap-2 text-[11px] font-mono leading-relaxed ${
-        isLight ? 'bg-amber-50/70 border-amber-200 text-amber-900' : 'bg-amber-950/20 border-amber-500/20 text-amber-300'
+      <div className={`p-3 rounded-xl border flex items-start gap-2 text-[11px] font-sans leading-relaxed ${
+        isLight ? 'bg-amber-50/70 border-amber-200 text-amber-950' : 'bg-amber-950/20 border-amber-500/20 text-amber-200'
       }`}>
-        <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+        <Info className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
         <p>
-          Lean angles are computed from centripetal cornering velocity (<code className="font-bold">v² / (R · g)</code>) and roll gyro telemetry. MotoGP riders achieve 60°+, while spirited road touring typically ranges between 35°–48°.
+          GPX track lean angles are physics estimates from centripetal cornering velocity (<code className="font-mono font-bold">v² / (R · g)</code>) when recorded without an IMU gyroscope feed.
         </p>
       </div>
     </div>

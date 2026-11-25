@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
-import { 
-  X, 
-  Smartphone, 
-  BatteryCharging, 
-  Gauge, 
-  Compass, 
-  ShieldCheck, 
-  Play, 
+import React, { useState, useEffect } from 'react';
+import {
+  X,
+  Bike,
+  Smartphone,
+  BatteryCharging,
+  Gauge,
+  Compass,
+  ShieldCheck,
+  Play,
   MapPin,
-  Check
+  Check,
+  Zap,
+  Lock,
+  Satellite,
 } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 import { AppTheme } from '../types';
@@ -30,7 +34,13 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
 }) => {
   const isLight = theme === 'light';
   const [selectedMountMode, setSelectedMountMode] = useState<'handlebar' | 'pocket'>(currentMountMode);
-  const [preferredView, setPreferredView] = useState<'map' | 'cockpit'>('map');
+  const [preferredView, setPreferredView] = useState<'map' | 'cockpit'>('cockpit');
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedMountMode(currentMountMode);
+    }
+  }, [isOpen, currentMountMode]);
 
   if (!isOpen) return null;
 
@@ -44,7 +54,7 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9000] flex items-end sm:items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -56,9 +66,9 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
       />
 
       {/* Modal Dialog */}
-      <div 
+      <div
         onClick={(e) => e.stopPropagation()}
-        className={`relative z-10 w-full max-w-lg rounded-3xl border shadow-2xl p-4 sm:p-6 font-mono space-y-4 max-h-[92dvh] overflow-y-auto no-scrollbar transition-all ${
+        className={`relative z-10 w-full max-w-lg rounded-3xl border shadow-2xl p-4 sm:p-6 font-sans space-y-4 max-h-[90dvh] overflow-y-auto no-scrollbar transition-all ${
           isLight
             ? 'bg-white border-slate-300 text-slate-800'
             : 'bg-[#0d131a] border-cyan-500/40 text-white shadow-cyan-950/40'
@@ -67,23 +77,26 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
         {/* Header */}
         <div className={`flex items-center justify-between pb-3 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-xl shrink-0">
-              🏍️
+            <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
+              isLight ? 'bg-cyan-50 border-cyan-300 text-cyan-700' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
+            }`}>
+              <Bike className="w-5 h-5" />
             </div>
             <div>
               <h2 className={`font-heading font-black text-base sm:text-lg tracking-wider uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
                 Start Solo Ride
               </h2>
-              <p className={`text-[11px] font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
-                Choose how you are carrying your phone on this ride
+              <p className={`text-[11px] font-sans ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                Choose how you carry your phone for this ride
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
-              isLight ? 'text-slate-400 hover:text-slate-800 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            aria-label="Close Start Solo Ride Modal"
+            className={`p-2 rounded-xl transition-colors cursor-pointer ${
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <X className="w-5 h-5" />
@@ -118,7 +131,9 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
                     <span className={`font-heading font-black text-sm uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
                       Handlebar Mount
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase ${
+                      isLight ? 'bg-cyan-100 text-cyan-800 border-cyan-300' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                    }`}>
                       Live HUD
                     </span>
                   </div>
@@ -131,17 +146,14 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
                     <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
                       isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-800/90 text-slate-300 border-slate-700'
                     }`}>
-                      <span>⚡ Screen Awake</span>
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      <span>Screen Awake</span>
                     </span>
                     <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
                       isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-800/90 text-slate-300 border-slate-700'
                     }`}>
-                      <span>📐 3D Lean Angle</span>
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
-                      isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-800/90 text-slate-300 border-slate-700'
-                    }`}>
-                      <span>🧭 Live Heading</span>
+                      <Compass className="w-3 h-3 text-cyan-500" />
+                      <span>3D Lean &amp; Heading</span>
                     </span>
                   </div>
                 </div>
@@ -183,7 +195,9 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
                     <span className={`font-heading font-black text-sm uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
                       Pocket / Bag Mode
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase ${
+                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    }`}>
                       Low Battery / Sleep
                     </span>
                   </div>
@@ -194,19 +208,16 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
                   {/* Badges */}
                   <div className="flex items-center gap-2 mt-2.5 flex-wrap text-[10px]">
                     <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
-                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
                     }`}>
-                      <span>🔒 Screen Locked Safe</span>
+                      <Lock className="w-3 h-3" />
+                      <span>Screen Locked Safe</span>
                     </span>
                     <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
-                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
                     }`}>
-                      <span>🔋 Zero Screen Drain</span>
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-md border flex items-center gap-1 ${
-                      isLight ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
-                    }`}>
-                      <span>🛰️ 1Hz Hardware GNSS</span>
+                      <Satellite className="w-3 h-3" />
+                      <span>Background GPS</span>
                     </span>
                   </div>
                 </div>
@@ -239,7 +250,7 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
               }}
               className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 preferredView === 'map'
-                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-black'
+                  ? (isLight ? 'bg-cyan-100 border-cyan-500 text-cyan-900 font-black' : 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-black')
                   : (isLight ? 'bg-white border-slate-300 text-slate-600 hover:text-slate-900' : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white')
               }`}
             >
@@ -255,7 +266,7 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
               }}
               className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 preferredView === 'cockpit'
-                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-black'
+                  ? (isLight ? 'bg-cyan-100 border-cyan-500 text-cyan-900 font-black' : 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-black')
                   : (isLight ? 'bg-white border-slate-300 text-slate-600 hover:text-slate-900' : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white')
               }`}
             >
@@ -269,9 +280,9 @@ export const SoloRideStartModal: React.FC<SoloRideStartModalProps> = ({
         <div className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-[11px] font-sans ${
           isLight ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-slate-950/80 border-slate-800/80 text-slate-400'
         }`}>
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <ShieldCheck className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
           <p className="leading-relaxed">
-            In APK mode, ThrottleLog uses an Android foreground service with partial wakelock. GPS satellites track at 1Hz continuously through fabric or backpacks without loss of signal.
+            In the Android app, background tracking keeps GPS active reliably even with the screen locked in a jacket or tank bag.
           </p>
         </div>
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LiveGpsPoint, UnitSystem } from '../types';
-import { convertDistance } from '../utils/units';
 import { playChime } from '../utils/audioChimes';
 import { 
   addNativeLocationListener, 
@@ -11,7 +10,7 @@ import {
   setNativeScreenKeepOn
 } from '../utils/nativeKeepAlive';
 import {
-  saveRecoverySnapshot,
+  saveRecoveryDelta,
   loadRecoverySnapshot,
   clearRecoverySnapshot,
 } from '../utils/storage';
@@ -22,6 +21,8 @@ import {
   loadSavedCalibration,
   clearSavedCalibration,
   blendGpsCentrifugalLean,
+  computeGpsCentrifugalLeanDeg,
+  projectRollRateDegPerSec,
   GyroCalibration,
 } from '../utils/gyro3d';
 import { calculateForwardBearing } from '../utils/gpxParser';
@@ -138,6 +139,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   });
   const calibrationRef = useRef<GyroCalibration | null>(loadSavedCalibration());
   const lastOrientationEventRef = useRef<{ beta: number; gamma: number; alpha: number } | null>(null);
+  const lastGravityLeanRef = useRef<number>(0);
+  const gpsCentrifugalAnchorRef = useRef<{ deg: number; updatedAt: number } | null>(null);
+  const lastRotationRateEventTsRef = useRef<number>(0);
+  const lastMotionStepTsRef = useRef<number>(0);
+  const dynamicLeanRef = useRef<number>(0);
   const lastGpsPointTimeRef = useRef<number>(Date.now());
   const lastGpsHeadingRef = useRef<number | null>(null);
 
@@ -210,6 +216,41 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   const isPausedRef = useRef<boolean>(isPaused);
   const mountModeRef = useRef<'handlebar' | 'pocket'>(mountMode);
   const lastStorageSnapshotTsRef = useRef<number>(0);
+  const lastFlushedPointCountRef = useRef<number>(0);
+
+  const flushRecoveryDelta = useCallback((overrideWaypoints?: any[], forceReset: boolean = false) => {
+    const pts = recordedPointsRef.current;
+    if (pts.length === 0 && !forceReset) return;
+
+    const startIdx = forceReset ? 0 : Math.min(lastFlushedPointCountRef.current, pts.length);
+    const newPoints: Array<{ idx: number; point: LiveGpsPoint }> = [];
+    for (let i = startIdx; i < pts.length; i++) {
+      newPoints.push({ idx: i, point: pts[i] });
+    }
+    lastFlushedPointCountRef.current = pts.length;
+
+    saveRecoveryDelta({
+      newPoints,
+      totalPointsCount: pts.length,
+      resetPoints: forceReset,
+      fallbackTailPoints: pts.slice(-120),
+      metadata: {
+        elapsedSeconds: elapsedSecondsRef.current,
+        movingSeconds: movingSecondsRef.current,
+        stoppedSeconds: stoppedSecondsRef.current,
+        totalDistanceMeters: totalDistanceMetersRef.current,
+        waypoints: overrideWaypoints ?? markedWaypointsRef.current,
+        timestamp: Date.now(),
+        mountMode: mountModeRef.current,
+      },
+    }).then(idbSaved => {
+      if (!idbSaved) {
+        lastFlushedPointCountRef.current = Math.min(lastFlushedPointCountRef.current, startIdx);
+      }
+    }).catch(() => {
+      lastFlushedPointCountRef.current = Math.min(lastFlushedPointCountRef.current, startIdx);
+    });
+  }, []);
 
   isRecordingRef.current = isRecording;
   isPausedRef.current = isPaused;
@@ -264,16 +305,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       try {
         if (recordedPointsRef.current.length > 0) {
-          saveRecoverySnapshot({
-            points: recordedPointsRef.current,
-            elapsedSeconds: elapsedSecondsRef.current,
-            movingSeconds: movingSecondsRef.current,
-            stoppedSeconds: stoppedSecondsRef.current,
-            totalDistanceMeters: totalDistanceMetersRef.current,
-            waypoints: markedWaypointsRef.current,
-            timestamp: Date.now(),
-            mountMode,
-          });
+          flushRecoveryDelta();
         }
       } catch {}
       e.preventDefault();
@@ -282,7 +314,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isRecording, mountMode]);
+  }, [isRecording, flushRecoveryDelta]);
 
   // ── Crash-recovery check (using persistent IndexedDB + localStorage fallback) ──
   useEffect(() => {
@@ -404,28 +436,80 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           calibrationRef.current,
           mountOrientation
         );
+        lastGravityLeanRef.current = reading.leanAngle;
 
-        // Session peak tracking
-        if (reading.leanAngle < 0) {
-          setMaxLeftLean(prev => Math.max(prev, Math.abs(reading.leanAngle)));
-        } else if (reading.leanAngle > 0) {
-          setMaxRightLean(prev => Math.max(prev, reading.leanAngle));
+        const now = Date.now();
+        const hasRecentRotationRate = now - lastRotationRateEventTsRef.current < 300;
+        const anchor = gpsCentrifugalAnchorRef.current;
+        const hasActiveCornerAnchor = anchor !== null && (now - anchor.updatedAt) < 2500 && currentSpeedRef.current >= 12;
+
+        // Do not overwrite GPS centrifugal + rotationRate complementary lean during coordinated turns
+        if (!hasRecentRotationRate && !hasActiveCornerAnchor) {
+          dynamicLeanRef.current = reading.leanAngle;
+          leanAngleRef.current = reading.leanAngle;
+          setLeanAngle(reading.leanAngle);
+          setGForceLateral(reading.gForceLateral);
+
+          if (reading.leanAngle < 0) {
+            setMaxLeftLean(prev => Math.max(prev, Math.abs(reading.leanAngle)));
+          } else if (reading.leanAngle > 0) {
+            setMaxRightLean(prev => Math.max(prev, reading.leanAngle));
+          }
         }
 
-        leanAngleRef.current = reading.leanAngle;
-        setLeanAngle(reading.leanAngle);
         setPitchAngle(reading.pitchAngle);
         setRawRoll(reading.rawRoll);
         setRawPitch(reading.rawPitch);
-        setGForceLateral(reading.gForceLateral);
         setIsGyroCalibrated(reading.isCalibrated);
       } else {
         leanAngleRef.current = 0;
+        dynamicLeanRef.current = 0;
         setLeanAngle(0);
         setPitchAngle(0);
         setGForceLateral(0);
         setRawRoll(Math.round(gamma));
         setRawPitch(Math.round(beta));
+      }
+    };
+
+    const handleMotion = (e: DeviceMotionEvent) => {
+      if (mountMode !== 'handlebar' || !e.rotationRate) return;
+      const rBeta = e.rotationRate.beta ?? 0;
+      const rGamma = e.rotationRate.gamma ?? 0;
+      const rAlpha = e.rotationRate.alpha ?? 0;
+      if (rBeta === 0 && rGamma === 0 && rAlpha === 0) return;
+
+      const now = Date.now();
+      lastRotationRateEventTsRef.current = now;
+      const prevTs = lastMotionStepTsRef.current || now - 20;
+      lastMotionStepTsRef.current = now;
+      const dtSec = Math.max(0.005, Math.min(0.1, (now - prevTs) / 1000));
+
+      const screenAngle = getScreenAngle();
+      const rollRate = projectRollRateDegPerSec(
+        rAlpha,
+        rBeta,
+        rGamma,
+        screenAngle,
+        calibrationRef.current
+      );
+
+      // Integrate roll gyro angular velocity, anchored via complementary filter to GPS centrifugal lean when moving >= 12 km/h
+      const anchor = gpsCentrifugalAnchorRef.current;
+      const useGpsTarget = anchor !== null && (now - anchor.updatedAt) < 2500 && currentSpeedRef.current >= 12;
+      const referenceDeg = useGpsTarget ? anchor!.deg : lastGravityLeanRef.current;
+      const alpha = dtSec / (1.2 + dtSec);
+      const next = (dynamicLeanRef.current + rollRate * dtSec) * (1 - alpha) + referenceDeg * alpha;
+      const clamped = Math.max(-65, Math.min(65, Math.round(next)));
+
+      dynamicLeanRef.current = Math.max(-65, Math.min(65, next));
+      leanAngleRef.current = clamped;
+      setLeanAngle(clamped);
+      setGForceLateral(parseFloat(Math.tan((Math.abs(clamped) * Math.PI) / 180).toFixed(2)));
+      if (clamped < 0) {
+        setMaxLeftLean(prev => Math.max(prev, Math.abs(clamped)));
+      } else if (clamped > 0) {
+        setMaxRightLean(prev => Math.max(prev, clamped));
       }
     };
 
@@ -436,12 +520,16 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       } else if (win.DeviceOrientationEvent) {
         win.addEventListener('deviceorientation', handleOrientation);
       }
+      if (win.DeviceMotionEvent) {
+        win.addEventListener('devicemotion', handleMotion, { passive: true });
+      }
     }
     return () => {
       if (typeof window !== 'undefined') {
         const win = window as any;
         win.removeEventListener('deviceorientationabsolute', handleOrientation);
         win.removeEventListener('deviceorientation', handleOrientation);
+        win.removeEventListener('devicemotion', handleMotion);
       }
     };
   }, [enabled, mountMode, mountOrientation, getScreenAngle]);
@@ -466,16 +554,26 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     heading: number | null;
     altitude: number | null;
     accuracy: number | null;
+    timestamp?: number | null;
     isNative?: boolean;
   }) => {
-    const { latitude, longitude, speed, heading, altitude, accuracy, isNative } = coords;
-    const nowTs = Date.now();
+    const { latitude, longitude, speed, heading, altitude, accuracy, timestamp, isNative } = coords;
+    const nowWall = Date.now();
+    const fixTimestamp =
+      typeof timestamp === 'number' && !isNaN(timestamp) && Math.abs(nowWall - timestamp) < 86400000
+        ? timestamp
+        : nowWall;
 
     if (isNative) {
-      lastNativeFixTsRef.current = nowTs;
+      lastNativeFixTsRef.current = nowWall;
+      // Pause redundant Chromium watchPosition once native Android hardware GNSS stream is active
+      if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
     } else {
-      // Prioritize hardware-level native Android fix if received recently (< 1800ms)
-      if (nowTs - lastNativeFixTsRef.current < 1800) {
+      // Prioritize hardware-level native Android fix if received recently (< 4000ms)
+      if (nowWall - lastNativeFixTsRef.current < 4000) {
         return;
       }
     }
@@ -501,7 +599,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     let kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
     const lastPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
     if (isRecordingRef.current && lastPt) {
-      const dtSec = Math.max(0.3, (nowTs - lastPt.timestamp) / 1000);
+      const dtSec = Math.max(0.3, (fixTimestamp - lastPt.timestamp) / 1000);
       const maxDeltaKmh = 14 * 3.6 * dtSec;
       if (kmh - lastPt.speedKmh > maxDeltaKmh) {
         kmh = lastPt.speedKmh + maxDeltaKmh;
@@ -552,15 +650,20 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           let dHeading = effectiveHeading - lastGpsHeadingRef.current;
           if (dHeading > 180) dHeading -= 360;
           if (dHeading < -180) dHeading += 360;
-          const dtSec = (nowTs - lastGpsPointTimeRef.current) / 1000;
+          const dtSec = (fixTimestamp - lastGpsPointTimeRef.current) / 1000;
           if (dtSec >= 0.2 && dtSec <= 3.0) {
+            const centrifugalDeg = computeGpsCentrifugalLeanDeg(kmh, dHeading, dtSec);
+            if (centrifugalDeg !== null) {
+              gpsCentrifugalAnchorRef.current = { deg: centrifugalDeg, updatedAt: Date.now() };
+            }
             const fused = blendGpsCentrifugalLean(leanAngleRef.current, kmh, dHeading, dtSec);
+            dynamicLeanRef.current = fused;
             leanAngleRef.current = fused;
             setLeanAngle(fused);
           }
         }
         lastGpsHeadingRef.current = effectiveHeading;
-        lastGpsPointTimeRef.current = nowTs;
+        lastGpsPointTimeRef.current = fixTimestamp;
       }
     }
     if (altitude !== null) setCurrentAltitude(altitude);
@@ -592,7 +695,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       // Stationary point throttling: if moving slower than 1.2 km/h and last point was saved < 5s ago,
       // skip pushing duplicate stationary points to prevent inflating GPX size during red lights or long stops
       const lastRecordedPt = recordedPointsRef.current[recordedPointsRef.current.length - 1];
-      if (kmh < 1.2 && lastRecordedPt && (nowTs - lastRecordedPt.timestamp) < 5000) {
+      if (kmh < 1.2 && lastRecordedPt && (fixTimestamp - lastRecordedPt.timestamp) < 5000) {
         return;
       }
 
@@ -604,7 +707,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         speedKmh: kmh,
         heading: heading !== null && !isNaN(heading) ? heading : null,
         altitude: altitude || null,
-        timestamp: Date.now(),
+        timestamp: fixTimestamp,
         leanAngle: leanAngleRef.current,
       };
 
@@ -612,20 +715,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       const count = recordedPointsRef.current.length;
       setPointsCount(count);
 
-      // Throttled Persistent Session snapshot: every 15 seconds (or during initial 3 points)
-      // Uses IndexedDB for multi-hour rides to prevent QuotaExceededError while keeping localStorage fallback
-      if (count <= 3 || nowTs - lastStorageSnapshotTsRef.current >= 15000) {
-        lastStorageSnapshotTsRef.current = nowTs;
-        saveRecoverySnapshot({
-          points: recordedPointsRef.current,
-          elapsedSeconds: elapsedSecondsRef.current,
-          movingSeconds: movingSecondsRef.current,
-          stoppedSeconds: stoppedSecondsRef.current,
-          totalDistanceMeters: totalDistanceMetersRef.current,
-          waypoints: markedWaypointsRef.current,
-          timestamp: Date.now(),
-          mountMode: mountModeRef.current,
-        });
+      // Throttled incremental recovery delta: every 15 seconds (or during initial 3 points)
+      // Appends only newly recorded trackpoints to IndexedDB instead of re-serializing hours of GPS history
+      if (count <= 3 || nowWall - lastStorageSnapshotTsRef.current >= 15000) {
+        lastStorageSnapshotTsRef.current = nowWall;
+        flushRecoveryDelta();
       }
 
       // Voice milestones using universal TTS engine (Native Android + Web fallback)
@@ -661,6 +755,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
         heading: data.bearing,
         altitude: data.altitude,
         accuracy: data.accuracy,
+        timestamp: data.time,
         isNative: true,
       });
     }).then(cleanup => {
@@ -697,6 +792,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
           heading,
           altitude,
           accuracy,
+          timestamp: position.timestamp,
           isNative: false,
         });
       },
@@ -806,6 +902,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
   // ── Public controls ──
   const startNewRecording = useCallback(() => {
     recordedPointsRef.current = [];
+    lastFlushedPointCountRef.current = 0;
+    lastStorageSnapshotTsRef.current = 0;
     setPointsCount(0);
     setTotalDistanceMeters(0);
     setElapsedSeconds(0);
@@ -830,6 +928,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     if (!isTrackingActive) {
       startGpsTracking();
     }
+    startNativeRadarKeepAlive(mountModeRef.current === 'pocket', true).catch(() => {});
     startGpsWatch();
   }, [startGpsWatch, playSilentAudio, isTrackingActive, startGpsTracking]);
 
@@ -839,20 +938,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     pauseSilentAudio();
     try {
       if (recordedPointsRef.current.length > 0) {
-        saveRecoverySnapshot({
-          points: recordedPointsRef.current,
-          elapsedSeconds: elapsedSecondsRef.current,
-          movingSeconds: movingSecondsRef.current,
-          stoppedSeconds: stoppedSecondsRef.current,
-          totalDistanceMeters: totalDistanceMetersRef.current,
-          waypoints: markedWaypointsRef.current,
-          timestamp: Date.now(),
-          mountMode,
-        });
+        flushRecoveryDelta();
       }
     } catch {}
     playChime('pause');
-  }, [pauseSilentAudio, mountMode]);
+  }, [pauseSilentAudio, flushRecoveryDelta]);
 
   const resumeRecording = useCallback(() => {
     setIsPaused(false);
@@ -874,6 +964,7 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
 
     const pts = [...recordedPointsRef.current];
     recordedPointsRef.current = [];
+    lastFlushedPointCountRef.current = 0;
     setPointsCount(0);
 
     // Clear recovery data from IndexedDB and storage
@@ -892,21 +983,11 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
       lon: pos.lon,
       ele: currentAltitude,
     };
-    setMarkedWaypoints(prev => {
-      const next = [...prev, wp];
-      saveRecoverySnapshot({
-        points: recordedPointsRef.current,
-        elapsedSeconds: elapsedSecondsRef.current,
-        movingSeconds: movingSecondsRef.current,
-        stoppedSeconds: stoppedSecondsRef.current,
-        totalDistanceMeters: totalDistanceMetersRef.current,
-        waypoints: next,
-        timestamp: Date.now(),
-        mountMode,
-      });
-      return next;
-    });
-  }, [currentAltitude, currentCoords, mountMode]);
+    const next = [...markedWaypointsRef.current, wp];
+    markedWaypointsRef.current = next;
+    setMarkedWaypoints(next);
+    flushRecoveryDelta(next);
+  }, [currentAltitude, currentCoords, flushRecoveryDelta]);
 
   const handleTareAngle = useCallback(async () => {
     await requestDeviceOrientationPermission();
@@ -971,6 +1052,8 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     pauseStartRef.current = null;
 
     setMarkedWaypoints(recoverableData.waypoints || []);
+    markedWaypointsRef.current = recoverableData.waypoints || [];
+    lastFlushedPointCountRef.current = pts.length;
     const restoredMax = pts.reduce((max: number, p: any) => Math.max(max, p?.speedKmh || 0), 0);
     setMaxRecordedSpeed(restoredMax);
     if (pts.length > 0) {
@@ -980,17 +1063,23 @@ export function useGPS(unitSystem: UnitSystem = 'metric', enabled: boolean = tru
     }
     setHasRecoverableRide(false);
     setRecoverableData(null);
+    flushRecoveryDelta(recoverableData.waypoints || [], true);
     setIsRecording(true);
     setIsPaused(false);
     isRecordingRef.current = true;
     isPausedRef.current = false;
     playSilentAudio();
     playChime('resume');
+    if (!isTrackingActive) {
+      setIsTrackingActive(true);
+    }
+    startNativeRadarKeepAlive(mountModeRef.current === 'pocket', false).catch(() => {});
     startGpsWatch();
-  }, [recoverableData, startGpsWatch, playSilentAudio]);
+  }, [recoverableData, startGpsWatch, playSilentAudio, isTrackingActive, flushRecoveryDelta]);
 
   const handleDiscardSession = useCallback(() => {
     pauseSilentAudio();
+    lastFlushedPointCountRef.current = 0;
     clearRecoverySnapshot().catch(() => {});
     setHasRecoverableRide(false);
     setRecoverableData(null);

@@ -11,6 +11,8 @@
  *   4. Sustained stationary state for > 4 seconds
  */
 
+import { setNativeCrashDetectionEnabled } from './nativeKeepAlive';
+
 export interface CrashEvent {
   timestamp: number;
   peakG: number;
@@ -25,6 +27,7 @@ class MotorcycleCrashDetector {
   private impactTimer: any = null;
   private impactCooldownUntil = 0;
   private currentSpeedKmh = 0;
+  private lastGpsUpdateTs = 0;
 
   // Persistence Key
   private readonly STORAGE_KEY = 'throttlelog_crash_detection_v1';
@@ -46,8 +49,24 @@ class MotorcycleCrashDetector {
       localStorage.setItem(this.STORAGE_KEY, String(enabled));
       localStorage.setItem(this.LEGACY_STORAGE_KEY, String(enabled));
     } catch {}
+    setNativeCrashDetectionEnabled(enabled).catch(() => {});
     if (!enabled) {
       this.cancelPotentialImpact();
+    }
+  }
+
+  public notifyExternalCrash(event: CrashEvent) {
+    if (!this.isEnabled()) return;
+    const now = Date.now();
+    if (now < this.impactCooldownUntil) return;
+    this.cancelPotentialImpact();
+    this.impactCooldownUntil = now + 60000;
+    if (this.onCrashCallback) {
+      try {
+        this.onCrashCallback(event);
+      } catch (e) {
+        console.error('External crash callback error:', e);
+      }
     }
   }
 
@@ -68,14 +87,19 @@ class MotorcycleCrashDetector {
     const now = Date.now();
     const impact = this.potentialImpact;
 
-    // Check if rider is stationary (speed <= 3.5 km/h or no movement detected)
-    const recentSpeedsSinceImpact = this.recentSpeeds.filter(s => s.time >= impact.time);
-    const maxSpeedSinceImpact = recentSpeedsSinceImpact.length > 0
-      ? Math.max(...recentSpeedsSinceImpact.map(s => s.speedKmh))
-      : this.currentSpeedKmh;
+    // Split post-impact window into early collapse (<=2.5s) and sustained motionless phase (>2.0s)
+    // Prevents false SOS when rider hits a pothole and gently brakes to a stop 3-4s later.
+    const gpsLostAfterImpact = (now - this.lastGpsUpdateTs) >= 3200;
+    const settledWindow = this.recentSpeeds.filter(s => s.time >= impact.time + 2000);
+    const earlyDrop = this.recentSpeeds.some(s => s.time >= impact.time && s.time <= impact.time + 2600 && s.speedKmh <= 6);
+    const settledStopped = settledWindow.length > 0 && Math.max(...settledWindow.map(s => s.speedKmh)) <= 3.5;
 
-    if (maxSpeedSinceImpact <= 3.5 || this.currentSpeedKmh <= 3.5) {
-      // Confirmed crash: Severe impact + rider stopped and remained stationary
+    const isConfirmedCrash = gpsLostAfterImpact
+      ? true // High-G event (>6.5G from >18 km/h) followed by complete GNSS dropout
+      : (earlyDrop && settledStopped && this.currentSpeedKmh <= 3.5);
+
+    if (isConfirmedCrash) {
+      // Confirmed crash: Severe impact + abrupt stop (or total sensor dropout)
       const event: CrashEvent = {
         timestamp: impact.time,
         peakG: impact.peakG,
@@ -92,7 +116,7 @@ class MotorcycleCrashDetector {
         }
       }
     } else {
-      // False alarm: rider hit a bump/pothole and continued riding at speed
+      // False alarm: rider hit a bump/pothole and continued riding or braked gradually
       this.cancelPotentialImpact();
     }
   }
@@ -100,6 +124,7 @@ class MotorcycleCrashDetector {
   public updateGpsSpeed(speedKmh: number) {
     const now = Date.now();
     this.currentSpeedKmh = speedKmh;
+    this.lastGpsUpdateTs = now;
     this.recentSpeeds.push({ speedKmh, time: now });
 
     // Prune speeds older than 6 seconds

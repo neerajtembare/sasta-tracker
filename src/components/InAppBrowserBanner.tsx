@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ExternalLink, X } from 'lucide-react';
+import { AlertTriangle, X } from 'lucide-react';
 
 export const InAppBrowserBanner: React.FC = () => {
   const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
     try {
-      const isDismissed = sessionStorage.getItem('sasta_dismiss_inapp_banner');
+      const isDismissed =
+        sessionStorage.getItem('throttlelog_dismiss_inapp_banner') ||
+        sessionStorage.getItem('sasta_dismiss_inapp_banner');
       if (isDismissed) return;
 
       const ua = navigator.userAgent || navigator.vendor || (window as any).opera || '';
@@ -23,6 +25,7 @@ export const InAppBrowserBanner: React.FC = () => {
   const handleDismiss = () => {
     setShowBanner(false);
     try {
+      sessionStorage.setItem('throttlelog_dismiss_inapp_banner', 'true');
       sessionStorage.setItem('sasta_dismiss_inapp_banner', 'true');
     } catch {}
   };
@@ -30,9 +33,9 @@ export const InAppBrowserBanner: React.FC = () => {
   if (!showBanner) return null;
 
   return (
-    <div className="relative z-50 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 font-mono text-xs px-3 py-2 flex items-center justify-between gap-2 shadow-lg shrink-0 border-b border-amber-600">
+    <div className="relative z-50 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 font-sans text-xs px-3 py-2 flex items-center justify-between gap-2 shadow-lg shrink-0 border-b border-amber-600">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-base shrink-0">⚠️</span>
+        <AlertTriangle className="w-4 h-4 shrink-0" />
         <p className="truncate sm:whitespace-normal font-bold">
           <span>In-App Browser: Tap </span>
           <strong className="underline">⋮</strong>
@@ -42,7 +45,9 @@ export const InAppBrowserBanner: React.FC = () => {
         </p>
       </div>
       <button
+        type="button"
         onClick={handleDismiss}
+        aria-label="Dismiss in-app browser notice"
         className="px-2 py-0.5 rounded-full bg-slate-950/20 hover:bg-slate-950/40 text-slate-950 font-bold shrink-0 cursor-pointer"
         title="Dismiss notice"
       >

@@ -1,17 +1,19 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+const isDebugBuild = process.env.CAPACITOR_DEBUG === 'true';
+
 const config: CapacitorConfig = {
   appId: 'com.throttlelog.app',
   appName: 'ThrottleLog',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    cleartext: true,
+    cleartext: isDebugBuild,
   },
   android: {
-    allowMixedContent: true,
+    allowMixedContent: false,
     captureInput: true,
-    webContentsDebuggingEnabled: true,
+    webContentsDebuggingEnabled: isDebugBuild,
   },
   plugins: {
     // Native plugins can be wired here

@@ -2,34 +2,23 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { GroupMemberInfo, SosAlert, CrewNotification } from '../hooks/useGroupRide';
 import { CALLOUT_PRESETS, CalloutPreset } from '../utils/callouts';
-import { AppTheme, UnitSystem, RideAnalysis, PitStop, TrackPoint } from '../types';
-import { openGoogleMapsNavigation, openGoogleMapsRoute } from '../utils/navigation';
-import { preCacheRouteTiles, preCacheRegionalArea, CacheProgress, LatLngBounds } from '../utils/mapCache';
-import { 
-  Crosshair, 
-  Users, 
-  Share2, 
-  AlertTriangle, 
-  LogOut, 
-  Navigation, 
-  Copy, 
-  Check, 
-  Edit3,
+import { AppTheme, RideAnalysis } from '../types';
+import { openGoogleMapsNavigation } from '../utils/navigation';
+import { readMigratedStorageKey, writeMigratedStorageKey } from '../utils/units';
+import { getRiderProfile } from '../utils/riderProfile';
+import {
+  Crosshair,
+  Share2,
+  AlertTriangle,
+  Navigation,
   Coffee,
-  Radio,
-  Scan,
   Compass,
-  RotateCw,
-  MapPin,
-  Route,
-  Download,
-  ArrowUp,
   Layers,
-  Sun,
-  Moon,
-  Volume2,
-  Plus,
-  Minus
+  Crown,
+  Fuel,
+  ShieldCheck,
+  Battery,
+  X,
 } from 'lucide-react';
 import { triggerHaptic, playWarningChime } from '../utils/audioChimes';
 import { speakAlert } from '../utils/tts';
@@ -100,43 +89,20 @@ interface CrewLiveMapProps {
   onTrailRider?: (targetRiderId: string | null) => void;
   members: GroupMemberInfo[];
   sosAlert: SosAlert | null;
-  roomCode?: string;
-  lastRoomCode?: string;
-  isConnected?: boolean;
   theme?: AppTheme;
-  unitSystem?: UnitSystem;
-  onTriggerSos?: () => void;
   onCancelSos?: () => void;
   onDismissSos?: () => void;
-  onLeaveRoom?: () => void;
-  onRejoinRoom?: () => void;
   crewNotification?: CrewNotification | null;
   onDismissCrewNotification?: () => void;
-  onShareWhatsApp?: () => void;
-  onCopyInviteLink?: () => void;
-  copiedLink?: boolean;
-  onGoToCockpit?: () => void;
-  onUpdateRiderName?: (newName: string) => void;
-  isRecording?: boolean;
-  onStartRecording?: () => void;
-  onStopRecording?: () => void;
-  pointsCount?: number;
-  totalDistanceMeters?: number;
-  onToggleCrewList?: () => void;
-  onOpenCrewManage?: (tab?: 'active' | 'saved' | 'create' | 'join') => void;
   focusedRiderId?: string | null;
   activeRoute?: RideAnalysis | null;
   onSelectRider?: (riderId: string) => void;
   isOnRadar?: boolean;
-  onToggleRadar?: (enable?: boolean) => void;
-  isTrackingActive?: boolean;
-  onToggleTracking?: (enable?: boolean) => void;
-  onJoinSharedRoute?: (route: any) => void;
-  starredRiderIds?: string[];
   externalMapLayer?: MapLayerType;
   onChangeMapLayer?: (layer: MapLayerType) => void;
   onSendCallout?: (preset: CalloutPreset) => void;
   onOpenProfile?: () => void;
+  hasActiveCallout?: boolean;
 }
 
 export type MapLayerType = 'dark' | 'streets' | 'satellite' | 'sunlight';
@@ -149,46 +115,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   isHost,
   leaderId = null,
   onSetSquadLeader,
-  onClaimSquadLeader,
   trailedRiderId = null,
   onTrailRider,
   members,
   sosAlert,
-  roomCode,
-  lastRoomCode,
-  isConnected = false,
   theme = 'dark',
-  unitSystem = 'metric',
-  onTriggerSos,
   onCancelSos,
   onDismissSos,
-  onLeaveRoom,
-  onRejoinRoom,
   crewNotification = null,
   onDismissCrewNotification,
-  onShareWhatsApp,
-  onCopyInviteLink,
-  copiedLink = false,
-  onGoToCockpit,
-  onUpdateRiderName,
-  isRecording = false,
-  onStartRecording,
-  onStopRecording,
-  pointsCount = 0,
-  totalDistanceMeters = 0,
-  onToggleCrewList,
-  onOpenCrewManage,
   focusedRiderId = null,
   activeRoute = null,
   onSelectRider,
   isOnRadar = true,
-  onToggleRadar,
-  onJoinSharedRoute,
-  starredRiderIds = [],
   externalMapLayer,
   onChangeMapLayer,
   onSendCallout,
   onOpenProfile,
+  hasActiveCallout = false,
 }) => {
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -217,40 +161,52 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
   // Orientation & Compass state (Course-Up direction follow vs North-Up)
   const [orientationMode, setOrientationMode] = useState<'north' | 'course'>(() => {
-    try {
-      const saved = localStorage.getItem('throttlelog_map_orientation') || localStorage.getItem('sasta_map_orientation');
-      if (saved === 'north' || saved === 'course') return saved;
-    } catch {}
-    return 'course'; // Default to course-up (direction follow) for live motorcycle navigation
+    const saved = readMigratedStorageKey('throttlelog_map_orientation', 'sasta_map_orientation');
+    if (saved === 'north' || saved === 'course') return saved;
+    const pref = getRiderProfile().defaultMapOrientation;
+    if (pref === 'north' || pref === 'course') return pref;
+    return 'course';
   });
-  const [isFlipped180, setIsFlipped180] = useState<boolean>(false);
+  const [stopIntentEnabled, setStopIntentEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('throttlelog_stop_intent_v1') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    const syncPrefs = () => {
+      const savedOrient = readMigratedStorageKey('throttlelog_map_orientation', 'sasta_map_orientation');
+      if (savedOrient === 'north' || savedOrient === 'course') {
+        setOrientationMode(savedOrient);
+      }
+      try {
+        setStopIntentEnabled(localStorage.getItem('throttlelog_stop_intent_v1') !== 'false');
+      } catch {}
+    };
+    window.addEventListener('throttlelog-hud-prefs', syncPrefs);
+    return () => window.removeEventListener('throttlelog-hud-prefs', syncPrefs);
+  }, []);
 
   const handleToggleOrientation = () => {
     triggerHaptic(25);
     setOrientationMode(prev => {
       const next = prev === 'course' ? 'north' : 'course';
-      try {
-        localStorage.setItem('throttlelog_map_orientation', next);
-        localStorage.setItem('sasta_map_orientation', next);
-      } catch {}
+      writeMigratedStorageKey('throttlelog_map_orientation', 'sasta_map_orientation', next);
       return next;
     });
   };
 
-  // Offline route tile caching state
-  const [isCachingRoute, setIsCachingRoute] = useState(false);
-  const [cacheProgress, setCacheProgress] = useState<CacheProgress | null>(null);
-  const [cacheSuccessMsg, setCacheSuccessMsg] = useState<string | null>(null);
-
   // Default to Dark map for eye comfort and stealth motorcycle cockpit look
   const [mapLayer, setMapLayer] = useState<MapLayerType>(() => {
-    try {
-      const isSun = localStorage.getItem('throttlelog_sunlight_mode') === 'true' || localStorage.getItem('sasta_sunlight_mode') === 'true';
-      if (typeof window !== 'undefined' && isSun) {
-        return 'sunlight';
-      }
-    } catch {}
-    return 'dark';
+    const savedLayer = readMigratedStorageKey('throttlelog_map_layer', 'sasta_map_layer');
+    if (savedLayer === 'dark' || savedLayer === 'streets' || savedLayer === 'satellite' || savedLayer === 'sunlight') {
+      return savedLayer;
+    }
+    const isSun = readMigratedStorageKey('throttlelog_sunlight_mode', 'sasta_sunlight_mode') === 'true';
+    if (isSun) return 'sunlight';
+    return getRiderProfile().defaultMapLayer || 'dark';
   });
 
   useEffect(() => {
@@ -259,15 +215,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     }
   }, [externalMapLayer]);
 
-  const [isLayerPopoverOpen, setIsLayerPopoverOpen] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>('me');
   const [hasInitialFit, setHasInitialFit] = useState(false);
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
-
-  // Inline handle editor
-  const [isEditingHandle, setIsEditingHandle] = useState(false);
-  const [tempHandle, setTempHandle] = useState(myRiderName);
 
   // Expose universal navigation helper to global window for Leaflet popup click handlers
   useEffect(() => {
@@ -279,18 +228,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       delete (window as any).__navTo;
     };
   }, []);
-
-  // Keyboard shortcut listener to close open overlays on Escape
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (isLeaveModalOpen) setIsLeaveModalOpen(false);
-        if (isLayerPopoverOpen) setIsLayerPopoverOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [isLeaveModalOpen, isLayerPopoverOpen]);
 
   // Current heading from myLocation with persistence when stationary
   const myHeading = myLocation?.heading !== null && myLocation?.heading !== undefined ? myLocation.heading : null;
@@ -307,17 +244,16 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Course-up: rotated by -effectiveCourseHeading so bike's forward path is ALWAYS UP on phone screen!
   // In Free Exploration mode (user dragging/browsing): keep North-Up (0°) so pan gestures match finger movement 1:1!
   const targetMapRotation = useMemo(() => {
-    let base = 0;
     if (orientationMode === 'course' && effectiveCourseHeading !== null && !isFreePanning) {
-      base = -effectiveCourseHeading;
+      return -effectiveCourseHeading;
     }
-    return (isFlipped180 ? 180 : 0) + base;
-  }, [orientationMode, effectiveCourseHeading, isFlipped180, isFreePanning]);
+    return 0;
+  }, [orientationMode, effectiveCourseHeading, isFreePanning]);
 
   // Synchronize CSS rotation on map container & counter-rotate all marker text/badges
   useEffect(() => {
     if (!mapContainerRef.current) return;
-    mapContainerRef.current.style.transform = `rotate(${targetMapRotation}deg)`;
+    mapContainerRef.current.style.transform = `translate(-50%, -50%) rotate(${targetMapRotation}deg)`;
 
     const counterRotateEls = mapContainerRef.current.querySelectorAll<HTMLElement>('.upright-counter-rotate');
     counterRotateEls.forEach(el => {
@@ -329,14 +265,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       }
     });
   }, [targetMapRotation]);
-
-  // Cardinal direction helper
-  const getCardinal = (deg: number | null) => {
-    if (deg === null) return 'N';
-    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
-    return dirs[idx];
-  };
 
   // Trailing polyline layers
   const trailingPolylineRef = useRef<L.Polyline | null>(null);
@@ -466,44 +394,17 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     }
   }, [focusedRiderId, members, myLocation]);
 
-  const handleCopyCode = () => {
-    if (!roomCode) return;
-    navigator.clipboard.writeText(roomCode).then(() => {
-      setCopiedCode(true);
-      triggerHaptic(25);
-      setTimeout(() => setCopiedCode(false), 2000);
-    });
-  };
-
   const isLight = theme === 'light';
 
-  // Format speed based on unit system
-  const formatSpeed = (kmh: number) => {
-    if (unitSystem === 'imperial') {
-      return `${Math.round(kmh * 0.621371)} mph`;
-    }
-    return `${Math.round(kmh)} km/h`;
-  };
+  // Format speed (standardized on km/h)
+  const formatSpeed = (kmh: number) => `${Math.round(kmh)} km/h`;
 
-  // Format distance
+  // Format distance (standardized on m / km)
   const formatDistance = (meters?: number) => {
     if (meters === undefined || meters === null) return '...';
-    if (unitSystem === 'imperial') {
-      const feet = meters * 3.28084;
-      if (feet < 1000) return `${Math.round(feet)} ft`;
-      return `${(meters / 1609.34).toFixed(1)} mi`;
-    }
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(1)} km`;
   };
-
-  const primaryStarredMember = useMemo(() => {
-    if (!starredRiderIds || starredRiderIds.length === 0) return null;
-    const starredList = members.filter(m => starredRiderIds.includes(m.riderId) && m.location && m.isOnline !== false);
-    if (starredList.length === 0) return null;
-    starredList.sort((a, b) => (a.distanceFromMeMeters ?? 999999) - (b.distanceFromMeMeters ?? 999999));
-    return starredList[0];
-  }, [members, starredRiderIds]);
 
   // inRoads-style Convoy Pack Spread & Shape Intelligence
   const convoySpreadData = useMemo(() => {
@@ -537,9 +438,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     };
   }, [members]);
 
-  // Smart Stop Intent Watcher ("Tell, Don't Poll" - Auto-prompts Chai/Fuel when halted after cruising)
+  // Smart Stop Intent Watcher ("Tell, Don't Poll" - Auto-prompts Chai/Fuel when halted after cruising in Crew mode)
   useEffect(() => {
-    if (!myLocation) return;
+    if (!myLocation || !isOnRadar || !stopIntentEnabled) {
+      if (stopIntentActive) setStopIntentActive(false);
+      return;
+    }
     const speed = myLocation.speedKmh || 0;
     const now = Date.now();
 
@@ -550,14 +454,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       if (!stopTimestampRef.current) {
         stopTimestampRef.current = now;
       } else if (now - stopTimestampRef.current > 45000 && now - lastStopPromptTsRef.current > 180000) {
-        // Stopped for > 45s after cruising, prompt to pin Fuel / Chai stop
         lastStopPromptTsRef.current = now;
         setStopIntentActive(true);
-        // Auto-dismiss after 12s if rider ignores it
         setTimeout(() => setStopIntentActive(false), 12000);
       }
     }
-  }, [myLocation?.speedKmh]);
+  }, [myLocation?.speedKmh, isOnRadar, stopIntentEnabled]);
 
   // Note: Convoy safety, battery, runaway, separation & roll call watchdogs run globally in App.tsx via convoyWatchdog
 
@@ -586,16 +488,17 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     mapInstanceRef.current = map;
 
+    const orientTimers: ReturnType<typeof setTimeout>[] = [];
     const timer = setTimeout(() => {
-      map.invalidateSize();
+      if (mapInstanceRef.current === map) map.invalidateSize();
     }, 200);
 
     const handleResize = () => {
-      map.invalidateSize();
+      if (mapInstanceRef.current === map) map.invalidateSize();
     };
     const handleOrientation = () => {
-      setTimeout(() => map.invalidateSize(), 100);
-      setTimeout(() => map.invalidateSize(), 300);
+      orientTimers.push(setTimeout(() => { if (mapInstanceRef.current === map) map.invalidateSize(); }, 100));
+      orientTimers.push(setTimeout(() => { if (mapInstanceRef.current === map) map.invalidateSize(); }, 300));
     };
 
     window.addEventListener('resize', handleResize);
@@ -603,8 +506,12 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     return () => {
       clearTimeout(timer);
+      orientTimers.forEach(t => clearTimeout(t));
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleOrientation);
+      try {
+        map.stop();
+      } catch {}
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -656,7 +563,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       }).addTo(map);
     }
 
-    setTimeout(() => map.invalidateSize(), 50);
+    const layerTimer = setTimeout(() => {
+      if (mapInstanceRef.current === map) map.invalidateSize();
+    }, 50);
+    return () => clearTimeout(layerTimer);
   }, [mapLayer]);
 
   // ─── Active Route Rendering (Polyline, Start, Finish, Pit Stops) ───
@@ -725,8 +635,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     // 3. Start Marker
     const startPt = activeRoute.points[0];
     const startHtml = `
-      <div style="background:#10b981; color:#080c10; font-family:monospace; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #10b981; white-space:nowrap; display:flex; align-items:center; gap:2px;">
-        <span>🟢</span> <span>START</span>
+      <div style="background:#10b981; color:#080c10; font-family:var(--font-chivo),sans-serif; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #10b981; white-space:nowrap; display:flex; align-items:center; gap:3px;">
+        <span style="width:6px; height:6px; border-radius:50%; background:#080c10; display:inline-block;"></span> <span>START</span>
       </div>
     `;
     const startIcon = L.divIcon({ className: 'route-start-badge', html: startHtml, iconAnchor: [24, 10] });
@@ -736,18 +646,19 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     // 4. Finish Marker (with 1-tap Google Maps Navigation)
     const endPt = activeRoute.points[activeRoute.points.length - 1];
     const finishHtml = `
-      <div style="background:#f59e0b; color:#080c10; font-family:monospace; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #f59e0b; white-space:nowrap; display:flex; align-items:center; gap:2px;">
-        <span>🏁</span> <span>FINISH</span>
+      <div style="background:#f59e0b; color:#080c10; font-family:var(--font-chivo),sans-serif; font-weight:900; font-size:9px; padding:2px 6px; border-radius:12px; border:1.5px solid #fff; box-shadow:0 0 10px #f59e0b; white-space:nowrap; display:flex; align-items:center; gap:3px;">
+        <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#080c10" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        <span>FINISH</span>
       </div>
     `;
     const finishIcon = L.divIcon({ className: 'route-finish-badge', html: finishHtml, iconAnchor: [24, 10] });
     const finishMarker = L.marker([endPt.lat, endPt.lon], { icon: finishIcon, zIndexOffset: 700 }).addTo(map);
     const finishPopup = `
-      <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
-        <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">🏁 ${escapeHtml(activeRoute.name || 'Destination')}</div>
+      <div style="font-family:var(--font-chivo),sans-serif; text-align:center; padding:4px; min-width:140px;">
+        <div style="font-weight:900; font-size:12px; color:#fff; margin-bottom:2px;">${escapeHtml(activeRoute.name || 'Destination')}</div>
         <div style="font-size:10px; color:#38bdf8; margin-bottom:8px;">${activeRoute.totalDistanceKm.toFixed(1)} km Total</div>
         <button onclick="window.__navTo(${endPt.lat}, ${endPt.lon})" style="width:100%; background:#06b6d4; color:#080c10; font-weight:900; font-size:10px; padding:6px; border-radius:6px; border:none; cursor:pointer;">
-          🧭 Google Maps Nav
+          Open Google Maps
         </button>
       </div>
     `;
@@ -757,20 +668,20 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     // 5. Pit Stop Markers (fuel, chai, scenic, dhaba)
     if (activeRoute.pitStops && activeRoute.pitStops.length > 0) {
       activeRoute.pitStops.forEach(stop => {
-        const emoji = stop.category === 'chai' ? '☕' : stop.category === 'fuel' ? '⛽' : stop.category === 'dhaba' ? '🍛' : '📍';
+        const tag = stop.category === 'chai' ? 'CHAI' : stop.category === 'fuel' ? 'FUEL' : stop.category === 'dhaba' ? 'DHABA' : 'STOP';
         const stopHtml = `
-          <div style="background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; font-family:monospace; font-size:9px; font-weight:bold; padding:2px 5px; border-radius:10px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.7); display:flex; align-items:center; gap:2px;">
-            <span>${emoji}</span> <span>${escapeHtml(stop.name || 'Pit Stop')}</span>
+          <div style="background:#0f172a; border:1.5px solid #38bdf8; color:#38bdf8; font-family:var(--font-chivo),sans-serif; font-size:9px; font-weight:bold; padding:2px 5px; border-radius:10px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.7); display:flex; align-items:center; gap:3px;">
+            <span style="font-size:7px; color:#fbbf24; font-weight:900;">${tag}</span> <span>${escapeHtml(stop.name || 'Pit Stop')}</span>
           </div>
         `;
         const stopIcon = L.divIcon({ className: 'route-pitstop-badge', html: stopHtml, iconAnchor: [20, 10] });
         const stopMarker = L.marker([stop.lat, stop.lon], { icon: stopIcon, zIndexOffset: 650 }).addTo(map);
         const stopPopup = `
-          <div style="font-family:monospace; text-align:center; padding:4px; min-width:140px;">
-            <div style="font-weight:900; font-size:11px; color:#fff;">${emoji} ${escapeHtml(stop.name)}</div>
+          <div style="font-family:var(--font-chivo),sans-serif; text-align:center; padding:4px; min-width:140px;">
+            <div style="font-weight:900; font-size:11px; color:#fff;">${tag}: ${escapeHtml(stop.name)}</div>
             <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">${stop.distanceKm.toFixed(1)} km mark</div>
             <button onclick="window.__navTo(${stop.lat}, ${stop.lon})" style="width:100%; background:#38bdf8; color:#080c10; font-weight:900; font-size:9px; padding:5px; border-radius:6px; border:none; cursor:pointer;">
-              🧭 Navigate in Maps
+              Navigate in Maps
             </button>
           </div>
         `;
@@ -779,74 +690,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       });
     }
   }, [activeRoute, mapLayer]);
-
-  // ─── Offline Route Map Tile Pre-Caching ───
-  const handleCacheOfflineRoute = async () => {
-    if (!activeRoute || !activeRoute.points || activeRoute.points.length === 0) return;
-    triggerHaptic(30);
-    setIsCachingRoute(true);
-    setCacheSuccessMsg(null);
-
-    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    activeRoute.points.forEach(p => {
-      if (p.lat < minLat) minLat = p.lat;
-      if (p.lat > maxLat) maxLat = p.lat;
-      if (p.lon < minLng) minLng = p.lon;
-      if (p.lon > maxLng) maxLng = p.lon;
-    });
-
-    const bounds: LatLngBounds = {
-      minLat: minLat - 0.02,
-      maxLat: maxLat + 0.02,
-      minLng: minLng - 0.02,
-      maxLng: maxLng + 0.02,
-    };
-
-    try {
-      const result = await preCacheRouteTiles(bounds, 11, 14, (progress) => {
-        setCacheProgress(progress);
-      });
-      setCacheSuccessMsg(`Saved ${result.cached} tiles offline!`);
-      triggerHaptic(40);
-      setTimeout(() => {
-        setIsCachingRoute(false);
-        setCacheProgress(null);
-        setCacheSuccessMsg(null);
-      }, 3500);
-    } catch {
-      setIsCachingRoute(false);
-      setCacheProgress(null);
-    }
-  };
-
-  // ─── Offline Regional 25km Map Area Pre-Caching (For Unmapped Mountain Ghats) ───
-  const handleCacheRegionalMap = async () => {
-    if (!myLocation) return;
-    triggerHaptic(30);
-    setIsCachingRoute(true);
-    setCacheSuccessMsg(null);
-
-    try {
-      const result = await preCacheRegionalArea(
-        myLocation.lat,
-        myLocation.lon,
-        25,
-        (progress) => {
-          setCacheProgress(progress);
-        }
-      );
-      setCacheSuccessMsg(`Saved 25km Region (${result.cached} tiles) offline!`);
-      triggerHaptic(40);
-      setTimeout(() => {
-        setIsCachingRoute(false);
-        setCacheProgress(null);
-        setCacheSuccessMsg(null);
-      }, 3500);
-    } catch {
-      setIsCachingRoute(false);
-      setCacheProgress(null);
-    }
-  };
 
   // ─── Update "YOU" Marker (Optimized, Lag-Free with Delta Rendering) ───
   useEffect(() => {
@@ -865,9 +708,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const map = mapInstanceRef.current;
     const pos: L.LatLngTuple = [myLocation.lat, myLocation.lon];
-    const initial = myRiderName ? myRiderName.trim().charAt(0).toUpperCase() : 'N';
+    const initial = myRiderName ? myRiderName.trim().charAt(0).toUpperCase() : 'R';
     const color = myColor || '#00f0ff';
-    const speed = formatSpeed(myLocation.speedKmh);
     const heading = myLocation.heading !== null && myLocation.heading !== undefined ? myLocation.heading : null;
 
     // Counter-rotation so text & initials stay 100% horizontal and upright at all times
@@ -911,18 +753,18 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       : '';
 
     const myLeaderCrown = isHost
-      ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-20px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
+      ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-20px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease; display:flex; align-items:center; gap:2px;"><svg viewBox="0 0 24 24" width="8" height="8" fill="currentColor"><path d="M2 19h20v2H2v-2zm0-8l5 3 5-7 5 7 5-3v6H2v-6z"/></svg>LEADER</div>`
       : '';
 
     const html = `
-      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Tap to customize your callsign & bike">
+      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Tap to open Rider Settings">
         ${forwardIndicator}
         ${myLeaderCrown}
         <!-- Pulsing radar halo -->
         <div style="position:absolute; width:40px; height:40px; border-radius:50%; background:${color}; opacity:0.2; border:1.5px solid ${color};"></div>
         <!-- Center initial badge (Counter-rotated to always be upright) -->
         <div class="upright-counter-rotate" style="position:relative; width:28px; height:28px; border-radius:50%; background:${color}; border:2.5px solid #080c10; box-shadow:0 0 12px ${color}, 0 2px 6px rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:12px; transform:rotate(${counterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
-          ${initial}
+          ${escapeHtml(initial)}
         </div>
         <!-- Upright label below -->
         <div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${counterRotation}deg); transform-origin:center center; background:#080c10; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:900; padding:1px 5px; border-radius:4px; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.9); transition:transform 0.3s ease;">
@@ -942,9 +784,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       myMarkerRef.current = L.marker(pos, { icon, zIndexOffset: 1000 }).addTo(map);
       myMarkerRef.current.on('click', () => {
         triggerHaptic(30);
-        if (onOpenCrewManage) {
-          onOpenCrewManage('active');
-        } else if (onOpenProfile) {
+        if (onOpenProfile) {
           onOpenProfile();
         }
       });
@@ -992,7 +832,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         map.panTo(pos, { animate: true, duration: 0.5 });
       }
     }
-  }, [myLocation, myRiderName, myColor, unitSystem, selectedRiderId, isHost, orientationMode, targetMapRotation]);
+  }, [myLocation, myRiderName, myColor, selectedRiderId, isHost, orientationMode, targetMapRotation]);
 
   // ─── Update Member Markers (Optimized Delta Cache, Lag-Free) ───
   useEffect(() => {
@@ -1022,11 +862,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const bearing = m.location.bearing;
       const isOnline = m.isOnline !== false;
       const statusTag = !isOnline ? 'OFFLINE' : isStopped ? 'STOP' : speed;
-      const isStarred = Boolean(starredRiderIds && starredRiderIds.includes(m.riderId));
 
       const prev = memberCacheRef.current.get(m.riderId);
-      const bearingDelta = prev?.bearing !== null && bearing !== null ? Math.abs((prev?.bearing || 0) - (bearing || 0)) : 999;
-      const needRebuild = !prev || prev.speedText !== statusTag || bearingDelta > 3.0 || prev.isOnline !== isOnline || prev.isStopped !== isStopped || prev.color !== color || prev.isStarred !== isStarred;
 
       const memberCounterRotation = -targetMapRotation;
       const memberArrowRotation = bearing !== null ? bearing : 0;
@@ -1043,15 +880,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         : '';
 
       const leaderCrown = m.isHost
-        ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease;">👑 LEADER</div>`
-        : '';
-
-      const starBadge = isStarred
-        ? `<div class="upright-counter-rotate" style="position:absolute; top:-18px; right:-6px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; font-size:11px; filter:drop-shadow(0 0 3px #fbbf24); z-index:10; transition:transform 0.3s ease;">⭐</div>`
-        : '';
-
-      const haloRing = isStarred
-        ? `<div style="position:absolute; width:44px; height:44px; border-radius:50%; border:2px dashed #fbbf24; opacity:0.85;"></div>`
+        ? `<div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; top:-18px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#f59e0b; color:#080c10; font-family:monospace; font-size:8px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.8); transition:transform 0.3s ease; display:flex; align-items:center; gap:2px;"><svg viewBox="0 0 24 24" width="8" height="8" fill="currentColor"><path d="M2 19h20v2H2v-2zm0-8l5 3 5-7 5 7 5-3v6H2v-6z"/></svg>LEADER</div>`
         : '';
 
       const opacity = isOnline ? '1' : '0.65';
@@ -1061,16 +890,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       const statusBg = !isOnline ? '#0f172a' : isStopped ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)';
 
       const html = `
-        <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${m.name}">
-          ${haloRing}
+        <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; opacity:${opacity}; cursor:pointer;" title="Tap to focus ${escapeHtml(m.name)}">
           ${leaderCrown}
-          ${starBadge}
           ${bearingArrow}
-          <div class="upright-counter-rotate" style="width:28px; height:28px; border-radius:50%; background:${color}; border:2px solid ${isStarred ? '#fbbf24' : '#080c10'}; box-shadow:0 0 ${isStarred ? '12px #fbbf24' : `8px ${color}`}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
+          <div class="upright-counter-rotate" style="width:28px; height:28px; border-radius:50%; background:${color}; border:2px solid #080c10; box-shadow:0 0 8px ${color}, 0 2px 4px rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; color:#080c10; font-family:monospace; font-weight:900; font-size:11px; transform:rotate(${memberCounterRotation}deg); transform-origin:center center; transition:transform 0.3s ease;">
             ${escapeHtml(initial)}
           </div>
-          <div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${isStarred ? '#fbbf24' : color}; color:${isStarred ? '#fbbf24' : color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
-            ${isStarred ? '⭐ ' : ''}${escapeHtml(m.name)}
+          <div class="upright-counter-rotate" data-translate-x="center" style="position:absolute; bottom:-16px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:#0f172a; border:1px solid ${color}; color:${color}; font-family:monospace; font-size:8px; font-weight:bold; padding:1px 4px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.85); transition:transform 0.3s ease;">
+            ${escapeHtml(m.name)}
           </div>
           <div class="upright-counter-rotate live-rider-speed" data-translate-x="center" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%) rotate(${memberCounterRotation}deg); transform-origin:center center; background:${statusBg}; border:1px solid ${statusColor}; color:${statusColor}; font-family:monospace; font-size:7px; font-weight:900; padding:0.5px 3.5px; border-radius:3px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.7); transition:transform 0.3s ease; letter-spacing:0.3px;">
             ${statusTag}
@@ -1087,7 +914,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
       let marker = memberMarkersRef.current.get(m.riderId);
       if (!marker) {
-        marker = L.marker(pos, { icon, zIndexOffset: isStarred ? 960 : 900 }).addTo(map);
+        marker = L.marker(pos, { icon, zIndexOffset: 900 }).addTo(map);
         marker.on('click', () => {
           triggerHaptic(20);
           setSelectedRiderId(m.riderId);
@@ -1106,12 +933,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           isStopped,
           isHost: m.isHost,
           color,
-          isStarred,
         });
       } else {
         // High-speed direct position update without DOM destruction
         marker.setLatLng(pos);
-        marker.setZIndexOffset(isStarred ? 960 : 900);
+        marker.setZIndexOffset(900);
 
         // Zero-GC in-place rotation of the direction arrow & upright labels without destroying DOM
         const el = marker.getElement();
@@ -1141,8 +967,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           }
         }
 
-        // Only rebuild DOM icon if identity, host status, online state or star status changed
-        const identityOrStateChanged = !prev || prev.isOnline !== isOnline || prev.isHost !== m.isHost || prev.color !== color || prev.isStarred !== isStarred;
+        // Only rebuild DOM icon if identity, host status or online state changed
+        const identityOrStateChanged = !prev || prev.isOnline !== isOnline || prev.isHost !== m.isHost || prev.color !== color;
         if (identityOrStateChanged) {
           marker.setIcon(icon);
         }
@@ -1156,11 +982,10 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           isStopped,
           isHost: m.isHost,
           color,
-          isStarred,
         });
       }
     });
-  }, [members, isOnRadar, unitSystem, starredRiderIds, targetMapRotation, orientationMode, myHeading]);
+  }, [members, isOnRadar, targetMapRotation, orientationMode, myHeading]);
 
   // SOS Marker (Crisp solid alert marker)
   useEffect(() => {
@@ -1179,8 +1004,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     const html = `
       <div style="position:relative; width:40px; height:40px; display:flex; align-items:center; justify-content:center;">
         <div style="position:absolute; width:38px; height:38px; border-radius:50%; background:#ef4444; opacity:0.3; border:2px solid #ef4444;"></div>
-        <div style="position:relative; width:28px; height:28px; border-radius:50%; background:#ef4444; border:2px solid #fff; box-shadow:0 0 12px #ef4444; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px;">
-          🚨
+        <div style="position:relative; width:28px; height:28px; border-radius:50%; background:#ef4444; border:2px solid #fff; box-shadow:0 0 12px #ef4444; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:900; font-size:14px;">
+          !
         </div>
         <div style="position:absolute; top:-18px; left:50%; transform:translateX(-50%); background:#7f1d1d; border:1px solid #ef4444; color:#fff; font-family:monospace; font-size:9px; font-weight:900; padding:1px 4px; border-radius:3px; white-space:nowrap;">
           SOS: ${escapeHtml(sosAlert.fromName)}
@@ -1209,7 +1034,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
   // Dynamic Initial Bounds: auto-encompass active riders on cold-start ONLY (never hijacks camera mid-ride)
   useEffect(() => {
     if (!mapInstanceRef.current || hasInitialFit) return;
-    const activeMembers = members.filter(m => m.location && m.isOnline !== false);
+    const activeMembers = isOnRadar ? members.filter(m => m.location && m.isOnline !== false) : [];
 
     const points: L.LatLngTuple[] = [];
     if (myLocation) points.push([myLocation.lat, myLocation.lon]);
@@ -1222,15 +1047,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       }
     });
 
+    const getVisibleMapPadding = (): [number, number] => {
+      const el = mapContainerRef.current;
+      const parent = el?.parentElement;
+      if (!el || !parent) return [60, 60];
+      const minViewportDim = Math.min(parent.clientWidth, parent.clientHeight);
+      const safePad = Math.max(55, Math.round((Math.min(el.clientWidth, el.clientHeight) - minViewportDim) / 2) + 55);
+      return [safePad, safePad];
+    };
+
     if (points.length > 1) {
       const bounds = L.latLngBounds(points);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [55, 55], maxZoom: 15, animate: true });
+      mapInstanceRef.current.fitBounds(bounds, { padding: getVisibleMapPadding(), maxZoom: 15, animate: true });
       setHasInitialFit(true);
     } else if (points.length === 1) {
       mapInstanceRef.current.setView(points[0], 15);
       setHasInitialFit(true);
     }
-  }, [myLocation, members, hasInitialFit]);
+  }, [myLocation, members, hasInitialFit, isOnRadar]);
 
   // Fit bounds to include all crew members
   const handleFitAllRiders = () => {
@@ -1239,19 +1073,27 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
 
     const points: L.LatLngTuple[] = [];
     if (myLocation) points.push([myLocation.lat, myLocation.lon]);
-    members.forEach(m => {
-      if (m.location && m.isOnline !== false) {
-        points.push([m.location.lat, m.location.lon]);
-      }
-    });
+    if (isOnRadar) {
+      members.forEach(m => {
+        if (m.location && m.isOnline !== false) {
+          points.push([m.location.lat, m.location.lon]);
+        }
+      });
+    }
 
     if (points.length === 0) return;
 
     if (points.length === 1) {
       mapInstanceRef.current.flyTo(points[0], 16, { animate: true, duration: 0.8 });
     } else {
+      const el = mapContainerRef.current;
+      const parent = el?.parentElement;
+      const minViewportDim = el && parent ? Math.min(parent.clientWidth, parent.clientHeight) : 0;
+      const safePad = el && parent
+        ? Math.max(60, Math.round((Math.min(el.clientWidth, el.clientHeight) - minViewportDim) / 2) + 60)
+        : 60;
       const bounds = L.latLngBounds(points);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 15, animate: true });
+      mapInstanceRef.current.fitBounds(bounds, { padding: [safePad, safePad], maxZoom: 15, animate: true });
     }
     setSelectedRiderId(null);
   };
@@ -1267,224 +1109,323 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
     setSelectedRiderId('me');
   };
 
-  // Pan to selected member
-  const handleSelectMember = (member: GroupMemberInfo) => {
-    if (!mapInstanceRef.current || !member.location) return;
-    triggerHaptic(20);
-    setSelectedRiderId(member.riderId);
-    mapInstanceRef.current.flyTo([member.location.lat, member.location.lon], 16, {
-      animate: true,
-      duration: 0.8,
-    });
-  };
-
-  const handleSaveHandle = () => {
-    if (tempHandle.trim() && onUpdateRiderName) {
-      onUpdateRiderName(tempHandle.trim());
-      setIsEditingHandle(false);
-      triggerHaptic(30);
-    }
-  };
-
-  const totalRiders = members.length + 1;
-
   return (
     <div className={`relative flex flex-col w-full h-full flex-1 overflow-hidden select-none ${isLight ? 'bg-slate-100' : 'bg-[#080c10]'}`}>
 
       {/* ─────────────────────────────────────────────────────────────
-          LEAFLET MAP CANVAS (Oversized & Centered for Zero-Clip Rotation)
+          LEAFLET MAP CANVAS (Oversized Square >= Diagonal for Zero-Clip Rotation)
       ───────────────────────────────────────────────────────────── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-auto z-0 [isolation:isolate]">
-        <div 
-          ref={mapContainerRef} 
+        <div
+          ref={mapContainerRef}
           style={{
             position: 'absolute',
-            width: '150%',
-            height: '150%',
-            top: '-25%',
-            left: '-25%',
-            transform: `rotate(${targetMapRotation}deg)`,
+            width: '150vmax',
+            height: '150vmax',
+            top: '50%',
+            left: '50%',
+            transform: `translate(-50%, -50%) rotate(${targetMapRotation}deg)`,
             transformOrigin: '50% 50%',
             transition: 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
           }}
-          className="cursor-grab active:cursor-grabbing" 
+          className="cursor-grab active:cursor-grabbing"
         />
       </div>
 
-      {/* Cold-Start Satellite Acquisition Pill */}
-      {!myLocation && (
+      {/* ─────────────────────────────────────────────────────────────
+          UNIFIED TOP FLOATING ALERT & GUIDANCE STACK (NON-OVERLAPPING)
+      ───────────────────────────────────────────────────────────── */}
+      {(sosAlert ||
+        (trailedMember && trailingStats) ||
+        !myLocation ||
+        (isOnRadar && !trailedRiderId && convoySpreadData) ||
+        (isOnRadar && crewNotification) ||
+        (isOnRadar && !trailedRiderId && squadLeader && squadLeader.riderId !== 'me')) && (
         <div
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)' }}
-          className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-950/92 backdrop-blur-md border border-amber-500/50 text-amber-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in"
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span>Acquiring GPS fix...</span>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          INROADS-STYLE CONVOY PACK SPREAD HUD (1-TAP FIT ALL RIDERS)
-      ───────────────────────────────────────────────────────────── */}
-      {isOnRadar && !trailedRiderId && convoySpreadData && (
-        <div 
-          onClick={handleFitAllRiders}
           style={{
-            top: sosAlert 
-              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
-              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
-          }}
-          className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3.5 py-1.5 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
-            convoySpreadData.state === 'separated'
-              ? 'bg-rose-950/95 border-rose-500 text-rose-200 animate-pulse shadow-rose-950/60'
-              : convoySpreadData.state === 'stretched'
-              ? 'bg-amber-950/95 border-amber-500/70 text-amber-200 shadow-amber-950/40'
-              : 'bg-slate-950/95 border-emerald-500/60 text-white shadow-emerald-950/30'
-          }`}
-          title="Tap to fit all convoy riders into map view"
-        >
-          <span className={`w-2 h-2 rounded-full shrink-0 ${
-            convoySpreadData.state === 'separated'
-              ? 'bg-rose-400 animate-ping'
-              : convoySpreadData.state === 'stretched'
-              ? 'bg-amber-400'
-              : 'bg-emerald-400'
-          }`} />
-          {convoySpreadData.state === 'separated' ? (
-            <span>
-              <span className="text-rose-400 font-black">PACK SPREAD</span>
-              <span className="mx-1 text-slate-500">•</span>
-              <span>{convoySpreadData.farthestMember.name} {formatDistance(convoySpreadData.maxDist)} behind</span>
-            </span>
-          ) : convoySpreadData.state === 'stretched' ? (
-            <span>
-              <span className="text-amber-400 font-black">CONVOY STRETCHED</span>
-              <span className="mx-1 text-slate-500">•</span>
-              <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
-            </span>
-          ) : (
-            <span>
-              <span className="text-emerald-400 font-black">CONVOY TIGHT</span>
-              <span className="mx-1 text-slate-500">•</span>
-              <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Solo Rider / Starred Buddy fallback when no full pack spread */}
-      {isOnRadar && !trailedRiderId && !convoySpreadData && primaryStarredMember && primaryStarredMember.distanceFromMeMeters !== undefined && (
-        <div 
-          onClick={() => {
-            triggerHaptic(20);
-            if (primaryStarredMember.location && mapInstanceRef.current) {
-              mapInstanceRef.current.flyTo([primaryStarredMember.location.lat, primaryStarredMember.location.lon], 16, { animate: true, duration: 0.6 });
-            }
-          }}
-          style={{
-            top: sosAlert 
-              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
-              : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
-          }}
-          className={`absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto px-3 py-1 rounded-full backdrop-blur-md border shadow-xl font-mono text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in ${
-            primaryStarredMember.distanceFromMeMeters > 2500
-              ? 'bg-amber-950/95 border-amber-500 text-amber-300 animate-pulse'
-              : 'bg-slate-950/95 border-amber-500/60 text-white'
-          }`}
-          title="Tap to center map on your primary starred convoy buddy"
-        >
-          <span className="text-amber-400">⭐</span>
-          <span className="font-black text-amber-300">{primaryStarredMember.name}:</span>
-          <span>{formatDistance(primaryStarredMember.distanceFromMeMeters)}</span>
-          {primaryStarredMember.location?.speedKmh !== undefined && (
-            <span className="text-cyan-400 text-[10px]">
-              ({formatSpeed(primaryStarredMember.location.speedKmh)})
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed)
-      ───────────────────────────────────────────────────────────── */}
-      {isOnRadar && crewNotification && (
-        <div 
-          style={{
-            top: sosAlert 
-              ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' 
+            top: !sosAlert && hasActiveCallout
+              ? 'calc(env(safe-area-inset-top, 0px) + 9.6rem)'
               : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
             left: 'max(0.6rem, env(safe-area-inset-left))',
             right: 'max(0.6rem, env(safe-area-inset-right))',
           }}
-          className="absolute sm:left-auto sm:max-w-sm z-30 pointer-events-auto animate-in slide-in-from-top-2 duration-200"
+          className="absolute z-30 pointer-events-none flex flex-col items-center gap-1.5"
         >
-          <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-mono text-xs ${
-            crewNotification.type === 'join'
-              ? 'bg-emerald-950/92 border-emerald-500/60 text-emerald-200 shadow-emerald-950/40'
-              : crewNotification.type === 'leave'
-              ? 'bg-slate-900/92 border-slate-700 text-slate-300 shadow-black/40'
-              : 'bg-cyan-950/92 border-cyan-500/60 text-cyan-200 shadow-cyan-950/40'
-          }`}>
-            <span className="font-bold truncate">{crewNotification.text}</span>
-            {onDismissCrewNotification && (
-              <button
-                onClick={onDismissCrewNotification}
-                className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+          {/* 1. SOS BANNER OVERLAY (Highest Priority) */}
+          {sosAlert && (() => {
+            const isMySos = myRiderId && sosAlert.fromId
+              ? sosAlert.fromId === myRiderId
+              : Boolean(
+                  (sosAlert.fromId && sosAlert.fromId === myRiderName) ||
+                  (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (myRiderName || '').trim().toLowerCase())
+                );
+            return (
+              <div className="pointer-events-auto w-full max-w-md animate-in slide-in-from-top-2 duration-200">
+                <div className={`w-full p-2.5 rounded-2xl backdrop-blur-md border-2 font-sans text-xs shadow-2xl flex items-center justify-between gap-2 ${
+                  isMySos
+                    ? isLight ? 'bg-amber-50/98 border-amber-500 text-amber-950' : 'bg-amber-950/95 border-amber-500 text-white'
+                    : isLight ? 'bg-rose-50/98 border-rose-500 text-rose-950' : 'bg-rose-950/95 border-rose-500 text-white'
+                }`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <AlertTriangle className={`w-4 h-4 shrink-0 animate-pulse ${isLight ? 'text-rose-700' : 'text-rose-400'}`} />
+                    <span className={`font-bold truncate text-[11px] ${
+                      isMySos
+                        ? isLight ? 'text-amber-900' : 'text-amber-300'
+                        : isLight ? 'text-rose-800' : 'text-rose-300'
+                    }`}>
+                      {isMySos ? 'YOU BROADCAST EMERGENCY SOS' : `EMERGENCY SOS: ${sosAlert.fromName}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isMySos ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic(50);
+                          if (onCancelSos) onCancelSos();
+                          else if (onDismissSos) onDismissSos();
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95 animate-pulse"
+                        title="Notify entire squad that you are safe"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>I&apos;m Safe / Cancel SOS</span>
+                      </button>
+                    ) : (
+                      <>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(`${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                          title="Send WhatsApp emergency confirmation to rider"
+                        >
+                          <Share2 className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic(30);
+                            openGoogleMapsNavigation(sosAlert.lat, sosAlert.lon, sosAlert.fromName);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                          title="Navigate to emergency location in Google Maps"
+                        >
+                          <Navigation className="w-3 h-3" />
+                          <span>Navigate</span>
+                        </button>
+                        {onDismissSos && (
+                          <button
+                            type="button"
+                            onClick={onDismissSos}
+                            title="Dismiss alert locally"
+                            aria-label="Dismiss SOS alert"
+                            className={`p-1 rounded-lg border cursor-pointer transition-all active:scale-95 ${
+                              isLight
+                                ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
-      {/* ─────────────────────────────────────────────────────────────
-          SAFETY LEAVE CONFIRMATION MODAL
-      ───────────────────────────────────────────────────────────── */}
-      {isLeaveModalOpen && (
-        <div 
-          onClick={e => { if (e.target === e.currentTarget) setIsLeaveModalOpen(false); }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in cursor-pointer"
-        >
-          <div 
-            onClick={e => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-slate-950 border border-slate-700/80 p-4 shadow-2xl font-mono space-y-3 pointer-events-auto cursor-default"
-          >
-            <div className="flex items-center gap-2 text-rose-400 font-heading font-black text-sm uppercase tracking-wider">
-              <LogOut className="w-4 h-4" />
-              <span>{isHost ? 'End Crew Ride?' : 'Leave Crew Radar?'}</span>
+          {/* 2. TRAILING RIDER LIVE GUIDANCE HUD */}
+          {trailedMember && trailingStats && (
+            <div className="pointer-events-auto w-full max-w-md animate-in slide-in-from-top-2 duration-150">
+              <div className={`w-full px-3 py-2 rounded-2xl backdrop-blur-xl border-2 border-amber-500/80 font-sans shadow-2xl flex items-center justify-between gap-2 ${
+                isLight ? 'bg-white/95 text-slate-900' : 'bg-slate-950/95 text-white'
+              }`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black text-base flex items-center justify-center shrink-0 shadow-md">
+                    {trailingStats.direction.arrow}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className={`font-heading font-black text-xs truncate flex items-center gap-1 ${isLight ? 'text-amber-700' : 'text-amber-300'}`}>
+                        {(trailedMember.isHost || trailedMember.riderId === leaderId) ? (
+                          <Crown className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <Navigation className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                        <span className="truncate">{trailedMember.name}</span>
+                      </span>
+                      <span className={`text-[10px] font-bold shrink-0 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {trailingStats.direction.label}
+                      </span>
+                    </div>
+                    <div className={`text-[11px] flex items-center gap-2 telemetry-num ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                      <span className={`font-black ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
+                        {formatDistance(trailingStats.distMeters)}
+                      </span>
+                      <span>•</span>
+                      <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>
+                        {trailingStats.isStopped
+                          ? 'STOPPED'
+                          : `${Math.round(trailingStats.speedKmh || 0)} km/h`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {trailedMember.location && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(25);
+                        openGoogleMapsNavigation(trailedMember.location!.lat, trailedMember.location!.lon, trailedMember.name);
+                      }}
+                      className="p-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md"
+                      title="Open Google Maps navigation to rider"
+                      aria-label="Open Google Maps navigation to rider"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(30);
+                      onTrailRider?.(null);
+                      speakAlert('Stopped trailing rider');
+                    }}
+                    className={`p-1.5 rounded-xl border cursor-pointer transition-all active:scale-95 ${
+                      isLight
+                        ? 'bg-slate-100 hover:bg-rose-50 border-slate-300 hover:border-rose-400 text-slate-600 hover:text-rose-700'
+                        : 'bg-slate-800 hover:bg-rose-950 border-slate-700 hover:border-rose-500 text-slate-300 hover:text-rose-300'
+                    }`}
+                    title="Stop trailing"
+                    aria-label="Stop trailing rider"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {isHost ? (
-                <>You are the <strong>Crew Leader</strong>. Leaving will end the live radar session for all connected riders.</>
+          )}
+
+          {/* 3. Cold-Start Satellite Acquisition Pill */}
+          {!myLocation && (
+            <div className={`px-3 py-1 rounded-full backdrop-blur-md border font-sans text-[11px] font-bold shadow-xl flex items-center gap-1.5 whitespace-nowrap animate-in fade-in ${
+              isLight
+                ? 'bg-amber-50/95 border-amber-400 text-amber-900'
+                : 'bg-slate-950/92 border-amber-500/50 text-amber-300'
+            }`}>
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span>Acquiring GPS fix...</span>
+            </div>
+          )}
+
+          {/* 4. INROADS-STYLE CONVOY PACK SPREAD HUD (1-TAP FIT ALL RIDERS) */}
+          {isOnRadar && !trailedRiderId && convoySpreadData && (
+            <button
+              type="button"
+              onClick={handleFitAllRiders}
+              className={`pointer-events-auto px-3.5 py-1.5 rounded-full backdrop-blur-md border shadow-xl font-sans text-[11px] font-bold flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap animate-in fade-in telemetry-num ${
+                convoySpreadData.state === 'separated'
+                  ? isLight ? 'bg-rose-50/95 border-rose-400 text-rose-900 animate-pulse' : 'bg-rose-950/95 border-rose-500 text-rose-200 animate-pulse shadow-rose-950/60'
+                  : convoySpreadData.state === 'stretched'
+                  ? isLight ? 'bg-amber-50/95 border-amber-400 text-amber-900' : 'bg-amber-950/95 border-amber-500/70 text-amber-200 shadow-amber-950/40'
+                  : isLight ? 'bg-white/95 border-emerald-400 text-slate-900' : 'bg-slate-950/95 border-emerald-500/60 text-white shadow-emerald-950/30'
+              }`}
+              title="Tap to fit all convoy riders into map view"
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                convoySpreadData.state === 'separated'
+                  ? 'bg-rose-500 animate-ping'
+                  : convoySpreadData.state === 'stretched'
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+              }`} />
+              {convoySpreadData.state === 'separated' ? (
+                <span>
+                  <span className={`font-black ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>PACK SPREAD</span>
+                  <span className="mx-1 text-slate-400">•</span>
+                  <span>{convoySpreadData.farthestMember.name} {formatDistance(convoySpreadData.maxDist)} behind</span>
+                </span>
+              ) : convoySpreadData.state === 'stretched' ? (
+                <span>
+                  <span className={`font-black ${isLight ? 'text-amber-800' : 'text-amber-400'}`}>CONVOY STRETCHED</span>
+                  <span className="mx-1 text-slate-400">•</span>
+                  <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
+                </span>
               ) : (
-                <>Disconnect from squad <strong>{roomCode}</strong>? Your personal GPS track recording in Garage will continue.</>
+                <span>
+                  <span className={`font-black ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>CONVOY TIGHT</span>
+                  <span className="mx-1 text-slate-400">•</span>
+                  <span>{convoySpreadData.totalRiders} riders · {formatDistance(convoySpreadData.maxDist)}</span>
+                </span>
               )}
-            </p>
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => setIsLeaveModalOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
-              >
-                Stay with Crew
-              </button>
-              <button
-                onClick={() => {
-                  setIsLeaveModalOpen(false);
-                  if (onLeaveRoom) onLeaveRoom();
-                }}
-                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-md shadow-rose-900/30 transition-colors"
-              >
-                {isHost ? 'End Ride' : 'Leave'}
-              </button>
+            </button>
+          )}
+
+          {/* 5. CREW EVENT NOTIFICATION TOAST (Join / Leave / Host Closed) */}
+          {isOnRadar && crewNotification && (
+            <div className="pointer-events-auto w-full sm:max-w-sm animate-in slide-in-from-top-2 duration-200">
+              <div className={`p-2.5 rounded-xl backdrop-blur-md border shadow-xl flex items-center justify-between gap-2 font-sans text-xs ${
+                crewNotification.type === 'join'
+                  ? isLight ? 'bg-emerald-50/95 border-emerald-400 text-emerald-900' : 'bg-emerald-950/92 border-emerald-500/60 text-emerald-200 shadow-emerald-950/40'
+                  : crewNotification.type === 'leave'
+                  ? isLight ? 'bg-white/95 border-slate-300 text-slate-800' : 'bg-slate-900/92 border-slate-700 text-slate-300 shadow-black/40'
+                  : isLight ? 'bg-cyan-50/95 border-cyan-400 text-cyan-900' : 'bg-cyan-950/92 border-cyan-500/60 text-cyan-200 shadow-cyan-950/40'
+              }`}>
+                <span className="font-bold truncate">{crewNotification.text}</span>
+                {onDismissCrewNotification && (
+                  <button
+                    type="button"
+                    onClick={onDismissCrewNotification}
+                    aria-label="Dismiss notification"
+                    className={`p-0.5 cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* 6. 1-TAP FOLLOW SQUAD LEADER PILL (WHEN NOT TRAILING) */}
+          {isOnRadar && !trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(30);
+                onTrailRider?.(squadLeader.riderId);
+                speakAlert(`Now trailing ride leader ${squadLeader.name}`);
+              }}
+              className={`pointer-events-auto px-3.5 py-1.5 rounded-full border font-sans text-xs font-black shadow-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 backdrop-blur-md animate-in slide-in-from-top-1 duration-150 telemetry-num ${
+                isLight
+                  ? 'bg-white/95 hover:bg-amber-50 border-amber-400 text-amber-800'
+                  : 'bg-slate-950/92 hover:bg-slate-900 border-amber-500/70 text-amber-300'
+              }`}
+            >
+              <Crown className="w-3.5 h-3.5 shrink-0" />
+              <span>Follow Leader ({squadLeader.name})</span>
+              {squadLeader.distanceFromMeMeters !== undefined && (
+                <span className={`text-[10px] px-1.5 rounded ${
+                  isLight ? 'text-amber-800 bg-amber-100' : 'text-amber-300 bg-amber-500/20'
+                }`}>
+                  {formatDistance(squadLeader.distanceFromMeMeters)}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
           SMART STOP INTENT PROMPT ("Tell, Don't Poll" One-Tap FYIs)
       ───────────────────────────────────────────────────────────── */}
-      {stopIntentActive && (
+      {isOnRadar && stopIntentActive && (
         <div 
           style={{ 
             bottom: 'max(5.5rem, calc(env(safe-area-inset-bottom) + 5.2rem))',
@@ -1493,79 +1434,76 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           }}
           className="absolute z-40 flex justify-center pointer-events-none animate-in slide-in-from-bottom-2 duration-200"
         >
-          <div className="pointer-events-auto max-w-sm w-full p-2.5 rounded-2xl bg-slate-950/95 border border-cyan-500/60 shadow-2xl backdrop-blur-md font-mono text-xs flex flex-col gap-2">
-            <div className="flex items-center justify-between text-slate-300">
-              <span className="font-heading font-black text-[11px] uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
-                <span>🛑</span>
+          <div className={`pointer-events-auto max-w-sm w-full p-2.5 rounded-2xl border shadow-2xl backdrop-blur-md font-sans text-xs flex flex-col gap-2 ${
+            isLight
+              ? 'bg-white/95 border-cyan-500/60 text-slate-900'
+              : 'bg-slate-950/95 border-cyan-500/60 text-white'
+          }`}>
+            <div className={`flex items-center justify-between ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+              <span className={`font-heading font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>
+                <AlertTriangle className="w-3.5 h-3.5" />
                 <span>Cruising Paused • Broadcast Stop?</span>
               </span>
               <button 
+                type="button"
                 onClick={() => setStopIntentActive(false)}
-                className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+                aria-label="Dismiss stop prompt"
+                className={`p-0.5 cursor-pointer ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="flex items-center gap-1.5">
               <button
+                type="button"
                 onClick={() => {
                   triggerHaptic(30);
                   const preset = CALLOUT_PRESETS.find(p => p.type === 'fuel') || CALLOUT_PRESETS[0];
                   if (onSendCallout) onSendCallout(preset);
                   setStopIntentActive(false);
                 }}
-                className="flex-1 py-1.5 px-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                className={`flex-1 py-1.5 px-2 rounded-xl border font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-800'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/50 text-amber-300'
+                }`}
               >
-                <span>⛽</span> Fuel
+                <Fuel className="w-3.5 h-3.5" /> Fuel
               </button>
               <button
+                type="button"
                 onClick={() => {
                   triggerHaptic(30);
                   const preset = CALLOUT_PRESETS.find(p => p.type === 'chai') || CALLOUT_PRESETS[1];
                   if (onSendCallout) onSendCallout(preset);
                   setStopIntentActive(false);
                 }}
-                className="flex-1 py-1.5 px-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                className={`flex-1 py-1.5 px-2 rounded-xl border font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'bg-orange-50 hover:bg-orange-100 border-orange-300 text-orange-800'
+                    : 'bg-orange-500/20 hover:bg-orange-500/30 border-orange-500/50 text-orange-300'
+                }`}
               >
-                <span>☕</span> Chai
+                <Coffee className="w-3.5 h-3.5" /> Chai
               </button>
               <button
+                type="button"
                 onClick={() => {
                   triggerHaptic(30);
                   const preset = CALLOUT_PRESETS.find(p => p.type === 'regroup') || CALLOUT_PRESETS[2];
                   if (onSendCallout) onSendCallout(preset);
                   setStopIntentActive(false);
                 }}
-                className="flex-1 py-1.5 px-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-300 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-all active:scale-95"
+                className={`flex-1 py-1.5 px-2 rounded-xl border font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 ${
+                  isLight
+                    ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-800'
+                    : 'bg-cyan-500/20 hover:bg-cyan-500/30 border-cyan-500/50 text-cyan-300'
+                }`}
               >
-                <span>🛑</span> Regroup
+                <Compass className="w-3.5 h-3.5" /> Regroup
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          1-TAP OFFLINE ROUTE MAP CACHE BUTTON (WHEN ROUTE LOADED)
-      ───────────────────────────────────────────────────────────── */}
-      {activeRoute && activeRoute.points && activeRoute.points.length > 0 && (
-        <div 
-          style={{ 
-            bottom: 'max(4.5rem, calc(env(safe-area-inset-bottom) + 4.2rem))',
-            left: 'max(0.75rem, env(safe-area-inset-left))',
-          }}
-          className="absolute z-30 pointer-events-auto animate-in fade-in duration-200"
-        >
-          <button
-            type="button"
-            onClick={handleCacheOfflineRoute}
-            disabled={isCachingRoute}
-            className="h-10 px-3 rounded-2xl backdrop-blur-xl border border-cyan-500/50 bg-[#0d131a]/95 text-cyan-300 font-mono text-[10px] font-bold shadow-2xl flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 transition-all hover:bg-cyan-950/60 hover:border-cyan-400"
-            title="Download map tiles along this route for offline riding in mountain passes"
-          >
-            <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{isCachingRoute ? 'Caching...' : 'Cache Route Offline'}</span>
-          </button>
         </div>
       )}
 
@@ -1579,43 +1517,58 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
         }}
         className="absolute z-40 flex flex-col items-center gap-2 pointer-events-auto"
       >
-        {/* Glove-friendly Zoom In / Out & Layer Quick Toggle */}
+        {/* Zoom In / Out hidden on <768px phones and compact landscape so controls stay clear of TopMapCapsule; pinch-to-zoom works on mobile */}
         <div className="flex flex-col gap-1.5 mb-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic(15);
-              mapInstanceRef.current?.zoomIn();
-            }}
-            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-xl font-black"
-            title="Zoom In (Map)"
-            aria-label="Zoom In"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic(15);
-              mapInstanceRef.current?.zoomOut();
-            }}
-            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500 text-xl font-black"
-            title="Zoom Out (Map)"
-            aria-label="Zoom Out"
-          >
-            −
-          </button>
+          <div className="hidden md:flex mobile-landscape-hidden flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(15);
+                mapInstanceRef.current?.zoomIn();
+              }}
+              className={`w-11 h-11 rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 text-xl font-black ${
+                isLight
+                  ? 'bg-white/95 border-slate-300 text-slate-800 hover:bg-slate-100 hover:border-slate-400'
+                  : 'bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500'
+              }`}
+              title="Zoom In (Map)"
+              aria-label="Zoom In"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(15);
+                mapInstanceRef.current?.zoomOut();
+              }}
+              className={`w-11 h-11 rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 text-xl font-black ${
+                isLight
+                  ? 'bg-white/95 border-slate-300 text-slate-800 hover:bg-slate-100 hover:border-slate-400'
+                  : 'bg-slate-950/90 border-slate-700 text-slate-200 hover:text-white hover:border-slate-500'
+              }`}
+              title="Zoom Out (Map)"
+              aria-label="Zoom Out"
+            >
+              −
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => {
               triggerHaptic(20);
-              const next = mapLayer === 'dark' ? 'sunlight' : mapLayer === 'sunlight' ? 'satellite' : 'dark';
+              const next: MapLayerType =
+                mapLayer === 'dark' ? 'streets' : mapLayer === 'streets' ? 'sunlight' : mapLayer === 'sunlight' ? 'satellite' : 'dark';
               setMapLayer(next);
               onChangeMapLayer?.(next);
             }}
-            className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500"
-            title={`Map Theme: ${mapLayer.toUpperCase()} • Tap to cycle Dark / Sunlight / Satellite`}
-            aria-label="Toggle Map Theme"
+            className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-2xl backdrop-blur-md border shadow-xl flex items-center justify-center cursor-pointer transition-all active:scale-90 ${
+              isLight
+                ? 'bg-white/95 border-slate-300 text-cyan-700 hover:bg-slate-100 hover:border-slate-400'
+                : 'bg-slate-950/90 border-slate-700 text-cyan-400 hover:text-white hover:border-slate-500'
+            }`}
+            title={`Map Style: ${mapLayer.toUpperCase()} • Tap to cycle Dark / Streets / Sunlight / Satellite`}
+            aria-label={`Cycle map style (currently ${mapLayer})`}
           >
             <Layers className="w-5 h-5" />
           </button>
@@ -1627,7 +1580,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           onClick={handleToggleOrientation}
           className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full backdrop-blur-md border shadow-2xl flex flex-col items-center justify-center cursor-pointer transition-all active:scale-90 ${
             orientationMode === 'course'
-              ? 'bg-slate-950/95 border-cyan-400 text-cyan-300 ring-2 ring-cyan-400/30'
+              ? isLight
+                ? 'bg-cyan-50/95 border-cyan-500 text-cyan-700 ring-2 ring-cyan-400/40'
+                : 'bg-slate-950/95 border-cyan-400 text-cyan-300 ring-2 ring-cyan-400/30'
+              : isLight
+              ? 'bg-white/95 border-slate-300 text-slate-600 hover:border-slate-400'
               : 'bg-slate-950/90 border-slate-700 text-slate-400 hover:border-slate-500'
           }`}
           title={orientationMode === 'course' ? 'Course-Up (Map rotates with bike) • Tap for North-Up' : 'North-Up • Tap for Course-Up (Direction Follow)'}
@@ -1643,9 +1600,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
             {/* Red North Needle */}
             <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[9px] border-b-rose-500" />
             {/* Silver South Needle */}
-            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[9px] border-t-slate-300" />
+            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[9px] border-t-slate-400" />
           </div>
-          <span className="text-[8px] font-black tracking-tighter mt-0.5 leading-none text-slate-400">
+          <span className={`text-[8px] font-black tracking-tighter mt-0.5 leading-none ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
             {orientationMode === 'course' ? 'HDG' : 'N'}
           </span>
         </button>
@@ -1656,6 +1613,8 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           className={`w-12 h-12 min-w-[48px] min-h-[48px] rounded-full backdrop-blur-md border shadow-2xl flex items-center justify-center cursor-pointer transition-all active:scale-90 relative ${
             selectedRiderId === 'me'
               ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-cyan-500/40 ring-2 ring-cyan-400/50'
+              : isLight
+              ? 'bg-white/95 border-slate-300 text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500'
               : 'bg-slate-950/90 border-slate-700 text-cyan-400 hover:bg-slate-900 hover:border-cyan-400'
           }`}
           title="Recenter on My Location (GPS)"
@@ -1669,110 +1628,9 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          TRAILING RIDER LIVE GUIDANCE HUD
-      ───────────────────────────────────────────────────────────── */}
-      {trailedMember && trailingStats && (
-        <div 
-          style={{ 
-            top: sosAlert ? 'calc(env(safe-area-inset-top, 0px) + 7.9rem)' : 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
-            left: 'max(0.6rem, env(safe-area-inset-left))',
-            right: 'max(0.6rem, env(safe-area-inset-right))',
-          }}
-          className="absolute z-30 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-150"
-        >
-          <div className="pointer-events-auto w-full max-w-md px-3 py-2 rounded-2xl bg-slate-950/95 backdrop-blur-xl border-2 border-amber-500/80 text-white font-mono shadow-2xl flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black text-base flex items-center justify-center shrink-0 shadow-md">
-                {trailingStats.direction.arrow}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="font-heading font-black text-xs text-amber-300 truncate">
-                    {trailedMember.isHost || trailedMember.riderId === leaderId ? '👑 ' : '🧭 '}{trailedMember.name}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-bold">
-                    {trailingStats.direction.label}
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-300 flex items-center gap-2">
-                  <span className="font-black text-cyan-400">
-                    {formatDistance(trailingStats.distMeters)}
-                  </span>
-                  <span>•</span>
-                  <span className="text-slate-400">
-                    {trailingStats.isStopped 
-                      ? 'STOPPED' 
-                      : `${Math.round(unitSystem === 'imperial' ? (trailingStats.speedKmh || 0) * 0.621371 : (trailingStats.speedKmh || 0))} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {trailedMember.location && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic(25);
-                    openGoogleMapsNavigation(trailedMember.location!.lat, trailedMember.location!.lon);
-                  }}
-                  className="p-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md"
-                  title="Open Google Maps navigation to rider"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic(30);
-                  onTrailRider?.(null);
-                  speakAlert('Stopped trailing rider');
-                }}
-                className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-rose-300 cursor-pointer transition-all active:scale-95"
-                title="Stop trailing"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          1-TAP FOLLOW SQUAD LEADER PILL (WHEN NOT TRAILING)
-          Positioned below the trailing HUD / callout banner zone to avoid overlap
-      ───────────────────────────────────────────────────────────── */}
-      {isOnRadar && !trailedRiderId && squadLeader && squadLeader.riderId !== 'me' && (
-        <div 
-          style={{ 
-            top: sosAlert ? 'calc(env(safe-area-inset-top, 0px) + 9.2rem)' : 'calc(env(safe-area-inset-top, 0px) + 6.5rem)',
-          }}
-          className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in slide-in-from-top-1 duration-150"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic(30);
-              onTrailRider?.(squadLeader.riderId);
-              speakAlert(`Now trailing ride leader ${squadLeader.name}`);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-slate-950/92 hover:bg-slate-900 border border-amber-500/70 text-amber-300 font-mono text-xs font-black shadow-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 backdrop-blur-md"
-          >
-            <span>👑 Follow Leader ({squadLeader.name})</span>
-            {squadLeader.distanceFromMeMeters !== undefined && (
-              <span className="text-[10px] text-amber-400/80 bg-amber-500/20 px-1 rounded">
-                {formatDistance(squadLeader.distanceFromMeMeters)}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
           FOCUSED RIDER BOTTOM ACTION CARD
       ───────────────────────────────────────────────────────────── */}
-      {selectedMember && selectedMember.riderId !== 'me' && (
+      {isOnRadar && selectedMember && selectedMember.riderId !== 'me' && (
         <div 
           style={{ 
             bottom: 'max(4.8rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
@@ -1781,7 +1639,7 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           }}
           className="absolute z-40 pointer-events-none flex justify-center animate-in slide-in-from-bottom-2 duration-150"
         >
-          <div className={`pointer-events-auto w-full max-w-md p-3 sm:p-3.5 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 font-mono ${
+          <div className={`pointer-events-auto w-full max-w-md p-3 sm:p-3.5 rounded-2xl backdrop-blur-xl border shadow-2xl space-y-2.5 font-sans ${
             isLight ? 'bg-white/98 border-slate-300 text-slate-900' : 'bg-slate-950/98 border-cyan-500/40 text-white'
           }`}>
             <div className={`flex items-center justify-between pb-1.5 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
@@ -1794,20 +1652,24 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   <div className={`font-bold text-xs truncate flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                     <span>{selectedMember.name}</span>
                     {selectedMember.bikeModel && (
-                      <span className="text-[10px] text-slate-400 font-normal">({selectedMember.bikeModel})</span>
+                      <span className={`text-[10px] font-normal ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>({selectedMember.bikeModel})</span>
                     )}
                     {(selectedMember.isHost || selectedMember.riderId === leaderId) && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[9px] font-black">
-                        👑 LEAD
+                      <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black inline-flex items-center gap-1 ${
+                        isLight ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                      }`}>
+                        <Crown className="w-2.5 h-2.5" /> LEAD
                       </span>
                     )}
                     {trailedRiderId === selectedMember.riderId && (
-                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-[9px] font-black animate-pulse">
-                        🧭 TRAILING
+                      <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black animate-pulse inline-flex items-center gap-1 ${
+                        isLight ? 'bg-cyan-50 text-cyan-800 border-cyan-300' : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+                      }`}>
+                        <Compass className="w-2.5 h-2.5" /> TRAILING
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                  <div className={`text-[10px] flex items-center gap-2 telemetry-num ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                     <span>
                       {selectedMember.isOnline 
                         ? (selectedMember.location?.speedKmh && selectedMember.location.speedKmh >= 2.5 
@@ -1816,15 +1678,17 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                         : 'Offline'}
                     </span>
                     {selectedMember.location?.batteryPct !== undefined && (
-                      <span>🔋 {selectedMember.location.batteryPct}%</span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <Battery className="w-3 h-3" /> {selectedMember.location.batteryPct}%
+                      </span>
                     )}
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="text-right">
-                  <div className="font-black text-cyan-400 text-xs">
+                <div className="text-right telemetry-num">
+                  <div className={`font-black text-xs ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
                     {formatDistance(selectedMember.distanceFromMeMeters)}
                   </div>
                   <div className="text-[9px] text-slate-500">Separation</div>
@@ -1832,10 +1696,13 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedRiderId('me')}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer ml-1"
+                  className={`p-1 rounded-lg cursor-pointer ml-1 ${
+                    isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                  }`}
                   title="Close card"
+                  aria-label="Close rider card"
                 >
-                  ✕
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -1860,7 +1727,11 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                     : 'bg-cyan-600 hover:bg-cyan-500 text-slate-950'
                 }`}
               >
-                <span>{trailedRiderId === selectedMember.riderId ? '✕ Stop Trailing' : '🧭 Trail This Rider'}</span>
+                {trailedRiderId === selectedMember.riderId ? (
+                  <><X className="w-3.5 h-3.5" /> Stop Trailing</>
+                ) : (
+                  <><Compass className="w-3.5 h-3.5" /> Trail Rider</>
+                )}
               </button>
 
               {!(selectedMember.isHost || selectedMember.riderId === leaderId) && onSetSquadLeader && (
@@ -1870,10 +1741,14 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                     triggerHaptic(30);
                     onSetSquadLeader(selectedMember.riderId, selectedMember.name);
                   }}
-                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-amber-950/60 border border-slate-700 hover:border-amber-500/50 text-slate-200 hover:text-amber-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                  className={`py-2 px-3 rounded-xl border font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                    isLight
+                      ? 'bg-slate-100 hover:bg-amber-50 border-slate-300 hover:border-amber-400 text-slate-700 hover:text-amber-800'
+                      : 'bg-slate-800 hover:bg-amber-950/60 border-slate-700 hover:border-amber-500/50 text-slate-200 hover:text-amber-300'
+                  }`}
                   title="Make this rider the squad leader"
                 >
-                  <span>👑 Make Lead</span>
+                  <Crown className="w-3.5 h-3.5" /> Make Lead
                 </button>
               )}
 
@@ -1882,10 +1757,15 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
                   type="button"
                   onClick={() => {
                     triggerHaptic(30);
-                    openGoogleMapsNavigation(selectedMember.location!.lat, selectedMember.location!.lon);
+                    openGoogleMapsNavigation(selectedMember.location!.lat, selectedMember.location!.lon, selectedMember.name);
                   }}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                  className={`p-2 rounded-xl border font-bold text-xs flex items-center justify-center cursor-pointer transition-all active:scale-95 ${
+                    isLight
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 hover:text-slate-900'
+                      : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200 hover:text-white'
+                  }`}
                   title="Navigate directly to rider in Google Maps"
+                  aria-label="Navigate directly to rider in Google Maps"
                 >
                   <Navigation className="w-3.5 h-3.5" />
                 </button>
@@ -1894,109 +1774,6 @@ export const CrewLiveMap: React.FC<CrewLiveMapProps> = ({
           </div>
         </div>
       )}
-
-
-      {/* Offline Caching Progress / Success Pill */}
-      {(cacheProgress || cacheSuccessMsg) && (
-        <div
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)' }}
-          className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1 rounded-full bg-slate-950/95 backdrop-blur-md border border-emerald-500/60 text-emerald-300 font-mono text-[11px] font-bold shadow-xl flex items-center gap-2 whitespace-nowrap animate-in fade-in"
-        >
-          {cacheProgress && !cacheSuccessMsg && (
-            <>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>Caching Offline Map: {cacheProgress.percentage}% ({cacheProgress.cached}/{cacheProgress.total})</span>
-            </>
-          )}
-          {cacheSuccessMsg && (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{cacheSuccessMsg}</span>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          SOS BANNER OVERLAY (Clean, solid, non-bouncing warning banner)
-      ───────────────────────────────────────────────────────────── */}
-      {sosAlert && (() => {
-        const isMySos = myRiderId && sosAlert.fromId
-          ? sosAlert.fromId === myRiderId
-          : Boolean(
-              (sosAlert.fromId && sosAlert.fromId === myRiderName) ||
-              (sosAlert.fromName && sosAlert.fromName.trim().toLowerCase() === (myRiderName || '').trim().toLowerCase())
-            );
-        return (
-          <div 
-            style={{
-              top: 'calc(env(safe-area-inset-top, 0px) + 4.05rem)',
-              left: 'max(0.6rem, env(safe-area-inset-left))',
-              right: 'max(0.6rem, env(safe-area-inset-right))',
-            }}
-            className="absolute z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-2 duration-200"
-          >
-            <div className={`pointer-events-auto w-full max-w-md p-2.5 rounded-2xl backdrop-blur-md border-2 text-white font-mono text-xs shadow-2xl flex items-center justify-between gap-2 ${
-              isMySos ? 'bg-amber-950/95 border-amber-500' : 'bg-rose-950/95 border-rose-500'
-            }`}>
-              <div className="flex items-center gap-1.5 truncate">
-                <span className="text-base animate-pulse">🚨</span>
-                <span className={`font-bold truncate text-[11px] ${isMySos ? 'text-amber-300' : 'text-rose-300'}`}>
-                  {isMySos ? 'YOU BROADCAST EMERGENCY SOS' : `EMERGENCY SOS: ${sosAlert.fromName}`}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {isMySos ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic(50);
-                      if (onCancelSos) onCancelSos();
-                      else if (onDismissSos) onDismissSos();
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer transition-all active:scale-95 animate-pulse"
-                    title="Notify entire squad that you are safe"
-                  >
-                    <span>🟢 I'M SAFE / CANCEL SOS</span>
-                  </button>
-                ) : (
-                  <>
-                    <a
-                      href={`https://wa.me/?text=${encodeURIComponent(`🚨 ${sosAlert.fromName}, we received your emergency SOS! The squad is en route to your GPS location: https://maps.google.com/?q=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-                      title="Send WhatsApp emergency confirmation to rider"
-                    >
-                      <Share2 className="w-3 h-3" />
-                      <span>WhatsApp</span>
-                    </a>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${sosAlert.lat.toFixed(6)},${sosAlert.lon.toFixed(6)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-                    >
-                      <Navigation className="w-3 h-3" />
-                      <span>Navigate</span>
-                    </a>
-                    {onDismissSos && (
-                      <button
-                        type="button"
-                        onClick={onDismissSos}
-                        title="Dismiss alert locally"
-                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] cursor-pointer transition-all active:scale-95"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
     </div>
   );

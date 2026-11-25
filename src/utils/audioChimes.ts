@@ -34,6 +34,10 @@ function getAudioContext(): AudioContext | null {
 
 export function triggerHaptic(pattern: number | number[] = 40) {
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    const userActivation = (navigator as any).userActivation;
+    if (!Capacitor.isNativePlatform() && userActivation && !userActivation.hasBeenActive) {
+      return;
+    }
     try {
       navigator.vibrate(pattern);
     } catch {}

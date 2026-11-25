@@ -1,6 +1,7 @@
 import React from 'react';
-import { 
-  Radio, 
+import {
+  Bike,
+  Radio,
   HelpCircle,
   FolderArchive,
   Upload,
@@ -13,21 +14,10 @@ import { AppTheme } from '../types';
 interface NavbarProps {
   currentTab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
   setCurrentTab: (tab: 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq') => void;
-  onLoadSample: () => void;
   onUploadClick: () => void;
-  onOpenGarage: () => void;
-  onOpenCompare?: () => void;
-  onOpenGroupRide?: () => void;
-  onOpenCloudSync?: () => void;
   groupRideConnected?: boolean;
-  groupRoomCode?: string;
-  onExportGpx: () => void;
-  onOpenReport?: () => void;
   onHomeClick?: () => void;
-  onInstallPwa?: () => void;
-  canInstallPwa?: boolean;
   isRecordingLive: boolean;
-  rideName: string;
   hasActiveRide: boolean;
   theme: AppTheme;
   onOpenSettings?: () => void;
@@ -49,53 +39,43 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      className={`sticky top-0 z-40 navbar-landscape-offset backdrop-blur-md border-b transition-colors ${
+      className={`sticky top-0 z-40 navbar-landscape-offset landscape-compact-hide backdrop-blur-md border-b transition-colors ${
         isLight
           ? 'bg-white/95 border-slate-200 shadow-sm'
           : 'bg-[#0d131a]/95 border-[#1e2a38]'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-11 sm:h-12 landscape:h-9 flex items-center justify-between gap-1.5 sm:gap-2">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-4 h-11 sm:h-12 flex items-center justify-between gap-2">
         {/* Brand identity */}
-        <button 
+        <button
           id="btn-nav-home"
           type="button"
           onClick={onHomeClick}
           title="Return to Dashboard"
+          aria-label="Return to ThrottleLog Home Dashboard"
           className="flex items-center gap-1.5 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 focus:outline-hidden rounded-lg"
         >
           <div
-            className={`w-7 h-7 sm:w-8 sm:h-8 landscape:w-6 landscape:h-6 border rounded-lg flex items-center justify-center text-xs sm:text-sm landscape:text-[11px] shadow-xs ${
+            className={`w-7 h-7 sm:w-8 sm:h-8 border rounded-lg flex items-center justify-center shadow-xs ${
               isLight
-                ? 'bg-slate-100 border-sky-500/40 text-slate-800'
-                : 'bg-[#131b24] border-sky-500/40 text-white'
+                ? 'bg-slate-100 border-sky-500/40 text-sky-700'
+                : 'bg-[#131b24] border-sky-500/40 text-sky-400'
             }`}
           >
-            🏍️
+            <Bike className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
           </div>
           <div className="flex items-center gap-1">
             <span
-              className={`font-heading font-black tracking-tight text-xs sm:text-base landscape:text-xs ${
+              className={`font-heading font-black tracking-tight text-xs sm:text-base ${
                 isLight ? 'text-slate-900' : 'text-white'
               }`}
             >
-              THROTTLE<span className="text-sky-500">LOG</span>
+              THROTTLE<span className={isLight ? 'text-sky-600' : 'text-sky-400'}>LOG</span>
             </span>
           </div>
         </button>
 
-        {/* Mobile Portrait: Direct Jump to Live Map */}
-        <button
-          id="btn-nav-mobile-crew"
-          type="button"
-          onClick={() => setCurrentTab('crew')}
-          className="md:hidden landscape-compact-hide flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs shadow-sm cursor-pointer transition-all active:scale-95"
-        >
-          <Users className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Map</span>
-        </button>
-
-        {/* Navigation Mode Switcher (Hidden on compact phone landscape since left thumb rail handles navigation) */}
+        {/* Desktop & Tablet Navigation Mode Switcher */}
         <div
           className={`hidden md:flex landscape-compact-hide items-center gap-1 p-0.5 sm:p-1 border rounded-lg transition-colors ${
             isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#131b24] border-[#1e2a38]'
@@ -170,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <FolderArchive className="w-3.5 h-3.5" />
             <span>Rides</span>
             {hasActiveRide && (
-              <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? 'bg-slate-950' : 'bg-emerald-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${currentTab === 'analysis' ? (isLight ? 'bg-white' : 'bg-slate-950') : 'bg-emerald-400'}`} />
             )}
           </button>
 
@@ -211,13 +191,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={onOpenSettings}
               title="App Settings (Theme, Profile, Safety, Maps, APK)"
-              className={`px-2 sm:px-2.5 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              aria-label="Open App Settings"
+              className={`px-2.5 py-1.5 rounded-xl border font-sans font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                 isLight
                   ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
                   : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-200'
               }`}
             >
-              <Settings className="w-4 h-4 text-cyan-400" />
+              <Settings className={`w-4 h-4 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
               <span className="hidden sm:inline">Settings</span>
             </button>
           )}

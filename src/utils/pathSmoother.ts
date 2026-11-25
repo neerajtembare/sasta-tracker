@@ -20,12 +20,13 @@ export function interpolateTrackPoints(points: TrackPoint[], targetSpacingMeters
     const dLon = (p2.lon - p1.lon) * 111320 * Math.cos(((p1.lat + p2.lat) * Math.PI) / 360);
     const distM = Math.sqrt(dLat * dLat + dLon * dLon);
 
-    // If points are a pit stop gap (> 5km jump or > 10 mins apart), don't interpolate wildly
+    // If points are a pit stop gap (> 5km jump or > 10 mins apart), don't spline-interpolate across the break
     const t1 = p1.time ? new Date(p1.time).getTime() : 0;
     const t2 = p2.time ? new Date(p2.time).getTime() : 0;
     const dt = t1 && t2 ? Math.abs(t2 - t1) / 1000 : 0;
+    const isGap = distM > 5000 || dt > 600;
 
-    const steps = Math.min(25, Math.max(1, Math.round(distM / targetSpacingMeters)));
+    const steps = isGap ? 1 : Math.min(25, Math.max(1, Math.round(distM / targetSpacingMeters)));
 
     for (let step = 0; step < steps; step++) {
       const t = step / steps;

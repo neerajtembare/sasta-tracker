@@ -1,23 +1,21 @@
 /**
- * Persistent Cookie & LocalStorage Dual-Storage Utility
- * Ensures rider profile & crew identity persist across phone restarts,
- * browser cleans, and PWA installs on iOS and Android.
+ * Persistent LocalStorage Identity Utility
+ * Stores rider profile & crew identity locally without bloating HTTP Cookie headers.
  */
 
-export function setPersistentCookie(name: string, value: string, days = 365): void {
-  if (typeof document === 'undefined') return;
-  try {
-    const expires = new Date(Date.now() + days * 864e5).toUTCString();
-    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
-  } catch (e) {
-    console.warn('Cookie write failed:', e);
-  }
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function setPersistentCookie(_name: string, _value: string, _days = 365): void {
+  // Deprecated: profile and friends JSON must not be sent in HTTP Cookie headers.
 }
 
 export function getPersistentCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   try {
-    const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(name) + '=([^;]*)'));
+    const escapedName = escapeRegExp(encodeURIComponent(name));
+    const match = document.cookie.match(new RegExp('(?:^|; )' + escapedName + '=([^;]*)'));
     return match ? decodeURIComponent(match[1]) : null;
   } catch {
     return null;
@@ -32,32 +30,43 @@ export function removePersistentCookie(name: string): void {
 }
 
 /**
- * Dual Read: Checks Cookie first (survives site data resets in some browsers),
- * then falls back to LocalStorage.
+ * Reads identity data from LocalStorage, migrating and removing any legacy Cookie copy once.
  */
 export function getSavedIdentity(key: string): string | null {
-  // 1. Try Cookie
-  const cookieVal = getPersistentCookie(key);
-  if (cookieVal) return cookieVal;
-
-  // 2. Fallback to LocalStorage
   try {
     if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(key);
+      const localVal = localStorage.getItem(key);
+      if (localVal !== null) {
+        if (getPersistentCookie(key) !== null) {
+          removePersistentCookie(key);
+        }
+        return localVal;
+      }
     }
   } catch {}
+
+  const legacyCookie = getPersistentCookie(key);
+  if (legacyCookie !== null) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, legacyCookie);
+      }
+    } catch {}
+    removePersistentCookie(key);
+    return legacyCookie;
+  }
 
   return null;
 }
 
 /**
- * Dual Write: Writes to both Persistent Cookie and LocalStorage simultaneously.
+ * Persists identity data solely in LocalStorage and removes any stale Cookie copy.
  */
 export function saveIdentity(key: string, value: string): void {
-  setPersistentCookie(key, value, 365);
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(key, value);
     }
   } catch {}
+  removePersistentCookie(key);
 }

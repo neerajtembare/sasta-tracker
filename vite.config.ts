@@ -21,9 +21,6 @@ export default defineConfig(() => {
             if (id.includes('node_modules/lucide-react')) {
               return 'vendor-icons';
             }
-            if (id.includes('node_modules/motion')) {
-              return 'vendor-motion';
-            }
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
               return 'vendor-react';
             }
@@ -34,7 +31,7 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
-        usePolling: true,
+        usePolling: process.env.VITE_USE_POLLING === 'true',
         interval: 300,
       },
     },

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { triggerHaptic, playSosChime } from '../utils/audioChimes';
 import { CrashEvent } from '../utils/crashDetection';
+import { AppTheme } from '../types';
 
 interface CrashAlertModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface CrashAlertModalProps {
   onCancel: () => void;
   onConfirmSos: () => void;
   unitSystem?: 'metric' | 'imperial';
+  theme?: AppTheme;
 }
 
 export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
@@ -16,8 +18,9 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
   crashEvent,
   onCancel,
   onConfirmSos,
-  unitSystem = 'metric',
+  theme = 'dark',
 }) => {
+  const isLight = theme === 'light';
   const [secondsRemaining, setSecondsRemaining] = useState(30);
   const sirenIntervalRef = useRef<any>(null);
 
@@ -59,33 +62,41 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in">
+    <div
+      style={{
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+      }}
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in"
+    >
       <div 
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-sm rounded-3xl bg-slate-950 border-2 border-rose-500 p-5 shadow-2xl shadow-rose-950/80 font-mono text-center space-y-4 pointer-events-auto"
+        className={`w-full max-w-sm max-h-[90dvh] overflow-y-auto rounded-3xl border-2 border-rose-500 p-5 shadow-2xl font-sans text-center space-y-4 pointer-events-auto ${
+          isLight ? 'bg-white text-slate-900 shadow-rose-900/30' : 'bg-slate-950 text-white shadow-rose-950/80'
+        }`}
       >
         {/* Pulsing Siren Icon */}
-        <div className="w-16 h-16 mx-auto rounded-full bg-rose-500/20 border-2 border-rose-500 text-rose-400 flex items-center justify-center animate-pulse">
+        <div className="w-16 h-16 mx-auto rounded-full bg-rose-500/20 border-2 border-rose-500 text-rose-500 flex items-center justify-center animate-pulse">
           <ShieldAlert className="w-9 h-9" />
         </div>
 
         <div className="space-y-1">
-          <h2 className="text-xl font-heading font-black text-rose-400 tracking-wider uppercase">
+          <h2 className={`text-xl font-heading font-black tracking-wider uppercase ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>
             Severe Impact Detected!
           </h2>
-          <p className="text-xs text-slate-300">
+          <p className={`text-xs telemetry-num ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
             {crashEvent 
-              ? `${crashEvent.peakG}G impact recorded at ${unitSystem === 'imperial' ? Math.round(crashEvent.preImpactSpeedKmh * 0.621371) + ' mph' : crashEvent.preImpactSpeedKmh + ' km/h'}.` 
+              ? `${crashEvent.peakG}G impact recorded at ${Math.round(crashEvent.preImpactSpeedKmh)} km/h.` 
               : 'Sudden stop and impact registered.'}
           </p>
         </div>
 
         {/* Countdown Ring & Timer */}
         <div className="py-2">
-          <div className="text-4xl font-heading font-black text-white tabular-nums">
+          <div className={`text-4xl font-heading font-black telemetry-num ${isLight ? 'text-slate-900' : 'text-white'}`}>
             0:{secondsRemaining < 10 ? `0${secondsRemaining}` : secondsRemaining}
           </div>
-          <div className="text-[11px] text-rose-300 font-bold mt-1">
+          <div className={`text-[11px] font-bold mt-1 telemetry-num ${isLight ? 'text-rose-700' : 'text-rose-300'}`}>
             Auto-sending EMERGENCY SOS to squad in {secondsRemaining}s
           </div>
         </div>
@@ -109,7 +120,7 @@ export const CrashAlertModal: React.FC<CrashAlertModalProps> = ({
               if (sirenIntervalRef.current) clearInterval(sirenIntervalRef.current);
               onConfirmSos();
             }}
-            className="w-full h-12 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950 cursor-pointer transition-all active:scale-95"
+            className="w-full h-12 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950 cursor-pointer transition-all active:scale-95"
           >
             <AlertTriangle className="w-4 h-4" />
             <span>SEND SOS RIGHT NOW</span>

@@ -1,6 +1,7 @@
 package com.throttlelog.app;
 
 import android.annotation.SuppressLint;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,16 +11,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -30,23 +31,28 @@ import androidx.core.content.ContextCompat;
 
 /**
  * Native Android Foreground Service for ThrottleLog.
- * 
+ *
  * Runs with FOREGROUND_SERVICE_TYPE_LOCATION and PARTIAL_WAKE_LOCK to guarantee
- * 100% continuous GPS satellite acquisition, crash detection, and trip recording even when:
- * 1. The screen is turned off in a rider's pocket or tank bag.
- * 2. Chromium WebView background timers are throttled by Android OEM battery savers.
- * 3. The rider switches to Google Maps, Spotify, or helmet intercom apps.
+ * continuous GPS satellite acquisition, 50Hz accelerometer crash detection, and
+ * trip recording even when the screen is off or Chromium timers are throttled.
  */
 public class ThrottleLogKeepAliveService extends Service implements LocationListener, SensorEventListener {
     public static final String CHANNEL_ID = "throttlelog_radar_channel";
     public static final int NOTIFICATION_ID = 1001;
-    
+    public static final String EXTRA_RESET_ODOMETER = "resetOdometer";
+    public static final String EXTRA_CRASH_ENABLED = "crashDetectionEnabled";
+
     private PowerManager.WakeLock wakeLock;
     private LocationManager locationManager;
     private NotificationManager notificationManager;
     private SensorManager sensorManager;
     private Sensor accelerometer;
-    private Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private HandlerThread gpsHandlerThread;
+    private Looper gpsLooper;
+
+    private final Object stateLock = new Object();
     private Runnable crashWatchdogRunnable = null;
     private double potentialImpactPeakG = 0.0;
     private double potentialImpactPreSpeedKmh = 0.0;
@@ -54,52 +60,93 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
     private boolean isListening = false;
     private double totalDistanceMeters = 0.0;
     private Location lastLocation = null;
+    private volatile long lastGpsFixTimestamp = 0;
     private long lastNotificationUpdateTs = 0;
+
+    private static volatile boolean crashDetectionEnabled = true;
+    private static volatile ThrottleLogKeepAliveService runningInstance = null;
 
     public interface LocationCallback {
         void onLocationUpdate(Location location, double totalDistanceMeters);
     }
-    public static LocationCallback locationCallback = null;
+    public static volatile LocationCallback locationCallback = null;
 
     public interface CrashCallback {
         void onNativeCrashDetected(double peakG, double preSpeedKmh);
     }
-    public static CrashCallback crashCallback = null;
+    public static volatile CrashCallback crashCallback = null;
+
+    public static void setCrashDetectionEnabled(boolean enabled) {
+        crashDetectionEnabled = enabled;
+        ThrottleLogKeepAliveService inst = runningInstance;
+        if (inst != null && !enabled) {
+            inst.cancelPendingCrashWatchdog();
+        }
+    }
+
+    private void cancelPendingCrashWatchdog() {
+        mainHandler.post(() -> {
+            if (crashWatchdogRunnable != null) {
+                mainHandler.removeCallbacks(crashWatchdogRunnable);
+                crashWatchdogRunnable = null;
+            }
+        });
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        runningInstance = this;
         createNotificationChannel();
         notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        gpsHandlerThread = new HandlerThread("ThrottleLogGpsThread", android.os.Process.THREAD_PRIORITY_MORE_FAVORABLE);
+        gpsHandlerThread.start();
+        gpsLooper = gpsHandlerThread.getLooper();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification = buildStatusNotification("Radar & 100% background GPS active");
+        if (intent != null) {
+            if (intent.getBooleanExtra(EXTRA_RESET_ODOMETER, false)) {
+                synchronized (stateLock) {
+                    totalDistanceMeters = 0.0;
+                    lastLocation = null;
+                }
+            }
+            if (intent.hasExtra(EXTRA_CRASH_ENABLED)) {
+                setCrashDetectionEnabled(intent.getBooleanExtra(EXTRA_CRASH_ENABLED, true));
+            }
+        }
+
+        Notification notification = buildStatusNotification("Radar & background GPS active");
+
+        boolean hasLocationPermission =
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+
+        if (!hasLocationPermission) {
+            android.util.Log.w("ThrottleLogService", "Location permission missing; refusing location foreground service start.");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                boolean hasLocationPermission = ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.ACCESS_FINE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED;
-
-                if (hasLocationPermission) {
-                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-                } else {
-                    startForeground(NOTIFICATION_ID, notification);
-                }
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
         } catch (Exception e) {
-            try {
-                startForeground(NOTIFICATION_ID, notification);
-            } catch (Exception ignored) {}
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e instanceof ForegroundServiceStartNotAllowedException) {
+                android.util.Log.e("ThrottleLogService", "Android 12+ blocked foreground start from background: " + e.getMessage());
+            } else if (e instanceof SecurityException) {
+                android.util.Log.e("ThrottleLogService", "SecurityException starting location FGS: " + e.getMessage());
+            } else {
+                android.util.Log.e("ThrottleLogService", "Failed to start foreground service: " + e.getMessage());
+            }
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         acquireWakeLock();
@@ -111,11 +158,13 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
 
     private void startNativeSensors() {
         try {
+            if (sensorManager != null) return;
             sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
             if (sensorManager != null) {
                 accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
                 if (accelerometer != null) {
-                    sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+                    // ~50Hz sampling rate to reliably capture 20-50ms collision impulses
+                    sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
                 }
             }
         } catch (Exception e) {
@@ -129,10 +178,7 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
                 sensorManager.unregisterListener(this);
                 sensorManager = null;
             }
-            if (crashWatchdogRunnable != null) {
-                mainHandler.removeCallbacks(crashWatchdogRunnable);
-                crashWatchdogRunnable = null;
-            }
+            cancelPendingCrashWatchdog();
         } catch (Exception ignored) {}
     }
 
@@ -145,27 +191,30 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
 
             boolean hasFine = ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
             boolean hasCoarse = ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-
             if (!hasFine && !hasCoarse) return;
 
-            // 1. Register GPS Provider (Hardware GNSS satellites: 1000ms / 0.5m)
+            Looper targetLooper = gpsLooper != null ? gpsLooper : Looper.getMainLooper();
+
+            // 1. Hardware GNSS Satellite Provider (1000ms / 0.5m) on background Looper
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     1000L,
                     0.5f,
-                    this
+                    this,
+                    targetLooper
                 );
                 isListening = true;
             }
 
-            // 2. Register Network Provider as fast-lock supplemental provider
+            // 2. Network Provider as supplemental quick fix on background Looper
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
                     2000L,
                     2.0f,
-                    this
+                    this,
+                    targetLooper
                 );
                 isListening = true;
             }
@@ -183,8 +232,6 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
         }
     }
 
-    private long lastGpsFixTimestamp = 0;
-
     @Override
     public void onLocationChanged(@NonNull Location location) {
         String provider = location.getProvider();
@@ -194,40 +241,40 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
         if (isGps) {
             lastGpsFixTimestamp = now;
         } else if (LocationManager.NETWORK_PROVIDER.equals(provider)) {
-            // Discard cellular/Wi-Fi triangulation if hardware GPS satellite fix was received recently (< 4500ms)
             if (now - lastGpsFixTimestamp < 4500) {
                 return;
             }
-            // Discard coarse network fixes with accuracy worse than 35m to eliminate cell-tower jumps
             if (location.hasAccuracy() && location.getAccuracy() > 35.0f) {
                 return;
             }
         }
 
-        // Accuracy check for distance accumulation to prevent phantom mileage
         boolean hasGoodAccuracy = !location.hasAccuracy() || location.getAccuracy() <= 45.0f;
+        double currentTotalDist;
 
-        if (hasGoodAccuracy) {
-            if (lastLocation != null) {
-                float dist = lastLocation.distanceTo(location);
-                // Valid motorcycle motion: > 1.5m (avoid jitter while parked) and < 800m (reject anomalous teleports)
-                if (dist > 1.5f && dist < 800f) {
-                    totalDistanceMeters += dist;
+        synchronized (stateLock) {
+            if (hasGoodAccuracy) {
+                if (lastLocation != null) {
+                    float dist = lastLocation.distanceTo(location);
+                    // Valid motion window aligned with JS engine: > 1.5m jitter band, < 1500m teleport filter
+                    if (dist > 1.5f && dist < 1500f) {
+                        totalDistanceMeters += dist;
+                    }
                 }
+                lastLocation = location;
             }
-            lastLocation = location;
+            currentTotalDist = totalDistanceMeters;
         }
 
-        // Throttle notification updates to at most once every 2 seconds
         if (now - lastNotificationUpdateTs >= 2000) {
             lastNotificationUpdateTs = now;
-            updateNotificationWithLocation(location);
+            updateNotificationWithLocation(location, currentTotalDist);
         }
 
-        // Dispatch to Capacitor plugin listener
-        if (locationCallback != null) {
+        LocationCallback cb = locationCallback;
+        if (cb != null) {
             try {
-                locationCallback.onLocationUpdate(location, totalDistanceMeters);
+                cb.onLocationUpdate(location, currentTotalDist);
             } catch (Exception ignored) {}
         }
     }
@@ -237,7 +284,7 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event == null || event.sensor.getType() != Sensor.TYPE_ACCELEROMETER) return;
+        if (!crashDetectionEnabled || event == null || event.sensor.getType() != Sensor.TYPE_ACCELEROMETER) return;
         long now = System.currentTimeMillis();
         if (now < impactCooldownUntil) return;
 
@@ -247,34 +294,50 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
         double magMs2 = Math.sqrt(ax * ax + ay * ay + az * az);
         double gForce = magMs2 / 9.80665;
 
-        // Indian road threshold: 6.5G severe impact
         if (gForce >= 6.5) {
-            float speedKmh = (lastLocation != null && lastLocation.hasSpeed()) ? lastLocation.getSpeed() * 3.6f : 0f;
-            // Require active riding speed (> 18 km/h) prior to impact
+            Location snapshotLoc;
+            synchronized (stateLock) {
+                snapshotLoc = lastLocation;
+            }
+            float speedKmh = (snapshotLoc != null && snapshotLoc.hasSpeed()) ? snapshotLoc.getSpeed() * 3.6f : 0f;
             if (speedKmh >= 18f) {
-                if (crashWatchdogRunnable == null || gForce > potentialImpactPeakG) {
-                    potentialImpactPeakG = Math.round(gForce * 10.0) / 10.0;
-                    potentialImpactPreSpeedKmh = Math.round(speedKmh);
+                final double peakRounded = Math.round(gForce * 10.0) / 10.0;
+                final double preRounded = Math.round(speedKmh);
 
-                    if (crashWatchdogRunnable != null) {
-                        mainHandler.removeCallbacks(crashWatchdogRunnable);
-                    }
+                mainHandler.post(() -> {
+                    if (!crashDetectionEnabled) return;
+                    if (crashWatchdogRunnable == null || peakRounded > potentialImpactPeakG) {
+                        potentialImpactPeakG = peakRounded;
+                        potentialImpactPreSpeedKmh = preRounded;
 
-                    // Autonomous 4.0-second post-impact stop verification
-                    crashWatchdogRunnable = () -> {
-                        crashWatchdogRunnable = null;
-                        float postSpeedKmh = (lastLocation != null && lastLocation.hasSpeed()) ? lastLocation.getSpeed() * 3.6f : 0f;
-                        if (postSpeedKmh <= 3.5f) {
-                            impactCooldownUntil = System.currentTimeMillis() + 60000;
-                            if (crashCallback != null) {
-                                try {
-                                    crashCallback.onNativeCrashDetected(potentialImpactPeakG, potentialImpactPreSpeedKmh);
-                                } catch (Exception ignored) {}
-                            }
+                        if (crashWatchdogRunnable != null) {
+                            mainHandler.removeCallbacks(crashWatchdogRunnable);
                         }
-                    };
-                    mainHandler.postDelayed(crashWatchdogRunnable, 4000);
-                }
+
+                        crashWatchdogRunnable = () -> {
+                            crashWatchdogRunnable = null;
+                            if (!crashDetectionEnabled) return;
+
+                            Location postLoc;
+                            synchronized (stateLock) {
+                                postLoc = lastLocation;
+                            }
+                            float postSpeedKmh = (postLoc != null && postLoc.hasSpeed()) ? postLoc.getSpeed() * 3.6f : 0f;
+                            boolean gpsLostAfterImpact = lastGpsFixTimestamp > 0 && (System.currentTimeMillis() - lastGpsFixTimestamp) >= 3200;
+
+                            if (gpsLostAfterImpact || postSpeedKmh <= 3.5f) {
+                                impactCooldownUntil = System.currentTimeMillis() + 60000;
+                                CrashCallback cb = crashCallback;
+                                if (cb != null) {
+                                    try {
+                                        cb.onNativeCrashDetected(potentialImpactPeakG, potentialImpactPreSpeedKmh);
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                        };
+                        mainHandler.postDelayed(crashWatchdogRunnable, 4000);
+                    }
+                });
             }
         }
     }
@@ -298,7 +361,7 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
         int iconRes = getApplicationInfo().icon != 0 ? getApplicationInfo().icon : android.R.drawable.ic_menu_compass;
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🏍️ ThrottleLog Radar Active")
+            .setContentTitle("ThrottleLog Radar Active")
             .setContentText(text)
             .setSmallIcon(iconRes)
             .setContentIntent(pendingIntent)
@@ -309,16 +372,16 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
             .build();
     }
 
-    private void updateNotificationWithLocation(Location location) {
+    private void updateNotificationWithLocation(Location location, double distMeters) {
         if (notificationManager == null) return;
         try {
             float speedKmh = location.hasSpeed() ? location.getSpeed() * 3.6f : 0f;
-            double distKm = totalDistanceMeters / 1000.0;
+            double distKm = distMeters / 1000.0;
             float acc = location.hasAccuracy() ? location.getAccuracy() : 0f;
 
             String dynamicText = String.format(
                 java.util.Locale.US,
-                "🏍️ %d km/h • %.1f km • ±%.0fm GPS",
+                "%d km/h • %.1f km • ±%.0fm GPS",
                 Math.round(speedKmh),
                 distKm,
                 acc
@@ -335,7 +398,6 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
                 PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
                     wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ThrottleLog:RadarWakeLock");
-                    // 12-hour max safety duration for endurance rides
                     wakeLock.acquire(12 * 60 * 60 * 1000L);
                 }
             } catch (Exception ignored) {}
@@ -353,9 +415,17 @@ public class ThrottleLogKeepAliveService extends Service implements LocationList
 
     @Override
     public void onDestroy() {
+        runningInstance = null;
         stopNativeLocationUpdates();
         stopNativeSensors();
         releaseWakeLock();
+        if (gpsHandlerThread != null) {
+            try {
+                gpsHandlerThread.quitSafely();
+            } catch (Exception ignored) {}
+            gpsHandlerThread = null;
+            gpsLooper = null;
+        }
         locationCallback = null;
         crashCallback = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

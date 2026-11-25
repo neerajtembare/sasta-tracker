@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { haversineDistance } from '../utils/gpxParser';
 import { 
   playWaypointChime, 
-  playWarningChime, 
   playSosChime, 
   playRouteSharedChime, 
   playRadarJoinChime,
@@ -11,6 +10,14 @@ import {
 } from '../utils/audioChimes';
 import { getSavedIdentity, saveIdentity } from '../utils/cookieStorage';
 import { SimpleMqttClient, MqttConnectionStatus } from '../utils/mqttClient';
+import {
+  deriveRoomCryptoContext,
+  encryptCrewPayload,
+  decryptCrewPayload,
+  sanitizeSquadKey,
+  SquadCryptoContext,
+} from '../utils/crewCrypto';
+import { resetConvoyWatchdog } from '../utils/convoyWatchdog';
 import { playVoiceBlastAudio } from '../utils/voiceBlast';
 import { RiderCallout, CalloutPreset, playCalloutAlert } from '../utils/callouts';
 import { speakAlert } from '../utils/tts';
@@ -136,45 +143,42 @@ export const DEFAULT_SQUAD_NAME = 'Global Crew';
 const STORAGE_KEYS = {
   USER_PROFILE: 'sasta_rider_profile_v4',
   CUSTOM_FRIENDS: 'sasta_custom_friends_v4',
+  VOICE_BLAST_MUTED: 'throttlelog_voice_blast_muted',
 };
+
+const MAX_VOICE_BLAST_B64_CHARS = 140_000;
+const VOICE_BLAST_ALLOWED_MIMES = /^audio\/(?:webm|mp4|aac|ogg|wav)(?:\s*;\s*codecs=[a-z0-9.,_-]+)?$/i;
+const VOICE_BLAST_BASE64_RE = /^[A-Za-z0-9+/=]+$/;
+const VOICE_BLAST_SENDER_COOLDOWN_MS = 4000;
+const VOICE_BLAST_GLOBAL_COOLDOWN_MS = 1500;
 
 export const DEFAULT_KNOWN_MEMBERS: FriendEntry[] = [];
 
-function sanitizeKey(str: string): string {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24);
+function getLeaderStorageKey(squadName: string): string {
+  const key = sanitizeSquadKey(squadName) || 'global';
+  return `sasta_squad_leader_${key}`;
 }
 
 function generateUniqueRiderId(namePrefix: string = 'rider'): string {
-  const prefix = sanitizeKey(namePrefix) || 'rider';
-  const rand = Math.random().toString(36).substring(2, 7);
+  const prefix = sanitizeSquadKey(namePrefix) || 'rider';
+  const rand = typeof globalThis.crypto?.getRandomValues === 'function'
+    ? Array.from(globalThis.crypto.getRandomValues(new Uint8Array(4)))
+        .map(b => b.toString(36).padStart(2, '0'))
+        .join('')
+        .slice(0, 6)
+    : Math.random().toString(36).substring(2, 8);
   const time = Date.now().toString(36).slice(-4);
   return `${prefix}_${rand}${time}`;
 }
 
 export function useGroupRide() {
-  // 1. Persistent Unique Rider Identity (loaded from Cookie/LocalStorage/URL)
+  // 1. Persistent Unique Rider Identity (never overwrite an existing saved profile from ?rider= URL links)
   const [profile, setProfile] = useState<RiderProfile>(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const riderParam = params.get('rider') || params.get('name') || params.get('who');
         const squadParam = params.get('squad') || params.get('crew') || params.get('room');
-
-        if (riderParam && riderParam.trim()) {
-          const cleanName = riderParam.trim();
-          const cleanId = generateUniqueRiderId(cleanName);
-          const newProfile: RiderProfile = {
-            id: cleanId,
-            name: cleanName,
-            bikeModel: 'Motorcycle',
-            color: getRiderColor(cleanId),
-            squadName: squadParam?.trim() || DEFAULT_SQUAD_NAME,
-            isLoggedIn: true,
-          };
-          saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
-          saveIdentity('sasta_rider_name', cleanName);
-          return newProfile;
-        }
 
         const savedRaw = getSavedIdentity(STORAGE_KEYS.USER_PROFILE);
         if (savedRaw) {
@@ -187,21 +191,52 @@ export function useGroupRide() {
             return parsed;
           }
         }
+
+        const existingCallsign =
+          getSavedIdentity('throttlelog_rider_name') ||
+          getSavedIdentity('sasta_rider_name');
+        const hasNamedCallsign = Boolean(existingCallsign && existingCallsign.trim() && existingCallsign.trim() !== 'Rider');
+
+        if (!hasNamedCallsign && riderParam && riderParam.trim()) {
+          const cleanName = riderParam.trim();
+          const cleanId = generateUniqueRiderId(cleanName);
+          const newProfile: RiderProfile = {
+            id: cleanId,
+            name: cleanName,
+            bikeModel: 'Motorcycle',
+            color: getRiderColor(cleanId),
+            squadName: squadParam?.trim() || DEFAULT_SQUAD_NAME,
+            isLoggedIn: true,
+          };
+          saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newProfile));
+          saveIdentity('throttlelog_rider_name', cleanName);
+          saveIdentity('sasta_rider_name', cleanName);
+          return newProfile;
+        }
+
+        const fallbackName = hasNamedCallsign ? existingCallsign!.trim() : 'Rider';
+        const cleanId = generateUniqueRiderId(fallbackName);
+        const fallback: RiderProfile = {
+          id: cleanId,
+          name: fallbackName,
+          bikeModel: 'Motorcycle',
+          color: getRiderColor(cleanId),
+          squadName: squadParam?.trim() || DEFAULT_SQUAD_NAME,
+          isLoggedIn: true,
+        };
+        saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(fallback));
+        return fallback;
       }
 
-      // Default name or clean generic Rider identity
-      const legacyName = getSavedIdentity('sasta_rider_name') || 'Rider';
-      const cleanId = generateUniqueRiderId(legacyName);
-      const fallback: RiderProfile = {
-        id: cleanId,
-        name: legacyName,
+      const fallbackId = generateUniqueRiderId('rider');
+      return {
+        id: fallbackId,
+        name: 'Rider',
         bikeModel: 'Motorcycle',
-        color: getRiderColor(cleanId),
+        color: '#00f0ff',
         squadName: DEFAULT_SQUAD_NAME,
         isLoggedIn: true,
       };
-      saveIdentity(STORAGE_KEYS.USER_PROFILE, JSON.stringify(fallback));
-      return fallback;
     } catch {
       const fallbackId = generateUniqueRiderId('rider');
       return {
@@ -245,32 +280,58 @@ export function useGroupRide() {
   const isOnRadarRef = useRef(isOnRadar);
   isOnRadarRef.current = isOnRadar;
 
-  const [connectionStatus, setConnectionStatus] = useState<MqttConnectionStatus>('connecting');
-  const [statusMessage, setStatusMessage] = useState<string>('Connecting to Global Crew Radar...');
-  const [isConnected, setIsConnected] = useState<boolean>(true);
+  const [connectionStatus, setConnectionStatus] = useState<MqttConnectionStatus>('disconnected');
+  const [statusMessage, setStatusMessage] = useState<string>('Solo Private Mode • Hidden from Crew Radar');
+  const [isConnected, setIsConnected] = useState<boolean>(false);
 
   // 3. Live Crew Members Map (populated exclusively by real live rider signals)
   const [members, setMembers] = useState<Map<string, GroupMemberInfo>>(new Map());
   const [sosAlert, setSosAlert] = useState<SosAlert | null>(null);
+  const sosAlertRef = useRef<SosAlert | null>(sosAlert);
+  sosAlertRef.current = sosAlert;
+
   const [crewNotification, setCrewNotification] = useState<CrewNotification | null>(null);
   const [activeVoiceBlast, setActiveVoiceBlast] = useState<ActiveVoiceBlast | null>(null);
   const voiceBlastTimeoutRef = useRef<any>(null);
+  const [isVoiceBlastMuted, setIsVoiceBlastMuted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.VOICE_BLAST_MUTED) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const isVoiceBlastMutedRef = useRef<boolean>(isVoiceBlastMuted);
+  isVoiceBlastMutedRef.current = isVoiceBlastMuted;
+  const lastVoiceBlastBySenderRef = useRef<Map<string, number>>(new Map());
+  const lastGlobalVoiceBlastAtRef = useRef<number>(0);
+
   const [activeCallout, setActiveCallout] = useState<RiderCallout | null>(null);
   const calloutTimeoutRef = useRef<any>(null);
   const [isConvoyRegrouped, setIsConvoyRegrouped] = useState<boolean>(false);
   const wasSeparatedRef = useRef<boolean>(true);
   const lastRegroupNotificationTimeRef = useRef<number>(0);
 
-  // 4. Squad Leader Designation
+  // 4. Squad Leader Designation (scoped per room)
   const [leaderId, setLeaderId] = useState<string | null>(() => {
     try {
-      return localStorage.getItem('sasta_squad_leader_id') || null;
+      return localStorage.getItem(getLeaderStorageKey(profile.squadName)) || null;
     } catch {
       return null;
     }
   });
   const leaderIdRef = useRef<string | null>(leaderId);
   leaderIdRef.current = leaderId;
+
+  const toggleVoiceBlastMuted = useCallback((muted?: boolean) => {
+    setIsVoiceBlastMuted(prev => {
+      const next = muted !== undefined ? muted : !prev;
+      isVoiceBlastMutedRef.current = next;
+      try {
+        localStorage.setItem(STORAGE_KEYS.VOICE_BLAST_MUTED, String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   // References
   const profileRef = useRef<RiderProfile>(profile);
@@ -306,10 +367,16 @@ export function useGroupRide() {
 
   const myLocationRef = useRef<{ lat: number; lon: number; speedKmh: number; bearing: number | null; leanAngle?: number } | null>(null);
   const mqttClientRef = useRef<SimpleMqttClient | null>(null);
+  const activeCryptoRef = useRef<SquadCryptoContext | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const heartbeatIntervalRef = useRef<any>(null);
   const notificationTimeoutRef = useRef<any>(null);
   const lastLocationBroadcastTimeRef = useRef<number>(0);
+
+  const commitMembers = useCallback((next: Map<string, GroupMemberInfo>) => {
+    membersRef.current = next;
+    setMembers(next);
+  }, []);
 
   const postCrewNotification = useCallback((text: string, type: 'join' | 'leave' | 'info' | 'alert' = 'info') => {
     if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
@@ -325,7 +392,7 @@ export function useGroupRide() {
     }, 4500);
   }, []);
 
-  // Handle incoming data message from MQTT relay or local BroadcastChannel
+  // Handle incoming data message from encrypted MQTT relay or same-room BroadcastChannel
   const handleIncomingMessage = useCallback((data: any) => {
     if (!data || typeof data !== 'object') return;
     const currentMyId = profileRef.current.id;
@@ -334,99 +401,108 @@ export function useGroupRide() {
       const loc: GroupRiderLocation = data.payload;
       if (!loc || !loc.riderId || loc.riderId === currentMyId) return;
 
-      setMembers(prev => {
-        const next = new Map(prev);
-        const existing = next.get(loc.riderId);
-        const isPreviouslyOffline = !existing || !existing.isOnline;
+      const prev = membersRef.current;
+      const next = new Map(prev);
+      const existing = next.get(loc.riderId);
+      const isPreviouslyOffline = !existing || !existing.isOnline;
 
-        if (isPreviouslyOffline) {
-          playRadarJoinChime();
-          postCrewNotification(`🏍️ ${loc.name || 'Rider'} joined the Crew Radar!`, 'join');
-        }
+      let dist: number | undefined = undefined;
+      if (myLocationRef.current && typeof loc.lat === 'number' && typeof loc.lon === 'number') {
+        dist = haversineDistance(
+          myLocationRef.current.lat,
+          myLocationRef.current.lon,
+          loc.lat,
+          loc.lon
+        );
+      }
 
-        let dist: number | undefined = undefined;
-        if (myLocationRef.current && typeof loc.lat === 'number' && typeof loc.lon === 'number') {
-          dist = haversineDistance(
-            myLocationRef.current.lat,
-            myLocationRef.current.lon,
-            loc.lat,
-            loc.lon
-          );
-        }
+      const hasValidCoords =
+        typeof loc.lat === 'number' &&
+        typeof loc.lon === 'number' &&
+        Number.isFinite(loc.lat) &&
+        Number.isFinite(loc.lon) &&
+        loc.lat >= -90 &&
+        loc.lat <= 90 &&
+        loc.lon >= -180 &&
+        loc.lon <= 180;
 
-        const hasValidCoords = typeof loc.lat === 'number' && typeof loc.lon === 'number';
-
-        next.set(loc.riderId, {
-          riderId: loc.riderId,
-          name: loc.name || existing?.name || 'Rider',
+      next.set(loc.riderId, {
+        riderId: loc.riderId,
+        name: loc.name || existing?.name || 'Rider',
+        color: loc.color || existing?.color || getRiderColor(loc.riderId),
+        bikeModel: loc.bikeModel || existing?.bikeModel,
+        isHost: loc.riderId === leaderIdRef.current,
+        lastSeen: Date.now(),
+        location: hasValidCoords ? {
+          ...loc,
           color: loc.color || existing?.color || getRiderColor(loc.riderId),
-          bikeModel: loc.bikeModel || existing?.bikeModel,
-          isHost: loc.riderId === leaderIdRef.current,
-          lastSeen: Date.now(),
-          location: hasValidCoords ? {
-            ...loc,
-            color: loc.color || existing?.color || getRiderColor(loc.riderId),
-          } : existing?.location,
-          distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
-          isStale: false,
-          isOnline: true,
-          sharedRoute: existing?.sharedRoute,
-        });
-
-        membersRef.current = next;
-        return next;
+        } : existing?.location,
+        distanceFromMeMeters: dist ?? existing?.distanceFromMeMeters,
+        isStale: false,
+        isOnline: true,
+        sharedRoute: existing?.sharedRoute,
       });
+
+      commitMembers(next);
+      if (isPreviouslyOffline) {
+        playRadarJoinChime();
+        postCrewNotification(`🏍️ ${loc.name || 'Rider'} joined the Crew Radar!`, 'join');
+      }
     } else if (data.type === 'ROUTE_SHARE') {
       const share: SharedRouteInfo = data.payload;
       if (share && share.riderId && share.riderId !== currentMyId) {
-        setMembers(prev => {
-          const next = new Map(prev);
-          const current = next.get(share.riderId);
-          if (current) {
-            next.set(share.riderId, {
-              ...current,
-              sharedRoute: share,
-              isHost: share.riderId === leaderIdRef.current,
-              lastSeen: Date.now(),
-              isOnline: true,
-            });
-          } else {
-            next.set(share.riderId, {
-              riderId: share.riderId,
-              name: share.riderName || 'Rider',
-              color: getRiderColor(share.riderId),
-              isHost: share.riderId === leaderIdRef.current,
-              lastSeen: Date.now(),
-              isOnline: true,
-              sharedRoute: share,
-            });
-          }
-          membersRef.current = next;
-          return next;
-        });
+        const next = new Map(membersRef.current);
+        const current = next.get(share.riderId);
+        if (current) {
+          next.set(share.riderId, {
+            ...current,
+            sharedRoute: share,
+            isHost: share.riderId === leaderIdRef.current,
+            lastSeen: Date.now(),
+            isOnline: true,
+          });
+        } else {
+          next.set(share.riderId, {
+            riderId: share.riderId,
+            name: share.riderName || 'Rider',
+            color: getRiderColor(share.riderId),
+            isHost: share.riderId === leaderIdRef.current,
+            lastSeen: Date.now(),
+            isOnline: true,
+            sharedRoute: share,
+          });
+        }
+        commitMembers(next);
         playRouteSharedChime();
-        postCrewNotification(`🗺️ ${share.riderName || 'Rider'} loaded route: "${share.routeName}" (${share.distanceKm.toFixed(1)} km)`, 'info');
+        postCrewNotification(`🗺️ ${share.riderName || 'Rider'} loaded route: "${share.routeName}" (${(share.distanceKm || 0).toFixed(1)} km)`, 'info');
       }
     } else if (data.type === 'ROUTE_CLEAR') {
       const riderId = data.riderId;
-      if (riderId) {
-        setMembers(prev => {
-          const next = new Map(prev);
-          const current = next.get(riderId);
-          if (current) {
-            next.set(riderId, {
-              ...current,
-              sharedRoute: undefined,
-            });
-            membersRef.current = next;
-          }
-          return next;
-        });
+      if (riderId && riderId !== currentMyId) {
+        const current = membersRef.current.get(riderId);
+        if (current) {
+          const next = new Map(membersRef.current);
+          next.set(riderId, {
+            ...current,
+            sharedRoute: undefined,
+          });
+          commitMembers(next);
+        }
       }
     } else if (data.type === 'SOS_PING') {
       const alert: SosAlert = data.payload;
-      if (alert) {
+      if (
+        alert &&
+        typeof alert.fromId === 'string' &&
+        alert.fromId.length > 0 &&
+        alert.fromId !== currentMyId &&
+        typeof alert.lat === 'number' &&
+        typeof alert.lon === 'number' &&
+        Number.isFinite(alert.lat) &&
+        Number.isFinite(alert.lon)
+      ) {
         const senderName = alert.fromName && alert.fromName.trim() ? alert.fromName.trim() : 'a squad member';
+        sosAlertRef.current = alert;
         setSosAlert(alert);
         playSosChime();
         triggerHaptic([150, 60, 150, 60, 300]);
@@ -437,7 +513,19 @@ export function useGroupRide() {
         postCrewNotification(`🚨 EMERGENCY SOS from ${senderName}!`, 'alert');
       }
     } else if (data.type === 'SOS_CANCEL') {
+      const clearerId = typeof data.payload?.fromId === 'string' ? data.payload.fromId.trim() : '';
+      const currentSos = sosAlertRef.current;
+      if (!currentSos || !clearerId) return;
+
+      const isOriginalSender = Boolean(currentSos.fromId && clearerId === currentSos.fromId);
+      const isAuthorizedLeader = Boolean(leaderIdRef.current && clearerId === leaderIdRef.current);
+      if (!isOriginalSender && !isAuthorizedLeader) {
+        console.warn('Rejected unauthorized SOS_CANCEL from', clearerId);
+        return;
+      }
+
       const clearerName = (data.payload && data.payload.fromName) || 'Squad Member';
+      sosAlertRef.current = null;
       setSosAlert(null);
       playWaypointChime();
       triggerHaptic(50);
@@ -445,40 +533,69 @@ export function useGroupRide() {
       postCrewNotification(`🟢 Emergency SOS cleared by ${clearerName}. All safe!`, 'info');
     } else if (data.type === 'OFFLINE') {
       const riderId = data.riderId;
-      if (riderId && riderId !== currentMyId) {
-        setMembers(prev => {
-          if (!prev.has(riderId)) return prev;
-          const next = new Map(prev);
-          const current = next.get(riderId)!;
+      if (riderId && riderId !== currentMyId && membersRef.current.has(riderId)) {
+        const next = new Map(membersRef.current);
+        const current = next.get(riderId)!;
+        if (current.isOnline || !current.isStale) {
           next.set(riderId, { ...current, isOnline: false, isStale: true });
-          membersRef.current = next;
-          return next;
-        });
+          commitMembers(next);
+        }
       }
     } else if (data.type === 'VOICE_BLAST') {
       const blast: VoiceBlastPayload = data.payload;
-      if (blast && blast.riderId && blast.riderId !== currentMyId && blast.audioBase64) {
-        // Automatically play voice blast through connected Bluetooth helmet intercom (Sena/Cardo/AirPods)
-        playVoiceBlastAudio(blast.audioBase64, blast.mimeType || 'audio/webm');
+      const now = Date.now();
+      const mime = (blast?.mimeType || 'audio/webm').trim();
+      const validPayload =
+        blast &&
+        typeof blast.riderId === 'string' &&
+        blast.riderId.length > 0 &&
+        blast.riderId !== currentMyId &&
+        typeof blast.audioBase64 === 'string' &&
+        blast.audioBase64.length > 0 &&
+        blast.audioBase64.length <= MAX_VOICE_BLAST_B64_CHARS &&
+        VOICE_BLAST_BASE64_RE.test(blast.audioBase64) &&
+        VOICE_BLAST_ALLOWED_MIMES.test(mime);
+
+      if (validPayload) {
+        const lastFromSender = lastVoiceBlastBySenderRef.current.get(blast.riderId) || 0;
+        if (
+          now - lastFromSender < VOICE_BLAST_SENDER_COOLDOWN_MS ||
+          now - lastGlobalVoiceBlastAtRef.current < VOICE_BLAST_GLOBAL_COOLDOWN_MS
+        ) {
+          return;
+        }
+        lastVoiceBlastBySenderRef.current.set(blast.riderId, now);
+        lastGlobalVoiceBlastAtRef.current = now;
+
+        const safeDurationMs = Math.min(Math.max(Number(blast.durationMs) || 3000, 500), 10000);
+        const senderLabel = blast.riderName || 'Rider';
+
+        if (!isVoiceBlastMutedRef.current) {
+          playVoiceBlastAudio(blast.audioBase64, mime);
+        }
 
         if (voiceBlastTimeoutRef.current) clearTimeout(voiceBlastTimeoutRef.current);
         setActiveVoiceBlast({
           riderId: blast.riderId,
-          riderName: blast.riderName || 'Rider',
+          riderName: senderLabel,
           bikeModel: blast.bikeModel,
           color: blast.color || getRiderColor(blast.riderId),
-          durationMs: blast.durationMs || 3000,
-          timestamp: blast.timestamp || Date.now(),
+          durationMs: safeDurationMs,
+          timestamp: blast.timestamp || now,
         });
-        postCrewNotification(`🗣️ Voice blast from ${blast.riderName || 'Rider'}`, 'info');
+        postCrewNotification(
+          isVoiceBlastMutedRef.current
+            ? `🔇 Voice blast from ${senderLabel} (Autoplay muted)`
+            : `🗣️ Voice blast from ${senderLabel}`,
+          'info'
+        );
         voiceBlastTimeoutRef.current = setTimeout(() => {
           setActiveVoiceBlast(null);
-        }, (blast.durationMs || 3000) + 2500);
+        }, safeDurationMs + 2500);
       }
     } else if (data.type === 'CALLOUT') {
       const callout: RiderCallout = data.payload;
       if (callout && callout.riderId && callout.riderId !== currentMyId) {
-        // Play radio squelch and announce voice alert through helmet intercom / earbuds
         playCalloutAlert(callout.riderName || 'Rider', callout.spokenText || callout.message);
 
         if (calloutTimeoutRef.current) clearTimeout(calloutTimeoutRef.current);
@@ -490,56 +607,92 @@ export function useGroupRide() {
         }, 10000);
       }
     } else if (data.type === 'SET_LEADER') {
-      const newLeaderId = data.payload?.leaderId;
+      const newLeaderId = typeof data.payload?.leaderId === 'string' ? data.payload.leaderId.trim() : '';
+      const senderId = typeof data.payload?.senderId === 'string' ? data.payload.senderId.trim() : '';
       const newLeaderName = data.payload?.leaderName || 'Squad Member';
-      if (newLeaderId) {
-        setLeaderId(newLeaderId);
-        leaderIdRef.current = newLeaderId;
-        try {
-          localStorage.setItem('sasta_squad_leader_id', newLeaderId);
-        } catch {}
-        setMembers(prev => {
-          const next = new Map();
-          prev.forEach((val, key) => {
-            next.set(key, { ...val, isHost: key === newLeaderId });
-          });
-          return next;
-        });
-        playRegroupChime();
-        speakAlert(`${newLeaderName} is now the ride leader.`);
-        postCrewNotification(`👑 ${newLeaderName} is now the Ride Lead!`, 'info');
-      }
-    }
-  }, [postCrewNotification]);
+      if (!newLeaderId || !senderId) return;
 
-  // Broadcast payload to both MQTT relay and local BroadcastChannel
+      const existingLeader = leaderIdRef.current;
+      const leaderIsCurrentActiveOther = Boolean(
+        existingLeader &&
+        existingLeader !== currentMyId &&
+        membersRef.current.get(existingLeader)?.isOnline
+      );
+      const isAuthorized =
+        existingLeader === null ||
+        senderId === existingLeader ||
+        (existingLeader !== currentMyId && !leaderIsCurrentActiveOther);
+
+      if (!isAuthorized) {
+        console.warn('Rejected unauthorized SET_LEADER claim from', senderId);
+        return;
+      }
+
+      setLeaderId(newLeaderId);
+      leaderIdRef.current = newLeaderId;
+      try {
+        localStorage.setItem(getLeaderStorageKey(profileRef.current.squadName), newLeaderId);
+      } catch {}
+
+      const next = new Map<string, GroupMemberInfo>();
+      membersRef.current.forEach((val, key) => {
+        next.set(key, { ...val, isHost: key === newLeaderId });
+      });
+      commitMembers(next);
+      playRegroupChime();
+      speakAlert(`${newLeaderName} is now the ride leader.`);
+      postCrewNotification(`👑 ${newLeaderName} is now the Ride Lead!`, 'info');
+    }
+  }, [postCrewNotification, commitMembers]);
+
+  // Broadcast payload to encrypted MQTT relay and scoped local BroadcastChannel
   const broadcastPayload = useCallback((payload: any) => {
-    // 1. Local cross-tab sync
+    // 1. Local cross-tab sync scoped to same squad
     if (broadcastChannelRef.current) {
       try {
-        broadcastChannelRef.current.postMessage(payload);
+        broadcastChannelRef.current.postMessage({
+          squadKey: sanitizeSquadKey(profileRef.current.squadName) || 'global',
+          data: payload,
+        });
       } catch {}
     }
 
-    // 2. Global MQTT WebSocket relay
-    if (mqttClientRef.current) {
-      const squadKey = sanitizeKey(profileRef.current.squadName);
-      if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
-        // Exclusively broadcast to private squad topic for rider privacy
-        mqttClientRef.current.publish(`throttlelog/v1/squad/${squadKey}`, payload);
-      } else {
-        // Open exploration: broadcast to global radar
-        mqttClientRef.current.publish('throttlelog/v1/radar/global', payload);
-      }
-    }
+    // 2. Encrypted Global MQTT WebSocket relay
+    const client = mqttClientRef.current;
+    const cryptoCtx = activeCryptoRef.current;
+    if (!client || !cryptoCtx) return;
+
+    const isCritical =
+      typeof payload === 'object' &&
+      payload !== null &&
+      (payload.type === 'SOS_PING' ||
+        payload.type === 'SOS_CANCEL' ||
+        payload.type === 'CALLOUT' ||
+        payload.type === 'ROUTE_SHARE' ||
+        payload.type === 'SET_LEADER' ||
+        payload.type === 'OFFLINE');
+
+    encryptCrewPayload(cryptoCtx.secret, cryptoCtx.roomHash, payload)
+      .then(envelope => {
+        if (mqttClientRef.current === client && activeCryptoRef.current?.roomHash === cryptoCtx.roomHash) {
+          client.publish(cryptoCtx.topic, envelope, isCritical);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // Setup BroadcastChannel for 0ms cross-tab local testing
+  // Setup BroadcastChannel for 0ms cross-tab local testing (isolated by squadKey)
   useEffect(() => {
     if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel('throttlelog_local_radar');
     channel.onmessage = (event) => {
-      handleIncomingMessage(event.data);
+      const msg = event.data;
+      if (msg && typeof msg === 'object' && 'squadKey' in msg && 'data' in msg) {
+        const myKey = sanitizeSquadKey(profileRef.current.squadName) || 'global';
+        if (msg.squadKey === myKey) {
+          handleIncomingMessage(msg.data);
+        }
+      }
     };
     broadcastChannelRef.current = channel;
 
@@ -552,72 +705,131 @@ export function useGroupRide() {
   // Initialize Global MQTT Radar Client (ONLY when Crew Radar is actively enabled)
   useEffect(() => {
     if (!profile.isLoggedIn || !isOnRadar) {
-      setMembers(new Map());
+      commitMembers(new Map());
+      activeCryptoRef.current = null;
       setIsConnected(false);
       setConnectionStatus('disconnected');
       setStatusMessage('Solo Private Mode • Hidden from Crew Radar');
+      resetConvoyWatchdog('solo');
       return;
     }
 
-    // Reset member cache when joining a distinct squad to prevent stale rider ghosting
-    setMembers(new Map());
-    setIsConnected(true);
+    let cancelled = false;
+
+    // Reset member cache & leader key when joining/switching squad
+    commitMembers(new Map());
+    lastVoiceBlastBySenderRef.current.clear();
+    setIsConnected(false);
     setConnectionStatus('connecting');
-    setStatusMessage('Connecting to Crew Radar...');
-
-    const squadKey = sanitizeKey(profile.squadName);
-    const client = new SimpleMqttClient({
-      clientId: profile.id,
-      onMessage: (_topic, data) => {
-        handleIncomingMessage(data);
-      },
-      onStatusChange: (status, detail) => {
-        setConnectionStatus(status);
-        if (status === 'connected') {
-          setIsConnected(true);
-          const isPrivateSquad = squadKey && squadKey !== 'global' && squadKey !== 'globalcrew';
-          setStatusMessage(isPrivateSquad ? `Squad [${profile.squadName}] Active • Private squad radar live` : 'Crew Radar Active • Everyone is live and visible');
-        } else if (status === 'connecting') {
-          setStatusMessage(detail || 'Connecting to Crew Radar...');
-        } else if (status === 'disconnected') {
-          setIsConnected(false);
-          setStatusMessage('Crew Radar reconnecting...');
-        } else {
-          setIsConnected(false);
-          setStatusMessage('Crew Radar network reconnect in progress...');
-        }
-      },
-    });
-
-    client.connect();
-
-    // Universal open radar vs private squad topic isolation
-    if (squadKey && squadKey !== 'global' && squadKey !== 'globalcrew') {
-      client.subscribe(`throttlelog/v1/squad/${squadKey}`);
-    } else {
-      client.subscribe('throttlelog/v1/radar/global');
+    setStatusMessage('Deriving squad key & connecting to Crew Radar...');
+    try {
+      const savedLeader = localStorage.getItem(getLeaderStorageKey(profile.squadName)) || null;
+      setLeaderId(savedLeader);
+      leaderIdRef.current = savedLeader;
+    } catch {
+      setLeaderId(null);
+      leaderIdRef.current = null;
     }
+    resetConvoyWatchdog(profile.squadName);
 
-    mqttClientRef.current = client;
+    let client: SimpleMqttClient | null = null;
+
+    (async () => {
+      try {
+        const cryptoCtx = await deriveRoomCryptoContext(profile.squadName);
+        if (cancelled) return;
+        activeCryptoRef.current = cryptoCtx;
+
+        const willEnvelope = await encryptCrewPayload(cryptoCtx.secret, cryptoCtx.roomHash, {
+          type: 'OFFLINE',
+          riderId: profile.id,
+          timestamp: Date.now(),
+        });
+        if (cancelled) return;
+
+        client = new SimpleMqttClient({
+          clientId: profile.id,
+          will: {
+            topic: cryptoCtx.topic,
+            payload: willEnvelope,
+            qos: 0,
+            retain: false,
+          },
+          onMessage: (_topic, envelope) => {
+            decryptCrewPayload(cryptoCtx.secret, cryptoCtx.roomHash, envelope)
+              .then(decrypted => {
+                if (!cancelled && decrypted) {
+                  handleIncomingMessage(decrypted);
+                }
+              })
+              .catch(() => {});
+          },
+          onStatusChange: (status, detail) => {
+            if (cancelled) return;
+            setConnectionStatus(status);
+            if (status === 'connected') {
+              setIsConnected(true);
+              setStatusMessage(
+                cryptoCtx.isPrivate
+                  ? `Squad [${profile.squadName}] Encrypted • Private squad radar live`
+                  : 'Crew Radar Active • Encrypted global relay live'
+              );
+            } else if (status === 'connecting') {
+              setIsConnected(false);
+              setStatusMessage(detail || 'Connecting to Crew Radar...');
+            } else if (status === 'disconnected') {
+              setIsConnected(false);
+              setStatusMessage('Crew Radar reconnecting...');
+            } else {
+              setIsConnected(false);
+              setStatusMessage('Crew Radar network reconnect in progress...');
+            }
+          },
+        });
+
+        mqttClientRef.current = client;
+        client.connect();
+        client.subscribe(cryptoCtx.topic);
+      } catch (err) {
+        if (!cancelled) {
+          setIsConnected(false);
+          setConnectionStatus('error');
+          setStatusMessage('Unable to initialize encrypted Crew Radar');
+          console.warn('Crew Radar init warning:', err);
+        }
+      }
+    })();
 
     return () => {
-      client.destroy();
-      mqttClientRef.current = null;
+      cancelled = true;
+      activeCryptoRef.current = null;
+      if (client) {
+        client.destroy();
+      }
+      if (mqttClientRef.current === client) {
+        mqttClientRef.current = null;
+      }
+      resetConvoyWatchdog();
     };
-  }, [profile.isLoggedIn, profile.id, profile.squadName, isOnRadar, handleIncomingMessage]);
+  }, [profile.isLoggedIn, profile.id, profile.squadName, isOnRadar, handleIncomingMessage, commitMembers]);
 
-  // Periodic heartbeat / location broadcast every 2.5 seconds
+  // Unified idle heartbeat every 2.5s (skips if movement broadcast just sent within 2.3s)
   useEffect(() => {
     heartbeatIntervalRef.current = setInterval(() => {
       if (!profile.isLoggedIn || !isOnRadarRef.current) return;
+      const now = Date.now();
+      if (now - lastLocationBroadcastTimeRef.current < 2300) return;
+
+      lastLocationBroadcastTimeRef.current = now;
       const payload: any = {
         riderId: profile.id,
         name: profile.name,
         color: profile.color,
         bikeModel: profile.bikeModel,
-        timestamp: Date.now(),
+        timestamp: now,
         status: 'stopped',
         batteryPct: batteryPctRef.current,
+        isCharging: isChargingRef.current,
       };
       if (myLocationRef.current) {
         Object.assign(payload, myLocationRef.current);
@@ -638,39 +850,35 @@ export function useGroupRide() {
   useEffect(() => {
     const ageInterval = setInterval(() => {
       const now = Date.now();
-      setMembers(prev => {
-        let changed = false;
-        const next = new Map(prev);
+      const prev = membersRef.current;
+      if (prev.size === 0) return;
 
-        prev.forEach((info, id) => {
-          const age = now - info.lastSeen;
-          // After 25 seconds without a packet, mark stale/stopped
-          if (info.isOnline && age > 25000 && !info.isStale) {
-            next.set(id, { ...info, isStale: true });
-            changed = true;
-          }
-          // After 75 seconds without a packet, mark offline but NEVER delete from convoy map
-          if (info.isOnline && age > 75000) {
-            next.set(id, { ...info, isOnline: false, isStale: true });
-            changed = true;
-          }
-          // Only prune ghosts after 4 hours of complete silence
-          if (age > 4 * 60 * 60 * 1000) {
-            next.delete(id);
-            changed = true;
-          }
-        });
+      let changed = false;
+      const next = new Map(prev);
 
-        if (changed) {
-          membersRef.current = next;
-          return next;
+      prev.forEach((info, id) => {
+        const age = now - info.lastSeen;
+        if (info.isOnline && age > 25000 && !info.isStale) {
+          next.set(id, { ...info, isStale: true });
+          changed = true;
         }
-        return prev;
+        if (info.isOnline && age > 75000) {
+          next.set(id, { ...info, isOnline: false, isStale: true });
+          changed = true;
+        }
+        if (age > 4 * 60 * 60 * 1000) {
+          next.delete(id);
+          changed = true;
+        }
       });
+
+      if (changed) {
+        commitMembers(next);
+      }
     }, 4000);
 
     return () => clearInterval(ageInterval);
-  }, []);
+  }, [commitMembers]);
 
   // Convoy Regroup Convergence Engine:
   // Detects when all active squad members converge within 40 meters at a stop (e.g. tea stall, toll booth)
@@ -749,42 +957,44 @@ export function useGroupRide() {
   }, [broadcastPayload]);
 
   const toggleOnRadar = useCallback((enable?: boolean) => {
-    setIsOnRadar(prev => {
-      const next = enable !== undefined ? enable : !prev;
-      isOnRadarRef.current = next;
-      try {
-        localStorage.setItem('sasta_on_radar', String(next));
-      } catch {}
+    const next = enable !== undefined ? enable : !isOnRadarRef.current;
+    isOnRadarRef.current = next;
+    setIsOnRadar(next);
+    try {
+      localStorage.setItem('sasta_on_radar', String(next));
+    } catch {}
 
-      if (!next) {
-        // Going off radar: send OFFLINE packet so friends see us disappear from live radar immediately
-        broadcastPayload({
-          type: 'OFFLINE',
-          riderId: profileRef.current.id,
-        });
-        postCrewNotification('👻 Off Radar (Ghost mode) enabled. You are hidden from friends.', 'info');
-      } else {
-        // Coming back on radar: send HEARTBEAT/LOCATION
-        postCrewNotification('🟢 Back on Crew Radar! You are visible to friends.', 'join');
-        const payload: any = {
-          riderId: profileRef.current.id,
-          name: profileRef.current.name,
-          color: profileRef.current.color,
-          bikeModel: profileRef.current.bikeModel,
-          timestamp: Date.now(),
-          status: 'stopped',
-        };
-        if (myLocationRef.current) {
-          Object.assign(payload, myLocationRef.current);
-          payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
-        }
-        broadcastPayload({
-          type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
-          payload,
-        });
+    if (!next) {
+      // Going off radar: send OFFLINE packet so friends see us disappear from live radar immediately
+      broadcastPayload({
+        type: 'OFFLINE',
+        riderId: profileRef.current.id,
+      });
+      resetConvoyWatchdog('solo');
+      postCrewNotification('👻 Off Radar (Ghost mode) enabled. You are hidden from friends.', 'info');
+    } else {
+      // Coming back on radar: send HEARTBEAT/LOCATION immediately
+      lastLocationBroadcastTimeRef.current = Date.now();
+      postCrewNotification('🟢 Back on Crew Radar! You are visible to friends.', 'join');
+      const payload: any = {
+        riderId: profileRef.current.id,
+        name: profileRef.current.name,
+        color: profileRef.current.color,
+        bikeModel: profileRef.current.bikeModel,
+        timestamp: Date.now(),
+        status: 'stopped',
+        batteryPct: batteryPctRef.current,
+        isCharging: isChargingRef.current,
+      };
+      if (myLocationRef.current) {
+        Object.assign(payload, myLocationRef.current);
+        payload.status = (myLocationRef.current.speedKmh || 0) < 2.5 ? 'stopped' : 'riding';
       }
-      return next;
-    });
+      broadcastPayload({
+        type: myLocationRef.current ? 'LOCATION' : 'HEARTBEAT',
+        payload,
+      });
+    }
   }, [broadcastPayload, postCrewNotification]);
 
   const broadcastActiveRoute = useCallback((route: { name?: string; distanceKm?: number; destination?: { lat: number; lon: number }; points?: Array<{ lat: number; lon: number }> } | null) => {
@@ -846,6 +1056,7 @@ export function useGroupRide() {
       lon: loc.lon,
       timestamp: Date.now(),
     };
+    sosAlertRef.current = alert;
     setSosAlert(alert);
     broadcastPayload({
       type: 'SOS_PING',
@@ -867,6 +1078,7 @@ export function useGroupRide() {
         timestamp: Date.now(),
       },
     });
+    sosAlertRef.current = null;
     setSosAlert(null);
     triggerHaptic([100, 50, 100]);
     postCrewNotification(`🟢 You cancelled the emergency SOS alert. Squad notified.`, 'info');
@@ -874,11 +1086,14 @@ export function useGroupRide() {
   }, [profile.id, profile.name, broadcastPayload, postCrewNotification]);
 
   const dismissSos = useCallback(() => {
-    // If the alert was triggered by this rider, broadcast cancel to entire squad
-    const isMine = sosAlert?.fromName === profile.name || (sosAlert?.fromId && sosAlert.fromId === profile.id);
+    // Authoritatively verify sender identity by riderId when present; fall back to name only for legacy packets
+    const isMine = sosAlert?.fromId
+      ? sosAlert.fromId === profile.id
+      : Boolean(sosAlert?.fromName && sosAlert.fromName === profile.name);
     if (isMine) {
       cancelSos();
     } else {
+      sosAlertRef.current = null;
       setSosAlert(null);
     }
   }, [sosAlert, profile.name, profile.id, cancelSos]);
@@ -911,11 +1126,12 @@ export function useGroupRide() {
 
   const logoutRider = useCallback(() => {
     setProfile(prev => ({ ...prev, isLoggedIn: false }));
-    setMembers(new Map());
+    commitMembers(new Map());
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setStatusMessage('Logged out. Check in to rejoin crew radar.');
-  }, []);
+    resetConvoyWatchdog();
+  }, [commitMembers]);
 
   const updateProfile = useCallback((name: string, bikeModel?: string, color?: string) => {
     const cleanName = (name && name.trim()) || profileRef.current.name || 'Rider';
@@ -1007,14 +1223,23 @@ export function useGroupRide() {
 
   const sendVoiceBlast = useCallback((audioBase64: string, durationMs: number, mimeType: string = 'audio/webm') => {
     if (!audioBase64) return;
+    const cleanMime = (mimeType || 'audio/webm').trim();
+    if (
+      audioBase64.length > MAX_VOICE_BLAST_B64_CHARS ||
+      !VOICE_BLAST_BASE64_RE.test(audioBase64) ||
+      !VOICE_BLAST_ALLOWED_MIMES.test(cleanMime)
+    ) {
+      postCrewNotification('⚠️ Voice blast exceeded 8s/100KB limit or invalid audio format.', 'alert');
+      return;
+    }
     const payload: VoiceBlastPayload = {
       riderId: profileRef.current.id,
       riderName: profileRef.current.name,
       bikeModel: profileRef.current.bikeModel,
       color: profileRef.current.color,
       audioBase64,
-      durationMs,
-      mimeType,
+      durationMs: Math.min(Math.max(Number(durationMs) || 3000, 500), 10000),
+      mimeType: cleanMime,
       timestamp: Date.now(),
     };
     broadcastPayload({
@@ -1057,26 +1282,36 @@ export function useGroupRide() {
   }, [broadcastPayload, postCrewNotification]);
 
   const setSquadLeader = useCallback((targetRiderId: string, targetName: string) => {
+    const myId = profileRef.current.id;
+    const existingLeader = leaderIdRef.current;
+    const leaderOnlineOther = Boolean(
+      existingLeader &&
+      existingLeader !== myId &&
+      membersRef.current.get(existingLeader)?.isOnline
+    );
+    if (existingLeader !== null && existingLeader !== myId && leaderOnlineOther) {
+      postCrewNotification('⚠️ Only the current active Ride Lead can reassign leadership.', 'alert');
+      return;
+    }
+
     setLeaderId(targetRiderId);
     leaderIdRef.current = targetRiderId;
     try {
-      localStorage.setItem('sasta_squad_leader_id', targetRiderId);
+      localStorage.setItem(getLeaderStorageKey(profileRef.current.squadName), targetRiderId);
     } catch {}
-    setMembers(prev => {
-      const next = new Map();
-      prev.forEach((val, key) => {
-        next.set(key, { ...val, isHost: key === targetRiderId });
-      });
-      return next;
+    const next = new Map<string, GroupMemberInfo>();
+    membersRef.current.forEach((val, key) => {
+      next.set(key, { ...val, isHost: key === targetRiderId });
     });
+    commitMembers(next);
     broadcastPayload({
       type: 'SET_LEADER',
-      payload: { leaderId: targetRiderId, leaderName: targetName },
+      payload: { leaderId: targetRiderId, leaderName: targetName, senderId: myId },
     });
     playRegroupChime();
     speakAlert(`${targetName} is now the ride leader.`);
     postCrewNotification(`👑 ${targetName} designated as Ride Lead!`, 'info');
-  }, [broadcastPayload, postCrewNotification]);
+  }, [broadcastPayload, postCrewNotification, commitMembers]);
 
   const claimSquadLeader = useCallback(() => {
     setSquadLeader(profileRef.current.id, profileRef.current.name);
@@ -1111,6 +1346,8 @@ export function useGroupRide() {
     dismissCrewNotification: () => setCrewNotification(null),
     activeVoiceBlast,
     dismissVoiceBlast: () => setActiveVoiceBlast(null),
+    isVoiceBlastMuted,
+    toggleVoiceBlastMuted,
     sendVoiceBlast,
     activeCallout,
     dismissCallout: () => setActiveCallout(null),

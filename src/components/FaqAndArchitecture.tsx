@@ -5,7 +5,6 @@ import {
   Radio, 
   Zap, 
   Route, 
-  Cpu, 
   Sliders, 
   Sparkles,
   Users,
@@ -16,9 +15,7 @@ import {
   Keyboard,
   ShieldCheck,
   Share2,
-  LogOut,
-  FolderArchive,
-  Compass
+  Crown,
 } from 'lucide-react';
 import { AppTheme } from '../types';
 
@@ -60,11 +57,11 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
           </div>
 
           {/* Quick Filter Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-slate-800 shrink-0 self-start sm:self-auto font-mono text-xs">
+          <div className={`flex items-center gap-1 p-1 rounded-xl border shrink-0 self-start sm:self-auto font-mono text-xs ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-900/60 border-slate-800'}`}>
             <button
               onClick={() => setActiveCategory('all')}
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer font-bold ${
-                activeCategory === 'all' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                activeCategory === 'all' ? 'bg-sky-500 text-slate-950 font-black' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
               }`}
             >
               All Topics
@@ -72,7 +69,7 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
             <button
               onClick={() => setActiveCategory('crew')}
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer font-bold ${
-                activeCategory === 'crew' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                activeCategory === 'crew' ? 'bg-cyan-500 text-slate-950 font-black' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
               }`}
             >
               Crew Radar
@@ -80,7 +77,7 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
             <button
               onClick={() => setActiveCategory('gps')}
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer font-bold ${
-                activeCategory === 'gps' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                activeCategory === 'gps' ? 'bg-emerald-500 text-slate-950 font-black' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
               }`}
             >
               GPS Drift & Accuracy
@@ -88,7 +85,7 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
             <button
               onClick={() => setActiveCategory('shortcuts')}
               className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer font-bold ${
-                activeCategory === 'shortcuts' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                activeCategory === 'shortcuts' ? 'bg-amber-500 text-slate-950 font-black' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
               }`}
             >
               Shortcuts
@@ -102,117 +99,119 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
       ───────────────────────────────────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'crew') && (
         <div className={`p-4 sm:p-6 border rounded-2xl shadow-lg space-y-5 ${cardBg}`}>
-          <div className="flex items-center gap-2 text-cyan-400 font-mono font-bold text-sm uppercase tracking-wider">
+          <div className={`flex items-center gap-2 font-mono font-bold text-sm uppercase tracking-wider ${
+            isLight ? 'text-cyan-700' : 'text-cyan-400'
+          }`}>
             <Users className="w-4 h-4" />
             <span>Motorcycle Crew Radar: Live Group Tracking Guide</span>
           </div>
 
           <p className={`text-xs leading-relaxed ${subTextColor}`}>
-            Crew Radar links you and your riding companions into a zero-latency live radar grid using WebRTC peer-to-peer telemetry. No account creation or server registration is required, and coordinates are never saved to external clouds.
+            Crew Radar links you and your riding companions on a real-time encrypted MQTT grid (relayed over public HiveMQ / EMQX WSS brokers) protected by per-room AES-256-GCM encryption. No account or registration is required, and coordinates are not archived in a central database.
           </p>
 
           {/* 4 Pillars Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Hosting & Joining */}
             <div className={`p-3.5 border rounded-xl space-y-1.5 ${innerCardBg}`}>
-              <div className="flex items-center gap-1.5 text-cyan-400 font-mono font-bold text-xs">
+              <div className={`flex items-center gap-1.5 font-mono font-bold text-xs ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
                 <Share2 className="w-3.5 h-3.5" />
                 <span>1. Instant Squad Code</span>
               </div>
               <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                Tap <strong>Start Crew Ride</strong> to generate a room code (or enter a custom name like <code className={`px-1 rounded ${codeBg}`}>SUNDAY</code>). Share the 1-tap WhatsApp invite link so teammates auto-join on open.
+                Open <strong>Live Map</strong> and tap the Squad badge in the bottom strip (or <strong>Privacy &amp; Crew</strong> in Settings) to join or generate a custom room code like <code className={`px-1 rounded ${codeBg}`}>APEX42</code>. Share the WhatsApp invite link so teammates auto-join.
               </p>
             </div>
 
             {/* Leader Crown */}
             <div className={`p-3.5 border rounded-xl space-y-1.5 ${innerCardBg}`}>
-              <div className="flex items-center gap-1.5 text-amber-400 font-mono font-bold text-xs">
-                <span>👑</span>
-                <span>2. Squad Leader Crown</span>
+              <div className={`flex items-center gap-1.5 font-mono font-bold text-xs ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
+                <Crown className="w-3.5 h-3.5" />
+                <span>2. Squad Leader Badge</span>
               </div>
               <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                The ride host is tagged with <strong className="text-amber-400">👑 LEADER</strong> on their live map marker, bottom card, and formation roster, ensuring convoy members always identify the lead bike.
+                The designated lead bike is tagged with <strong className={isLight ? 'text-amber-700' : 'text-amber-400'}>LEADER</strong> on their map marker and roster card so everyone can follow the lead rider in 1 tap.
               </p>
             </div>
 
             {/* Direct Navigation */}
             <div className={`p-3.5 border rounded-xl space-y-1.5 ${innerCardBg}`}>
-              <div className="flex items-center gap-1.5 text-sky-400 font-mono font-bold text-xs">
+              <div className={`flex items-center gap-1.5 font-mono font-bold text-xs ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
                 <Navigation className="w-3.5 h-3.5" />
                 <span>3. 1-Tap Google Navigation</span>
               </div>
               <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                Tap any teammate's bike marker or their bottom tray card and click <strong className="text-sky-300">🧭 Directions</strong> to launch native Google Maps turn-by-turn routing straight to their live coordinate.
+                Tap any teammate&apos;s bike marker or open the Squad sheet and tap the <strong className={isLight ? 'text-sky-700' : 'text-sky-300'}>Navigate</strong> icon to launch Google Maps routing straight to their coordinate.
               </p>
             </div>
 
             {/* Independent Track Logging */}
             <div className={`p-3.5 border rounded-xl space-y-1.5 ${innerCardBg}`}>
-              <div className="flex items-center gap-1.5 text-rose-400 font-mono font-bold text-xs">
+              <div className={`flex items-center gap-1.5 font-mono font-bold text-xs ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>
                 <Radio className="w-3.5 h-3.5" />
                 <span>4. Independent REC</span>
               </div>
               <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                The red <strong className="text-rose-400">REC</strong> button logs your track to your personal <strong>Garage</strong>. Disconnecting or leaving the squad will never terminate or corrupt your active GPS track recording.
+                The <strong className={isLight ? 'text-rose-700' : 'text-rose-400'}>REC</strong> button logs your ride to your local <strong>Garage</strong>. Switching to <strong>Solo Private</strong> hides you from other riders without interrupting your personal GPS recording.
               </p>
             </div>
           </div>
 
           {/* Map Controls Cheat Sheet */}
           <div className="space-y-2">
-            <h2 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider">
+            <h2 className={`text-xs font-mono font-bold uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
               Live Map Controls & Icons Reference
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
               <div className={`p-3 border rounded-xl flex items-center gap-2.5 ${innerCardBg}`}>
-                <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-500 border border-cyan-500/40 flex items-center justify-center shrink-0">
                   <Crosshair className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-white text-[11px]">Recenter (Me)</div>
+                  <div className={`font-bold text-[11px] ${isLight ? 'text-slate-900' : 'text-white'}`}>Recenter (Me)</div>
                   <div className={`text-[10px] ${subTextColor}`}>Pans map to your live GPS position</div>
                 </div>
               </div>
 
               <div className={`p-3 border rounded-xl flex items-center gap-2.5 ${innerCardBg}`}>
-                <div className="w-8 h-8 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/40 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-sky-500/20 text-sky-500 border border-sky-500/40 flex items-center justify-center shrink-0">
                   <Scan className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-white text-[11px]">Fit Convoy</div>
+                  <div className={`font-bold text-[11px] ${isLight ? 'text-slate-900' : 'text-white'}`}>Fit Convoy</div>
                   <div className={`text-[10px] ${subTextColor}`}>Auto-frames all squad members on map</div>
                 </div>
               </div>
 
               <div className={`p-3 border rounded-xl flex items-center gap-2.5 ${innerCardBg}`}>
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-500 border border-emerald-500/40 flex items-center justify-center shrink-0">
                   <Users className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-white text-[11px]">Crew Roster</div>
+                  <div className={`font-bold text-[11px] ${isLight ? 'text-slate-900' : 'text-white'}`}>Crew Roster</div>
                   <div className={`text-[10px] ${subTextColor}`}>Opens squad formation list & speeds</div>
                 </div>
               </div>
 
               <div className={`p-3 border rounded-xl flex items-center gap-2.5 ${innerCardBg}`}>
-                <div className="w-8 h-8 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-rose-500/20 text-rose-500 border border-rose-500/40 flex items-center justify-center shrink-0">
                   <AlertTriangle className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-white text-[11px]">Emergency SOS</div>
+                  <div className={`font-bold text-[11px] ${isLight ? 'text-slate-900' : 'text-white'}`}>Emergency SOS</div>
                   <div className={`text-[10px] ${subTextColor}`}>Broadcasts instant regroup alert</div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Convoy Safety & Disconnect Modal */}
+          {/* Solo Private vs Crew Toggle */}
           <div className={`p-3.5 border rounded-xl flex items-start gap-3 text-xs ${innerCardBg}`}>
-            <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <ShieldCheck className={`w-5 h-5 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
             <div className="space-y-1">
-              <strong className="text-white font-mono text-[11px]">Convoy Safety & Leave Confirmation:</strong>
+              <strong className={`font-sans text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>Solo Private vs. Crew Live Toggle:</strong>
               <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-                Tapping the exit icon (<LogOut className="w-3 h-3 inline text-slate-400" />) in the top-right triggers a safety modal. Squad leaders are warned before ending the session for everyone, while riders can leave without interrupting their personal trip logging. If disconnected due to tunnels, a <strong>1-Tap Rejoin</strong> pill appears automatically on map re-entry.
+                Tap the status pill in the top capsule at any time to switch between <strong>Crew Live</strong> and <strong>Solo Private</strong>. Solo Private hides peers from your map and stops broadcasting your coordinates while keeping your personal ride recording active.
               </p>
             </div>
           </div>
@@ -318,12 +317,12 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Play / Pause Timeline</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Play / Pause Timeline</span>
               <kbd className={`px-2 py-1 rounded text-xs font-bold border ${codeBg}`}>Space</kbd>
             </div>
 
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Scrub Track -1s / +1s</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Scrub Track -1s / +1s</span>
               <div className="flex items-center gap-1">
                 <kbd className={`px-1.5 py-1 rounded text-xs font-bold border ${codeBg}`}>←</kbd>
                 <kbd className={`px-1.5 py-1 rounded text-xs font-bold border ${codeBg}`}>→</kbd>
@@ -331,7 +330,7 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
             </div>
 
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Scrub -5s / +5s</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Scrub -5s / +5s</span>
               <div className="flex items-center gap-1">
                 <kbd className={`px-1.5 py-1 rounded text-xs font-bold border ${codeBg}`}>Shift</kbd>
                 <span>+</span>
@@ -340,17 +339,17 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
             </div>
 
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Telemetry & Diagnostics</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Telemetry & Diagnostics</span>
               <kbd className={`px-2 py-1 rounded text-xs font-bold border ${codeBg}`}>D</kbd>
             </div>
 
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Help / Documentation</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Help / Documentation</span>
               <kbd className={`px-2 py-1 rounded text-xs font-bold border ${codeBg}`}>?</kbd>
             </div>
 
             <div className={`p-3 border rounded-xl flex items-center justify-between ${innerCardBg}`}>
-              <span className="text-slate-300">Close Modals / Exit Max</span>
+              <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>Close Modals / Exit Max</span>
               <kbd className={`px-2 py-1 rounded text-xs font-bold border ${codeBg}`}>Esc</kbd>
             </div>
           </div>
@@ -363,28 +362,28 @@ export const FaqAndArchitecture: React.FC<FaqAndArchitectureProps> = ({ theme = 
       <div className={`p-4 sm:p-5 border rounded-2xl shadow-lg ${cardBg}`}>
         <div className="flex items-center gap-2 text-emerald-500 font-mono font-bold text-xs uppercase mb-3">
           <Globe className="w-4 h-4" />
-          <span>100% Client-Side Privacy & Offline Architecture</span>
+          <span>Local-First Telemetry &amp; Transparent Network Scope</span>
         </div>
         <div className={`space-y-2.5 text-xs leading-relaxed ${subTextColor}`}>
           <p>
-            <strong className={isLight ? 'text-slate-900' : 'text-white'}>Your GPS telemetry never touches third-party tracking servers:</strong>
+            <strong className={isLight ? 'text-slate-900' : 'text-white'}>Your ride logs and Garage stay locally on your device:</strong> Network connections occur only for opt-in features you trigger.
           </p>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
             <li className="flex items-start gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-              <span><strong>Local Browser Processing:</strong> All GPX parsing, speed curves, cornering histograms, and lean calculations run 100% locally in your browser.</span>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+              <span><strong>On-Device Processing:</strong> All GPX parsing, speed zones, cornering histograms, crash detection, and Garage storage run offline in your browser/device.</span>
             </li>
             <li className="flex items-start gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-              <span><strong>Peer-to-Peer Telemetry:</strong> Crew Radar streams position packets directly between connected phones via WebRTC.</span>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+              <span><strong>Optional Crew Radar Relay:</strong> Only when you join Crew Live do packets (encrypted with room-derived AES-256-GCM) travel over public WSS MQTT brokers (HiveMQ / EMQX).</span>
             </li>
             <li className="flex items-start gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-              <span><strong>Offline Capable PWA:</strong> Fully installable to home screen and cached locally so you can review tracks even without cellular reception in remote valleys.</span>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+              <span><strong>Map Tiles &amp; Route Helpers:</strong> Viewing/caching maps fetches OpenStreetMap or Esri tiles; Google Maps link import uses Nominatim, OSRM, or <code className="font-mono">/api/unshorten</code> when requested.</span>
             </li>
             <li className="flex items-start gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-              <span><strong>Instant GPX & PDF Export:</strong> Download raw GPX data, Strava splits, or print official telemetry dossiers at any time.</span>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+              <span><strong>Optional Cloud Backup:</strong> GitHub Gist sync runs only if you paste your own Personal Access Token or manually import/export JSON backups.</span>
             </li>
           </ul>
         </div>

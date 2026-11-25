@@ -270,6 +270,14 @@ let currentAudioEl: HTMLAudioElement | null = null;
  */
 export async function playVoiceBlastAudio(audioBase64: string, mimeType: string = 'audio/webm'): Promise<void> {
   if (typeof window === 'undefined' || !audioBase64) return;
+  const cleanMime = (mimeType || 'audio/webm').trim();
+  if (
+    audioBase64.length > 140_000 ||
+    !/^audio\/(?:webm|mp4|aac|ogg|wav)(?:\s*;\s*codecs=[a-z0-9.,_-]+)?$/i.test(cleanMime) ||
+    !/^[A-Za-z0-9+/=]+$/.test(audioBase64)
+  ) {
+    return;
+  }
 
   try {
     // Request Android native audio focus so background music ducks in Bluetooth helmet intercom
@@ -290,7 +298,7 @@ export async function playVoiceBlastAudio(audioBase64: string, mimeType: string 
       currentAudioEl = null;
     }
 
-    const dataUri = `data:${mimeType};base64,${audioBase64}`;
+    const dataUri = `data:${cleanMime};base64,${audioBase64}`;
     const audio = new Audio(dataUri);
     currentAudioEl = audio;
 

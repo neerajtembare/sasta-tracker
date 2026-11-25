@@ -1,5 +1,5 @@
 // ThrottleLog — Offline Service Worker with Map Tile Caching
-const CACHE_NAME = 'throttlelog-v4';
+const CACHE_NAME = 'throttlelog-v6';
 const TILE_CACHE_NAME = 'throttlelog-map-tiles-v3';
 const MAX_TILES = 1500;
 
@@ -8,6 +8,9 @@ const STATIC_ASSETS = [
   '/index.html',
   '/manifest.json',
   '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
 ];
 
@@ -16,24 +19,31 @@ function isMapTileUrl(url) {
   return (
     url.hostname.includes('tile.openstreetmap.org') ||
     url.hostname.includes('arcgisonline.com') ||
-    url.pathname.endsWith('.png') && (url.pathname.includes('/tile/') || url.pathname.includes('/rastertiles/'))
+    (url.pathname.endsWith('.png') && (url.pathname.includes('/tile/') || url.pathname.includes('/rastertiles/')))
   );
 }
 
-// Clean up oldest tiles if cache exceeds MAX_TILES
-async function trimTileCache() {
-  try {
-    const cache = await caches.open(TILE_CACHE_NAME);
-    const keys = await cache.keys();
-    if (keys.length > MAX_TILES) {
-      const deleteCount = keys.length - MAX_TILES + 100;
-      for (let i = 0; i < deleteCount; i++) {
-        await cache.delete(keys[i]);
+// Promise-locked eviction so concurrent tile fetches never race cache deletions
+let trimPromise = null;
+function trimTileCache() {
+  if (trimPromise) return trimPromise;
+  trimPromise = (async () => {
+    try {
+      const cache = await caches.open(TILE_CACHE_NAME);
+      const keys = await cache.keys();
+      if (keys.length > MAX_TILES) {
+        const deleteCount = keys.length - MAX_TILES + 100;
+        for (let i = 0; i < deleteCount; i++) {
+          await cache.delete(keys[i]);
+        }
       }
+    } catch {
+      // Non-fatal cache eviction error
+    } finally {
+      trimPromise = null;
     }
-  } catch (err) {
-    // Non-fatal cache eviction error
-  }
+  })();
+  return trimPromise;
 }
 
 // Install event: cache core shell assets
@@ -87,12 +97,16 @@ let tileFetchCounter = 0;
 
 // Fetch event
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
   const url = new URL(event.request.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // Never intercept serverless API calls or telemetry endpoints
+  if (url.origin === location.origin && url.pathname.startsWith('/api/')) return;
 
   // 1. Map Tile Requests: Cache-First strategy with automatic offline fallback
   if (isMapTileUrl(url)) {
-    if (event.request.method !== 'GET') return;
-
     event.respondWith(
       caches.open(TILE_CACHE_NAME).then(async cache => {
         const cachedResponse = await cache.match(event.request);
@@ -110,7 +124,7 @@ self.addEventListener('fetch', event => {
             }
           }
           return networkResponse;
-        } catch (networkErr) {
+        } catch {
           // If offline and not in cache, fallback gracefully
           return cachedResponse || new Response('', { status: 408, statusText: 'Tile Offline' });
         }
@@ -119,18 +133,46 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Only handle GET requests for normal assets
-  if (event.request.method !== 'GET') return;
+  // 2. HTML Navigations / App Shell entry: Network-First to prevent stale hashed bundle white-screens
+  const isHtmlNavigation =
+    event.request.mode === 'navigate' ||
+    (url.origin === location.origin && (url.pathname === '/' || url.pathname === '/index.html'));
 
-  // 2. Static Assets & App Shell: Stale-While-Revalidate
+  if (isHtmlNavigation) {
+    event.respondWith(
+      fetch(event.request)
+        .then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put('/index.html', clone).catch(() => {});
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cachedPage = await caches.match(event.request);
+          if (cachedPage) return cachedPage;
+          const cachedShell = await caches.match('/index.html');
+          return cachedShell || new Response('Offline', { status: 503, statusText: 'Offline' });
+        })
+    );
+    return;
+  }
+
+  // 3. Static Assets: Stale-While-Revalidate (hashed JS/CSS/fonts/icons)
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       if (cachedResponse) {
         fetch(event.request)
           .then(networkResponse => {
-            if (networkResponse && networkResponse.status === 200) {
+            if (
+              networkResponse &&
+              networkResponse.status === 200 &&
+              (url.origin === location.origin || url.hostname.includes('unpkg.com'))
+            ) {
               caches.open(CACHE_NAME).then(cache => {
-                cache.put(event.request, networkResponse);
+                cache.put(event.request, networkResponse).catch(() => {});
               });
             }
           })
@@ -147,16 +189,12 @@ self.addEventListener('fetch', event => {
           ) {
             const clone = networkResponse.clone();
             caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, clone);
+              cache.put(event.request, clone).catch(() => {});
             });
           }
           return networkResponse;
         })
-        .catch(() => {
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
-        });
+        .catch(() => new Response('Offline', { status: 503, statusText: 'Offline' }));
     })
   );
 });

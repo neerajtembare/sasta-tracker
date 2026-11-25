@@ -3,6 +3,9 @@ import { getSavedIdentity, saveIdentity } from './cookieStorage';
 
 export type StartupScreen = 'dashboard' | 'cockpit' | 'map';
 export type DefaultMountMode = 'handlebar' | 'pocket';
+export type MountOrientationPref = 'auto' | 'portrait' | 'landscape';
+export type DefaultMapLayer = 'dark' | 'streets' | 'satellite' | 'sunlight';
+export type DefaultMapOrientation = 'course' | 'north';
 
 export interface RiderProfileData {
   callsign: string;
@@ -11,6 +14,12 @@ export interface RiderProfileData {
   initialOdoKm: number;
   defaultStartupScreen: StartupScreen;
   defaultMountMode: DefaultMountMode;
+  mountOrientation: MountOrientationPref;
+  defaultMapLayer: DefaultMapLayer;
+  defaultMapOrientation: DefaultMapOrientation;
+  fuelMileageKmpl: number;
+  fuelPricePerLiter: number;
+  currencySymbol: string;
 }
 
 export interface BikeLifetimeStats {
@@ -32,6 +41,14 @@ const LEGACY_KEY_COLOR = 'sasta_rider_color';
 const STORAGE_KEY_INITIAL_ODO = 'throttlelog_initial_odo_km';
 const STORAGE_KEY_STARTUP = 'throttlelog_default_startup_view';
 const STORAGE_KEY_MOUNT = 'throttlelog_default_mount_mode';
+const STORAGE_KEY_MOUNT_ORIENT = 'throttlelog_mount_orientation';
+const STORAGE_KEY_MAP_LAYER = 'throttlelog_map_layer';
+const LEGACY_KEY_MAP_LAYER = 'sasta_map_layer';
+const STORAGE_KEY_MAP_ORIENT = 'throttlelog_map_orientation';
+const LEGACY_KEY_MAP_ORIENT = 'sasta_map_orientation';
+const STORAGE_KEY_MILEAGE = 'throttlelog_fuel_mileage_kmpl';
+const STORAGE_KEY_FUEL_PRICE = 'throttlelog_fuel_price_per_liter';
+const STORAGE_KEY_CURRENCY = 'throttlelog_currency_symbol';
 
 export function getRiderProfile(): RiderProfileData {
   let callsign = 'Rider';
@@ -40,6 +57,12 @@ export function getRiderProfile(): RiderProfileData {
   let initialOdoKm = 0;
   let defaultStartupScreen: StartupScreen = 'dashboard';
   let defaultMountMode: DefaultMountMode = 'handlebar';
+  let mountOrientation: MountOrientationPref = 'auto';
+  let defaultMapLayer: DefaultMapLayer = 'dark';
+  let defaultMapOrientation: DefaultMapOrientation = 'course';
+  let fuelMileageKmpl = 32;
+  let fuelPricePerLiter = 104;
+  let currencySymbol = '₹';
 
   try {
     const savedName = getSavedIdentity(STORAGE_KEY_CALLSIGN) || getSavedIdentity(LEGACY_KEY_CALLSIGN);
@@ -66,6 +89,36 @@ export function getRiderProfile(): RiderProfileData {
       if (savedMount === 'handlebar' || savedMount === 'pocket') {
         defaultMountMode = savedMount as DefaultMountMode;
       }
+
+      const savedMountOrient = localStorage.getItem(STORAGE_KEY_MOUNT_ORIENT);
+      if (savedMountOrient === 'auto' || savedMountOrient === 'portrait' || savedMountOrient === 'landscape') {
+        mountOrientation = savedMountOrient;
+      }
+
+      const savedMapLayer = localStorage.getItem(STORAGE_KEY_MAP_LAYER) || localStorage.getItem(LEGACY_KEY_MAP_LAYER);
+      if (savedMapLayer === 'dark' || savedMapLayer === 'streets' || savedMapLayer === 'satellite' || savedMapLayer === 'sunlight') {
+        defaultMapLayer = savedMapLayer;
+      }
+
+      const savedMapOrient = localStorage.getItem(STORAGE_KEY_MAP_ORIENT) || localStorage.getItem(LEGACY_KEY_MAP_ORIENT);
+      if (savedMapOrient === 'course' || savedMapOrient === 'north') {
+        defaultMapOrientation = savedMapOrient;
+      }
+
+      const savedMileage = localStorage.getItem(STORAGE_KEY_MILEAGE);
+      if (savedMileage && Number(savedMileage) > 0) {
+        fuelMileageKmpl = Number(savedMileage);
+      }
+
+      const savedFuelPrice = localStorage.getItem(STORAGE_KEY_FUEL_PRICE);
+      if (savedFuelPrice && Number(savedFuelPrice) > 0) {
+        fuelPricePerLiter = Number(savedFuelPrice);
+      }
+
+      const savedCurrency = localStorage.getItem(STORAGE_KEY_CURRENCY);
+      if (savedCurrency && savedCurrency.trim()) {
+        currencySymbol = savedCurrency.trim().slice(0, 4);
+      }
     }
   } catch {}
 
@@ -76,6 +129,12 @@ export function getRiderProfile(): RiderProfileData {
     initialOdoKm,
     defaultStartupScreen,
     defaultMountMode,
+    mountOrientation,
+    defaultMapLayer,
+    defaultMapOrientation,
+    fuelMileageKmpl,
+    fuelPricePerLiter,
+    currencySymbol,
   };
 }
 
@@ -107,6 +166,32 @@ export function saveRiderProfile(updates: Partial<RiderProfileData>): RiderProfi
 
       if (updates.defaultMountMode !== undefined) {
         localStorage.setItem(STORAGE_KEY_MOUNT, updates.defaultMountMode);
+      }
+
+      if (updates.mountOrientation !== undefined) {
+        localStorage.setItem(STORAGE_KEY_MOUNT_ORIENT, updates.mountOrientation);
+      }
+
+      if (updates.defaultMapLayer !== undefined) {
+        localStorage.setItem(STORAGE_KEY_MAP_LAYER, updates.defaultMapLayer);
+        localStorage.setItem(LEGACY_KEY_MAP_LAYER, updates.defaultMapLayer);
+      }
+
+      if (updates.defaultMapOrientation !== undefined) {
+        localStorage.setItem(STORAGE_KEY_MAP_ORIENT, updates.defaultMapOrientation);
+        localStorage.setItem(LEGACY_KEY_MAP_ORIENT, updates.defaultMapOrientation);
+      }
+
+      if (updates.fuelMileageKmpl !== undefined && updates.fuelMileageKmpl > 0) {
+        localStorage.setItem(STORAGE_KEY_MILEAGE, String(updates.fuelMileageKmpl));
+      }
+
+      if (updates.fuelPricePerLiter !== undefined && updates.fuelPricePerLiter > 0) {
+        localStorage.setItem(STORAGE_KEY_FUEL_PRICE, String(updates.fuelPricePerLiter));
+      }
+
+      if (updates.currencySymbol !== undefined && updates.currencySymbol.trim()) {
+        localStorage.setItem(STORAGE_KEY_CURRENCY, updates.currencySymbol.trim().slice(0, 4));
       }
     }
   } catch (e) {

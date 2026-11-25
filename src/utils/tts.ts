@@ -25,24 +25,18 @@ export function speakAlert(text: string, options: SpeakOptions = {}): void {
   const pitch = options.pitch ?? 1.0;
   const queue = options.queue ?? 'flush';
 
-  // 1. Native Android APK execution
+  // 1. Native Android APK execution (waits for real UtteranceProgressListener.onDone callback)
   if (Capacitor.isNativePlatform()) {
-    nativeSpeak(text.trim(), rate, pitch, queue);
-    if (options.onEnd) {
-      // Estimate duration based on word count (approx 130 words/min = ~460ms/word)
-      const words = text.trim().split(/\s+/).length;
-      const approxDurationMs = Math.max(1200, (words / (130 * rate)) * 60 * 1000);
-      setTimeout(() => {
-        options.onEnd?.();
-      }, approxDurationMs);
-    }
+    nativeSpeak(text.trim(), rate, pitch, queue, options.onEnd);
     return;
   }
 
   // 2. Web Browser Fallback (window.speechSynthesis)
   try {
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Stop pending utterances
+      if (queue !== 'add') {
+        window.speechSynthesis.cancel(); // Flush prior utterances only when requested
+      }
 
       const utterance = new SpeechSynthesisUtterance(text.trim());
       utterance.rate = rate;

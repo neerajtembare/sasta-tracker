@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { RideAnalysis, AppTheme } from '../types';
+import { formatDurationSummary } from '../utils/units';
 import { BarChart3, Clock, Gauge } from 'lucide-react';
 
 interface SpeedZoneHistogramProps {
@@ -12,18 +13,9 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
-  const formatDuration = (totalSec: number) => {
-    if (!totalSec || isNaN(totalSec) || totalSec <= 0) return '0m';
-    const hrs = Math.floor(totalSec / 3600);
-    const mins = Math.round((totalSec % 3600) / 60);
-    if (hrs > 0) {
-      return `${hrs}h ${mins}m`;
-    }
-    return `${mins}m`;
-  };
 
   // Dynamically calculate speed thresholds according to maximum recorded ride speed
-  const { thresholds, zones } = useMemo(() => {
+  const { zones } = useMemo(() => {
     const maxSpd = Math.max(20, analysis.maxSpeedKmh);
     const totalSec = Math.max(1, analysis.totalDurationSeconds);
 
@@ -109,7 +101,9 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
         id: 'stationary',
         title: 'Stationary / Idle',
         speedLabel: '0 km/h',
-        badgeColor: 'text-slate-400 bg-slate-800/60 border-slate-700/60',
+        badgeColor: isLight
+          ? 'text-slate-700 bg-slate-100 border-slate-300'
+          : 'text-slate-300 bg-slate-800/70 border-slate-700/60',
         barColor: 'bg-slate-500',
         colorHex: '#64748b',
         durationSec: time0,
@@ -120,8 +114,10 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
         id: 'low',
         title: 'Low Speed / Technical',
         speedLabel: `1 - ${t1} km/h`,
-        badgeColor: 'text-sky-400 bg-sky-950/40 border-sky-800/50',
-        barColor: 'bg-sky-400',
+        badgeColor: isLight
+          ? 'text-sky-800 bg-sky-50 border-sky-300'
+          : 'text-sky-300 bg-sky-950/40 border-sky-800/50',
+        barColor: 'bg-sky-500',
         colorHex: '#38bdf8',
         durationSec: timeLow,
         percentage: p1,
@@ -131,7 +127,9 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
         id: 'moderate',
         title: 'Moderate / Flow Pace',
         speedLabel: `${t1} - ${t2} km/h`,
-        badgeColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-800/50',
+        badgeColor: isLight
+          ? 'text-emerald-800 bg-emerald-50 border-emerald-300'
+          : 'text-emerald-300 bg-emerald-950/40 border-emerald-800/50',
         barColor: 'bg-emerald-500',
         colorHex: '#10b981',
         durationSec: timeMid,
@@ -142,7 +140,9 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
         id: 'brisk',
         title: 'Cruising / Open Pace',
         speedLabel: `${t2} - ${t3} km/h`,
-        badgeColor: 'text-amber-400 bg-amber-950/40 border-amber-800/50',
+        badgeColor: isLight
+          ? 'text-amber-800 bg-amber-50 border-amber-300'
+          : 'text-amber-300 bg-amber-950/40 border-amber-800/50',
         barColor: 'bg-amber-500',
         colorHex: '#f59e0b',
         durationSec: timeBrisk,
@@ -153,7 +153,9 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
         id: 'high',
         title: 'High Speed / Bursts',
         speedLabel: `${t3}+ km/h`,
-        badgeColor: 'text-rose-400 bg-rose-950/40 border-rose-800/50',
+        badgeColor: isLight
+          ? 'text-rose-800 bg-rose-50 border-rose-300'
+          : 'text-rose-300 bg-rose-950/40 border-rose-800/50',
         barColor: 'bg-rose-500',
         colorHex: '#f43f5e',
         durationSec: timeHigh,
@@ -166,18 +168,18 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
       thresholds: { t1, t2, t3 },
       zones: zoneList,
     };
-  }, [analysis]);
+  }, [analysis, isLight]);
 
-  const totalDurationText = formatDuration(analysis.totalDurationSeconds);
-  const haltsText = formatDuration(analysis.stoppedTimeSeconds);
-  const movingText = formatDuration(analysis.movingTimeSeconds);
+  const totalDurationText = formatDurationSummary(analysis.totalDurationSeconds);
+  const haltsText = formatDurationSummary(analysis.stoppedTimeSeconds);
+  const movingText = formatDurationSummary(analysis.movingTimeSeconds);
   const haltsPct = Math.round((analysis.stoppedTimeSeconds / Math.max(1, analysis.totalDurationSeconds)) * 100);
   const movingPct = 100 - haltsPct;
 
   const cardBg = isLight ? 'bg-white border-slate-200 text-slate-900 shadow-slate-100' : 'bg-[#0d131a] border-[#1e2a38] text-white shadow-black/40';
   const subBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#141d26] border-[#223140]';
   const itemBg = isLight ? 'bg-slate-50 border-slate-200 hover:border-slate-300' : 'bg-[#131b24] border-[#202d3d] hover:border-[#2f4259]';
-  const subText = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
+  const subText = isLight ? 'text-slate-600' : 'text-[#8f9ca8]';
   const barTrack = isLight ? 'bg-slate-200' : 'bg-[#1e2a38]';
 
   return (
@@ -186,56 +188,60 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-500">
+            <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
+              isLight ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/15 border-sky-500/30 text-sky-400'
+            }`}>
               <BarChart3 className="w-4 h-4" />
             </div>
             <h3 className={`font-heading font-black text-sm sm:text-base tracking-wide uppercase ${isLight ? 'text-slate-900' : 'text-white'}`}>
-              Speed & Velocity Distribution
+              Speed &amp; Velocity Distribution
             </h3>
-            <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-sky-500/15 text-sky-500 border border-sky-500/30 rounded">
+            <span className={`px-2 py-0.5 text-[10px] font-mono font-bold border rounded telemetry-num ${
+              isLight ? 'bg-sky-50 text-sky-700 border-sky-300' : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+            }`}>
               {totalDurationText} Total Monitored
             </span>
           </div>
-          <p className={`text-xs mt-1 ${subText}`}>
-            Time distribution across dynamically calibrated speed zones based on your ride's maximum pace ({analysis.maxSpeedKmh.toFixed(1)} km/h).
+          <p className={`text-xs mt-1 font-sans ${subText}`}>
+            Time distribution across dynamically calibrated speed zones based on your ride&apos;s maximum pace ({analysis.maxSpeedKmh.toFixed(1)} km/h).
           </p>
         </div>
 
         {/* Top Right Summary Pills */}
-        <div className="flex items-center gap-2 text-xs font-mono">
+        <div className="flex items-center gap-2 text-xs font-mono telemetry-num flex-wrap">
           <div className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${subBg}`}>
-            <Clock className={`w-3.5 h-3.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
+            <Clock className={`w-3.5 h-3.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`} />
             <span className={subText}>Stationary: </span>
-            <span className={`font-bold ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{haltsText} ({haltsPct}%)</span>
+            <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>{haltsText} ({haltsPct}%)</span>
           </div>
           <div className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${subBg}`}>
-            <Gauge className="w-3.5 h-3.5 text-emerald-500" />
+            <Gauge className={`w-3.5 h-3.5 ${isLight ? 'text-emerald-700' : 'text-emerald-500'}`} />
             <span className={subText}>Moving Throttle: </span>
-            <span className="text-emerald-500 font-bold">{movingText} ({movingPct}%)</span>
+            <span className={`font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{movingText} ({movingPct}%)</span>
           </div>
         </div>
       </div>
 
       {/* Cumulative Stacked Color Bar */}
       <div className="space-y-1.5 pt-1">
-        <div className={`flex items-center justify-between text-[11px] font-mono ${subText}`}>
+        <div className={`flex items-center justify-between text-[11px] font-sans ${subText}`}>
           <span>Velocity spectrum allocation:</span>
-          <span className="text-sky-500 font-bold">100% Ride Monitored</span>
+          <span className={`font-bold ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>100% Ride Monitored</span>
         </div>
         <div className={`w-full h-3 rounded-full overflow-hidden flex p-0.5 border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#141d26] border-[#223140]'}`}>
-          {zones.map(z => (
+          {zones.filter(z => z.percentage > 0).map(z => (
             <div
               key={z.id}
-              style={{ width: `${Math.max(z.percentage, 1)}%` }}
+              style={{ width: `${z.percentage}%` }}
               className={`h-full ${z.barColor} transition-all first:rounded-l-full last:rounded-r-full`}
-              title={`${z.title} (${z.speedLabel}): ${formatDuration(z.durationSec)} (${z.percentage}%)`}
+              title={`${z.title} (${z.speedLabel}): ${formatDurationSummary(z.durationSec)} (${z.percentage}%)`}
             />
           ))}
         </div>
       </div>
 
       {/* 5 Distinct Adaptive Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1 telemetry-num">
         {zones.map(z => (
           <div
             key={z.id}
@@ -251,23 +257,23 @@ export const SpeedZoneHistogram: React.FC<SpeedZoneHistogramProps> = ({
                 </span>
               </div>
               
-              <div className={`text-[11px] font-mono mb-1.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+              <div className={`text-[11px] font-mono mb-1.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                 {z.speedLabel}
               </div>
 
               <div className={`font-mono font-black text-2xl ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {formatDuration(z.durationSec)}
+                {formatDurationSummary(z.durationSec)}
               </div>
             </div>
 
             <div className="mt-3 space-y-2">
-              <div className={`text-[11px] leading-tight line-clamp-2 ${subText}`}>
+              <div className={`text-[11px] font-sans leading-tight line-clamp-2 ${subText}`}>
                 {z.desc}
               </div>
               <div className={`w-full h-1.5 ${barTrack} rounded-full overflow-hidden`}>
                 <div
                   className={`h-full ${z.barColor}`}
-                  style={{ width: `${Math.min(100, Math.max(4, z.percentage))}%` }}
+                  style={{ width: z.percentage > 0 ? `${Math.min(100, z.percentage)}%` : '0%' }}
                 />
               </div>
             </div>

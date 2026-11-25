@@ -117,11 +117,26 @@ export async function preCacheRouteTiles(
   }
 
   let cached = 0;
-  const concurrency = 3; // Polite concurrency to respect OSM tile server policy
+  let rateLimitedHits = 0;
+  let abortedError: string | undefined;
+  let cooldownUntil = 0;
+  const concurrency = 2; // Polite concurrency aligned with OSM Tile Usage Policy
   const queue = [...urls];
 
+  const reportProgress = (isComplete: boolean, error?: string) => {
+    const percentage = total > 0 ? Math.round((cached / total) * 100) : 100;
+    onProgress?.({
+      cached,
+      total,
+      percentage,
+      isComplete,
+      error,
+      sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
+    });
+  };
+
   const fetchWorker = async () => {
-    while (queue.length > 0) {
+    while (queue.length > 0 && !abortedError) {
       const url = queue.shift();
       if (!url) break;
 
@@ -130,40 +145,50 @@ export async function preCacheRouteTiles(
         const match = await cache.match(url);
         if (match) {
           cached++;
-          const pct = Math.round((cached / total) * 100);
-          onProgress?.({
-            cached,
-            total,
-            percentage: pct,
-            isComplete: cached === total,
-            sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
-          });
+          reportProgress(cached === total);
           continue;
         }
 
-        // Polite delay (25ms) between tile fetches to prevent HTTP 429 rate limiting
-        await new Promise(r => setTimeout(r, 25));
+        // Wait if another worker hit HTTP 429 Retry-After cooldown, plus polite 80ms spacing
+        const waitMs = Math.max(80, cooldownUntil - Date.now());
+        await new Promise(r => setTimeout(r, waitMs));
+        if (abortedError) break;
 
-        const resp = await fetch(url);
+        let resp: Response | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          resp = await fetch(url);
+          if (resp.status === 429 || resp.status === 503) {
+            rateLimitedHits++;
+            const retryAfterSec = parseInt(resp.headers?.get('Retry-After') || '', 10);
+            const backoffMs = !isNaN(retryAfterSec) && retryAfterSec > 0
+              ? Math.min(30000, Math.max(2000, retryAfterSec * 1000))
+              : 2500 * (attempt + 1);
+            cooldownUntil = Math.max(cooldownUntil, Date.now() + backoffMs);
+
+            if (rateLimitedHits >= 3) {
+              abortedError = 'Tile server rate limit (HTTP 429) reached. Try again later with a smaller zoom range.';
+              break;
+            }
+            await new Promise(r => setTimeout(r, backoffMs));
+            continue;
+          }
+          break;
+        }
+
+        if (abortedError) break;
+
         if (resp && resp.status === 200) {
           try {
             await cache.put(url, resp.clone());
-            cached++;
           } catch {
-            cached++;
+            // Ignore quota warning for single tile and advance counter
           }
+          cached++;
         }
 
-        const percentage = Math.round((cached / total) * 100);
-        onProgress?.({
-          cached,
-          total,
-          percentage,
-          isComplete: cached === total,
-          sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
-        });
+        reportProgress(cached === total);
       } catch {
-        // Non-fatal, continue with remaining tiles
+        // Non-fatal network flake, continue remaining tiles unless aborted
       }
     }
   };
@@ -171,14 +196,7 @@ export async function preCacheRouteTiles(
   const workers = Array.from({ length: concurrency }, () => fetchWorker());
   await Promise.all(workers);
 
-  const finalPercentage = total > 0 ? Math.round((cached / total) * 100) : 100;
-  onProgress?.({
-    cached,
-    total,
-    percentage: finalPercentage,
-    isComplete: true,
-    sizeMb: `${((cached * 25) / 1024).toFixed(1)} MB`,
-  });
+  reportProgress(true, abortedError);
 
   return { cached, total };
 }

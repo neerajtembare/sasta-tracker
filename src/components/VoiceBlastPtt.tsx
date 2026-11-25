@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Square, Send, X, Volume2, Radio } from 'lucide-react';
+import { Mic, X, Volume2, Radio } from 'lucide-react';
 import { pttRecorder, VoiceRecordingResult } from '../utils/voiceBlast';
 import { triggerHaptic } from '../utils/audioChimes';
 import { ActiveVoiceBlast } from '../hooks/useGroupRide';
 import { requestNativeMicrophonePermission } from '../utils/nativeKeepAlive';
+import { AppTheme } from '../types';
 
 interface VoiceBlastPttButtonProps {
   onSendVoiceBlast: (audioBase64: string, durationMs: number, mimeType?: string) => void;
   disabled?: boolean;
   className?: string;
   compact?: boolean;
+  theme?: AppTheme;
 }
 
 export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
@@ -17,7 +19,9 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
   disabled = false,
   className = '',
   compact = false,
+  theme = 'dark',
 }) => {
+  const isLight = theme === 'light';
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
@@ -115,7 +119,7 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
   };
 
   // Touch & Hold support
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = () => {
     // Only engage hold if not already recording in tap-mode
     if (!isRecording) {
       isHoldingRef.current = true;
@@ -176,7 +180,9 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
         onTouchEnd={handleTouchEnd}
         className={`rounded-xl font-mono text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md transition-all active:scale-95 select-none ${
           compact
-            ? 'h-8 px-2.5 bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-300'
+            ? isLight
+              ? 'h-8 px-2.5 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-800'
+              : 'h-8 px-2.5 bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-300'
             : 'h-9 px-3.5 bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 text-slate-950 shadow-cyan-500/25'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         title="Push-to-Talk: Tap (or hold) to record up to 8s walkie-talkie voice note to Squad Intercom"
@@ -187,8 +193,8 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
 
       {/* Permission / Mic Error Toast */}
       {micError && (
-        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 p-2 rounded-xl bg-rose-950/95 border border-rose-500 text-rose-200 font-mono text-[11px] font-bold shadow-2xl whitespace-nowrap animate-in fade-in">
-          ⚠️ {micError}
+        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 p-2 rounded-xl bg-rose-950/95 border border-rose-500 text-rose-200 font-sans text-[11px] font-bold shadow-2xl whitespace-nowrap animate-in fade-in">
+          {micError}
         </div>
       )}
     </div>
@@ -198,23 +204,32 @@ export const VoiceBlastPttButton: React.FC<VoiceBlastPttButtonProps> = ({
 interface VoiceBlastBannerProps {
   activeBlast: ActiveVoiceBlast | null;
   onDismiss?: () => void;
+  theme?: AppTheme;
 }
 
 export const VoiceBlastBanner: React.FC<VoiceBlastBannerProps> = ({
   activeBlast,
   onDismiss,
+  theme = 'dark',
 }) => {
   if (!activeBlast) return null;
+  const isLight = theme === 'light';
 
   return (
-    <div className="p-2 sm:p-2.5 rounded-xl bg-slate-950/95 backdrop-blur-md border-2 border-cyan-400 text-white font-mono text-xs shadow-2xl shadow-cyan-950/60 flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200">
+    <div className={`p-2 sm:p-2.5 rounded-xl backdrop-blur-md border-2 font-mono text-xs shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200 ${
+      isLight
+        ? 'bg-white/95 border-cyan-500 text-slate-900 shadow-slate-300/60'
+        : 'bg-slate-950/95 border-cyan-400 text-white shadow-cyan-950/60'
+    }`}>
       <div className="flex items-center gap-2 truncate">
         {/* Animated Sound Wave Equalizer Bars */}
-        <div className="flex items-end gap-0.5 h-5 px-1 py-0.5 bg-cyan-950/80 rounded border border-cyan-500/40 shrink-0">
-          <span className="w-1 bg-cyan-400 rounded-full animate-[bounce_0.7s_infinite_100ms] h-3.5" />
-          <span className="w-1 bg-cyan-300 rounded-full animate-[bounce_0.6s_infinite_200ms] h-4.5" />
-          <span className="w-1 bg-cyan-400 rounded-full animate-[bounce_0.8s_infinite_50ms] h-2.5" />
-          <span className="w-1 bg-cyan-300 rounded-full animate-[bounce_0.65s_infinite_150ms] h-4" />
+        <div className={`flex items-end gap-0.5 h-5 px-1 py-0.5 rounded border shrink-0 ${
+          isLight ? 'bg-cyan-50 border-cyan-300' : 'bg-cyan-950/80 border-cyan-500/40'
+        }`}>
+          <span className="w-1 bg-cyan-500 rounded-full animate-[bounce_0.7s_infinite_100ms] h-3.5" />
+          <span className="w-1 bg-cyan-400 rounded-full animate-[bounce_0.6s_infinite_200ms] h-4.5" />
+          <span className="w-1 bg-cyan-500 rounded-full animate-[bounce_0.8s_infinite_50ms] h-2.5" />
+          <span className="w-1 bg-cyan-400 rounded-full animate-[bounce_0.65s_infinite_150ms] h-4" />
         </div>
 
         <div className="truncate text-left">
@@ -223,16 +238,16 @@ export const VoiceBlastBanner: React.FC<VoiceBlastBannerProps> = ({
               className="w-2 h-2 rounded-full shrink-0"
               style={{ backgroundColor: activeBlast.color || '#00f0ff' }}
             />
-            <span className="font-bold text-cyan-300 truncate">
+            <span className={`font-bold truncate ${isLight ? 'text-cyan-800' : 'text-cyan-300'}`}>
               {activeBlast.riderName}
             </span>
             {activeBlast.bikeModel && (
-              <span className="text-slate-400 text-[10px] truncate hidden sm:inline">
+              <span className={`text-[10px] truncate hidden sm:inline ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 ({activeBlast.bikeModel})
               </span>
             )}
           </div>
-          <div className="text-[10px] text-slate-300 flex items-center gap-1">
+          <div className={`text-[10px] flex items-center gap-1 ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
             <Volume2 className="w-3 h-3 text-cyan-400 animate-pulse" />
             <span>Voice Intercom Playing in Helmet...</span>
           </div>

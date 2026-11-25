@@ -23,7 +23,6 @@ import {
   requestNativeLocationPermission,
   checkNativeLocationPermission,
   openNativeAppSettings,
-  openNativeLocationSettings,
 } from '../utils/nativeKeepAlive';
 
 interface PermissionsModalProps {
@@ -265,24 +264,34 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      style={{
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-[9000] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <div 
-        className={`w-full max-w-lg rounded-3xl p-5 sm:p-6 border shadow-2xl font-mono space-y-4 max-h-[92vh] overflow-y-auto ${
+        onClick={e => e.stopPropagation()}
+        className={`w-full max-w-lg rounded-3xl p-5 sm:p-6 border shadow-2xl font-sans space-y-4 max-h-[90dvh] overflow-y-auto ${
           isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#0b1016] border-cyan-500/40 text-white'
         }`}
       >
         {/* Modal Header */}
         <div className={`flex items-start justify-between gap-3 pb-3 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+            <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
+              isLight ? 'bg-cyan-50 border-cyan-300 text-cyan-700' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
+            }`}>
               <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
               <h2 className={`font-heading font-black text-sm sm:text-base tracking-wider uppercase flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                <span>Rider Permissions & GPS Setup</span>
-                <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Rider Permissions &amp; GPS Setup</span>
+                <Sparkles className={`w-4 h-4 shrink-0 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
               </h2>
-              <p className={`text-[11px] font-sans ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+              <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Tap each permission to configure, or open phone settings directly
               </p>
             </div>
@@ -290,6 +299,7 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close Permissions Setup"
             className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
               isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white'
             }`}
@@ -298,10 +308,28 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
           </button>
         </div>
 
+        {/* ─────────────────────────────────────────────────────────────
+            PROMINENT BACKGROUND LOCATION DISCLOSURE (GOOGLE PLAY COMPLIANCE)
+            Placed above permission triggers so it is always immediately visible.
+        ───────────────────────────────────────────────────────────── */}
+        <div className={`p-3 rounded-2xl border space-y-1.5 ${
+          isLight ? 'bg-amber-50 border-amber-300' : 'bg-amber-950/25 border-amber-500/35'
+        }`}>
+          <div className={`text-[11px] font-black uppercase flex items-center gap-1.5 ${isLight ? 'text-amber-900' : 'text-amber-300'}`}>
+            <Info className="w-3.5 h-3.5 shrink-0" />
+            <span>Background Location Disclosure</span>
+          </div>
+          <p className={`text-[11px] font-sans leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>
+            ThrottleLog collects location data when <strong className={isLight ? 'text-slate-950' : 'text-white'}>Keep Running</strong> is selected—even when minimized or screen-locked during an active ride—solely to record your route GPX track, power Crash SOS detection, and update your Crew Radar pin while Crew Live is enabled. Solo rides stay offline on your device; selecting <strong className={isLight ? 'text-slate-950' : 'text-white'}>Stop on Exit</strong> disables all background location access.
+          </p>
+        </div>
+
         {/* Status Notice Toast */}
         {statusNotice && (
-          <div className="p-2.5 rounded-xl bg-cyan-950/80 border border-cyan-500/60 text-cyan-200 text-xs flex items-center gap-2 animate-in fade-in duration-150">
-            <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+          <div className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 animate-in fade-in duration-150 ${
+            isLight ? 'bg-cyan-50 border-cyan-300 text-cyan-900' : 'bg-cyan-950/80 border-cyan-500/60 text-cyan-200'
+          }`}>
+            <Info className={`w-4 h-4 shrink-0 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
             <span className="font-sans font-medium text-[11px] leading-tight">{statusNotice}</span>
           </div>
         )}
@@ -314,45 +342,51 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             onClick={handleLocationCardClick}
             className={`w-full text-left p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-[0.98] ${
               hasFineLocation
-                ? 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70'
+                ? (isLight ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500' : 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70')
                 : hasCoarseLocation
-                ? 'bg-amber-950/20 border-amber-500/50 hover:border-amber-400'
-                : 'bg-rose-950/20 border-rose-500/50 hover:border-rose-400'
+                ? (isLight ? 'bg-amber-50 border-amber-300 hover:border-amber-500' : 'bg-amber-950/20 border-amber-500/50 hover:border-amber-400')
+                : (isLight ? 'bg-rose-50 border-rose-300 hover:border-rose-500' : 'bg-rose-950/20 border-rose-500/50 hover:border-rose-400')
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
                 hasFineLocation 
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                  : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+                  ? (isLight ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400')
+                  : (isLight ? 'bg-cyan-100 border-cyan-300 text-cyan-700' : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400')
               }`}>
                 <MapPin className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                <div className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   <span>Precise Satellite GPS</span>
-                  <span className="text-[10px] text-cyan-400 font-normal">(1000ms / 0.5m)</span>
+                  <span className={`text-[10px] font-normal ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>High Accuracy</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-sans truncate">
+                <div className={`text-[10px] truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   {hasFineLocation 
-                    ? 'Hardware GNSS locked (Fine Satellite accuracy)'
+                    ? 'Precise satellite GPS accuracy active'
                     : hasCoarseLocation
-                    ? '⚠️ Approximate only (Cell-tower ~1km error). Tap to enable Precise.'
-                    : 'Required for speedometer, odometer & live crew radar (Tap to grant)'}
+                    ? 'Approximate location only (~1 km error). Tap to enable Precise.'
+                    : 'Required for speedometer, odometer & live crew radar'}
                 </div>
               </div>
             </div>
             <div className="shrink-0 font-mono text-[10px] font-bold flex items-center gap-1.5">
               {hasFineLocation ? (
-                <span className="text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-emerald-700 bg-emerald-100 border-emerald-300' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                }`}>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Precise Active
                 </span>
               ) : hasCoarseLocation ? (
-                <span className="text-amber-400 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-amber-800 bg-amber-100 border-amber-300' : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                }`}>
                   <AlertCircle className="w-3.5 h-3.5" /> Enable Precise
                 </span>
               ) : (
-                <span className="text-rose-400 flex items-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-rose-700 bg-rose-100 border-rose-300' : 'text-rose-400 bg-rose-500/10 border-rose-500/30'
+                }`}>
                   <AlertCircle className="w-3.5 h-3.5" /> Tap to Grant
                 </span>
               )}
@@ -365,26 +399,30 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#121922] border-[#1e2a38]'
           }`}>
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                isLight ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+              }`}>
                 <Activity className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                <div className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   <span>Motion & Accelerometer</span>
-                  <span className="text-[10px] text-emerald-400 font-normal">(100Hz)</span>
+                  <span className={`text-[10px] font-normal ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>(Lean & Crash)</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-sans truncate">
+                <div className={`text-[10px] font-sans truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   Cornering lean angles & automatic high-G crash detection
                 </div>
               </div>
             </div>
             <div className="shrink-0 font-mono text-[10px] font-bold">
               {hasMotion ? (
-                <span className="text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-emerald-700 bg-emerald-100 border-emerald-300' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                }`}>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Active
                 </span>
               ) : (
-                <span className="text-slate-400">Ready</span>
+                <span className={isLight ? 'text-slate-500' : 'text-slate-400'}>Ready</span>
               )}
             </div>
           </div>
@@ -395,30 +433,36 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             onClick={handleMicCardClick}
             className={`w-full text-left p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-[0.98] ${
               hasMic 
-                ? 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70'
-                : 'bg-[#121922] border-[#1e2a38] hover:border-amber-500/50'
+                ? (isLight ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500' : 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70')
+                : (isLight ? 'bg-slate-50 border-slate-200 hover:border-amber-400' : 'bg-[#121922] border-[#1e2a38] hover:border-amber-500/50')
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                isLight ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+              }`}>
                 <Mic className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                <div className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   <span>Microphone (PTT Walkie-Talkie)</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-sans truncate">
+                <div className={`text-[10px] font-sans truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   1-tap voice blasts into buddies' helmet intercoms
                 </div>
               </div>
             </div>
             <div className="shrink-0 font-mono text-[10px] font-bold flex items-center gap-1.5">
               {hasMic ? (
-                <span className="text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-emerald-700 bg-emerald-100 border-emerald-300' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                }`}>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Granted
                 </span>
               ) : (
-                <span className="text-amber-400 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-amber-800 bg-amber-100 border-amber-300' : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                }`}>
                   <AlertCircle className="w-3.5 h-3.5" /> Tap to Grant
                 </span>
               )}
@@ -432,30 +476,36 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             onClick={handleBatteryCardClick}
             className={`w-full text-left p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-[0.98] ${
               isBatteryExempt
-                ? 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70'
-                : 'bg-[#121922] border-[#1e2a38] hover:border-purple-500/50'
+                ? (isLight ? 'bg-emerald-50 border-emerald-300 hover:border-emerald-500' : 'bg-[#121922] border-emerald-500/40 hover:border-emerald-500/70')
+                : (isLight ? 'bg-slate-50 border-slate-200 hover:border-purple-400' : 'bg-[#121922] border-[#1e2a38] hover:border-purple-500/50')
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                isLight ? 'bg-purple-100 border-purple-300 text-purple-700' : 'bg-purple-500/15 border-purple-500/30 text-purple-400'
+              }`}>
                 <BatteryCharging className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                <div className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                   <span>Battery Saver Exemption</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-sans truncate">
+                <div className={`text-[10px] font-sans truncate ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
                   Prevents Android OS from killing GPS service when screen is locked
                 </div>
               </div>
             </div>
             <div className="shrink-0 font-mono text-[10px] font-bold flex items-center gap-1.5">
               {isBatteryExempt ? (
-                <span className="text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-emerald-700 bg-emerald-100 border-emerald-300' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                }`}>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Unrestricted
                 </span>
               ) : (
-                <span className="text-purple-400 flex items-center gap-1 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/30">
+                <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                  isLight ? 'text-purple-700 bg-purple-100 border-purple-300' : 'text-purple-400 bg-purple-500/10 border-purple-500/30'
+                }`}>
                   <AlertCircle className="w-3.5 h-3.5" /> Tap to Allow
                 </span>
               )}
@@ -467,9 +517,11 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
         {/* ─────────────────────────────────────────────────────────────
             DIRECT ANDROID SETTINGS SHORTCUT BUTTON & EXPLANATION
         ───────────────────────────────────────────────────────────── */}
-        <div className="p-3 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 space-y-2">
+        <div className={`p-3 rounded-2xl border space-y-2 ${
+          isLight ? 'bg-cyan-50 border-cyan-200' : 'bg-cyan-950/30 border-cyan-500/30'
+        }`}>
           <div className="flex items-center justify-between">
-            <div className="text-[11px] font-black uppercase text-cyan-400 flex items-center gap-1.5">
+            <div className={`text-[11px] font-black uppercase flex items-center gap-1.5 ${isLight ? 'text-cyan-800' : 'text-cyan-400'}`}>
               <Settings className="w-3.5 h-3.5" />
               <span>Android Settings Guide</span>
             </div>
@@ -482,69 +534,77 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
               <ExternalLink className="w-3 h-3 stroke-[2.5]" />
             </button>
           </div>
-          <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-            On Android 12+, if GPS is inaccurate or shows the wrong town, tap <strong className="text-white">Open Phone Settings</strong> above, tap <strong className="text-white">Permissions → Location</strong>, and make sure <strong className="text-cyan-300">"Use precise location"</strong> is turned <strong className="text-emerald-400">ON</strong>.
+          <p className={`text-[10px] font-sans leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+            On Android 12+, if GPS is inaccurate or shows the wrong town, tap <strong className={isLight ? 'text-slate-900' : 'text-white'}>Open Phone Settings</strong> above, tap <strong className={isLight ? 'text-slate-900' : 'text-white'}>Permissions → Location</strong>, and make sure <strong className={isLight ? 'text-cyan-800' : 'text-cyan-300'}>"Use precise location"</strong> is turned <strong className={isLight ? 'text-emerald-700' : 'text-emerald-400'}>ON</strong>.
           </p>
         </div>
 
         {/* ─────────────────────────────────────────────────────────────
             BACKGROUND TRACKING PREFERENCE SELECTOR
         ───────────────────────────────────────────────────────────── */}
-        <div className="pt-1 border-t border-slate-800 space-y-2">
-          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 block">
+        <div className={`pt-1 border-t space-y-2 ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+          <label className={`text-[11px] font-bold uppercase tracking-wider block ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
             Background Tracking Behavior:
           </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {/* Option A: Keep Running in Background */}
-            <div 
+            <button
+              type="button"
               onClick={() => {
                 triggerHaptic(20);
                 setBackgroundMode('keep_running');
               }}
-              className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-1.5 ${
+              className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-1.5 text-left ${
                 backgroundMode === 'keep_running'
-                  ? 'bg-cyan-500/15 border-cyan-400 shadow-md ring-1 ring-cyan-400/40'
-                  : 'bg-[#121922] border-slate-800 opacity-70 hover:opacity-100'
+                  ? (isLight ? 'bg-cyan-50 border-cyan-500 shadow-sm ring-1 ring-cyan-400/40' : 'bg-cyan-500/15 border-cyan-400 shadow-md ring-1 ring-cyan-400/40')
+                  : (isLight ? 'bg-slate-50 border-slate-200 opacity-85 hover:opacity-100' : 'bg-[#121922] border-slate-800 opacity-70 hover:opacity-100')
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                  <span>🟢 Keep Running</span>
+              <div className="flex items-center justify-between w-full">
+                <span className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>Keep Running</span>
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${
+                  isLight ? 'bg-cyan-100 text-cyan-800 border-cyan-300' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                }`}>
                   Recommended
                 </span>
               </div>
-              <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-                Hardware satellite GPS stays alive at 1Hz in pocket/tank bag or while using Google Maps. Convoy radar never disconnects.
+              <p className={`text-[10px] leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
+                Satellite GPS stays active in pocket/tank bag or while switching to Google Maps.
               </p>
-            </div>
+            </button>
 
             {/* Option B: Stop on Exit / Minimize */}
-            <div 
+            <button
+              type="button"
               onClick={() => {
                 triggerHaptic(20);
                 setBackgroundMode('stop_on_exit');
               }}
-              className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-1.5 ${
+              className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-1.5 text-left ${
                 backgroundMode === 'stop_on_exit'
-                  ? 'bg-amber-500/15 border-amber-400 shadow-md ring-1 ring-amber-400/40'
-                  : 'bg-[#121922] border-slate-800 opacity-70 hover:opacity-100'
+                  ? (isLight ? 'bg-amber-50 border-amber-500 shadow-sm ring-1 ring-amber-400/40' : 'bg-amber-500/15 border-amber-400 shadow-md ring-1 ring-amber-400/40')
+                  : (isLight ? 'bg-slate-50 border-slate-200 opacity-85 hover:opacity-100' : 'bg-[#121922] border-slate-800 opacity-70 hover:opacity-100')
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                  <span>⏸️ Stop on Exit</span>
+              <div className="flex items-center justify-between w-full">
+                <span className={`font-bold text-xs flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span>Stop on Exit</span>
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${
+                  isLight ? 'bg-slate-200 text-slate-700 border-slate-300' : 'bg-slate-800 text-slate-300 border-slate-700'
+                }`}>
                   Privacy Saver
                 </span>
               </div>
-              <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-                Stops GPS hardware and kills background service immediately when you minimize or close ThrottleLog. Zero background battery usage.
+              <p className={`text-[10px] leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
+                Stops GPS hardware immediately when you minimize or close ThrottleLog. Zero background battery usage.
               </p>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -553,7 +613,9 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
           <button
             type="button"
             onClick={handleSkip}
-            className="py-2.5 px-4 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+            className={`py-2.5 px-4 rounded-xl border font-bold text-xs cursor-pointer transition-colors ${
+              isLight ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'border-slate-700 hover:bg-slate-800 text-slate-300'
+            }`}
           >
             Later
           </button>

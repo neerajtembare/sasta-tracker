@@ -54,10 +54,10 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
         left: 'max(0.6rem, env(safe-area-inset-left))',
         right: 'max(0.6rem, env(safe-area-inset-right))',
       }}
-      className="fixed z-50 pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
+      className="fixed z-[7500] pointer-events-none flex justify-center animate-in slide-in-from-top-3 duration-300"
     >
-      <div 
-        className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-mono transition-all ${
+      <div
+        className={`pointer-events-auto w-full max-w-md rounded-2xl backdrop-blur-xl border-2 shadow-2xl overflow-hidden font-sans transition-all ${
           isLight
             ? 'bg-white/98 border-amber-400 text-slate-800 shadow-slate-400/50'
             : 'bg-[#0d131a]/98 border-cyan-400/80 text-white shadow-black/90 ring-1 ring-cyan-500/30'
@@ -67,9 +67,9 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
         }}
       >
         <div className="p-3 sm:p-3.5 flex items-center justify-between gap-3">
-          {/* Big Icon with Glow */}
-          <div 
-            className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 shadow-md border"
+          {/* Icon Badge */}
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-md border"
             style={{
               backgroundColor: `${callout.color || '#00f0ff'}20`,
               borderColor: `${callout.color || '#00f0ff'}60`,
@@ -81,7 +81,7 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
           {/* Callout Info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span 
+              <span
                 className="text-[10px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider text-slate-950 truncate max-w-[120px]"
                 style={{ backgroundColor: callout.color || '#00f0ff' }}
               >
@@ -96,7 +96,7 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
               {callout.title}
             </div>
 
-            <div className="text-xs text-slate-300 font-sans truncate leading-tight">
+            <div className={`text-xs font-sans truncate leading-tight ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
               "{callout.message}"
             </div>
           </div>
@@ -107,6 +107,7 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
               <VoiceBlastPttButton
                 onSendVoiceBlast={onSendVoiceBlast}
                 compact
+                theme={theme}
               />
             )}
 
@@ -116,8 +117,13 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
                 triggerHaptic(20);
                 onDismiss();
               }}
+              aria-label="Acknowledge callout"
               title="Acknowledge callout"
-              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+              className={`px-2.5 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                isLight
+                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/40 text-emerald-400'
+              }`}
             >
               <Check className="w-3.5 h-3.5" />
               <span className="hidden xs:inline">Roger</span>
@@ -129,8 +135,13 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
                 triggerHaptic(20);
                 onDismiss();
               }}
+              aria-label="Dismiss notification"
               title="Dismiss notification"
-              className="p-1.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer transition-colors"
+              className={`p-1.5 rounded-xl cursor-pointer transition-colors ${
+                isLight
+                  ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900'
+                  : 'hover:bg-white/10 text-slate-400 hover:text-white'
+              }`}
             >
               <X className="w-4 h-4" />
             </button>
@@ -138,7 +149,7 @@ export const CalloutBanner: React.FC<CalloutBannerProps> = ({
         </div>
 
         {/* Animated Progress countdown line */}
-        <div className="w-full h-1 bg-black/40">
+        <div className={`w-full h-1 ${isLight ? 'bg-slate-200' : 'bg-black/40'}`}>
           <div 
             className="h-full transition-all ease-linear"
             style={{

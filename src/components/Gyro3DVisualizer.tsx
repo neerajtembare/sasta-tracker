@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crosshair, RotateCcw, Check, Sparkles, AlertTriangle } from 'lucide-react';
+import { Crosshair, RotateCcw, BatteryCharging, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
 
 interface Gyro3DVisualizerProps {
@@ -13,8 +13,8 @@ interface Gyro3DVisualizerProps {
   isCalibrated: boolean;
   onTareAngle: () => Promise<void>;
   onResetTare: () => void;
-  onSetMountMode: (mode: 'handlebar' | 'pocket') => void;
-  onSetMountOrientation: (orientation: 'auto' | 'portrait' | 'landscape') => void;
+  onSetMountMode?: (mode: 'handlebar' | 'pocket') => void;
+  onSetMountOrientation?: (orientation: 'auto' | 'portrait' | 'landscape') => void;
   isLight?: boolean;
 }
 
@@ -29,27 +29,17 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
   isCalibrated,
   onTareAngle,
   onResetTare,
-  onSetMountMode,
-  onSetMountOrientation,
   isLight = false,
 }) => {
   const absLean = Math.abs(leanAngle);
   const isExtreme = absLean > 38;
   const isAggressive = absLean > 22 && !isExtreme;
 
-  const leanColor = isExtreme 
-    ? 'text-rose-500' 
-    : isAggressive 
-    ? 'text-amber-400' 
-    : isLight 
-    ? 'text-emerald-600' 
-    : 'text-emerald-400';
-
-  const leanBorderColor = isExtreme
-    ? 'border-rose-500'
+  const leanColor = isExtreme
+    ? 'text-rose-500'
     : isAggressive
-    ? 'border-amber-400'
-    : 'border-emerald-500';
+    ? 'text-amber-400'
+    : 'text-emerald-400';
 
   const leanGlowColor = isExtreme
     ? 'rgba(239, 68, 68, 0.4)'
@@ -57,7 +47,7 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
     ? 'rgba(251, 191, 36, 0.3)'
     : 'rgba(16, 185, 129, 0.25)';
 
-  const cardBg = isLight ? 'bg-white/90 border-slate-300' : 'bg-slate-950/85 border-[#1e2a38]';
+  const cardBg = isLight ? 'bg-white/95 border-slate-300' : 'bg-slate-950/85 border-[#1e2a38]';
   const subTextColor = isLight ? 'text-slate-600' : 'text-slate-400';
 
   const handleTare = async () => {
@@ -72,93 +62,53 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
 
   return (
     <div className={`p-3 rounded-2xl border shadow-xl backdrop-blur-md flex flex-col justify-between ${cardBg}`}>
-      
-      {/* ─────────────────────────────────────────────────────────────
-          HEADER BAR: MOUNT MODE & ORIENTATION & TARE ZERO BUTTON
-      ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-1.5 mb-2 font-mono">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            3D Gyro
+      {/* Header Bar: Clean 3D Lean Title + Calibration Zero Button */}
+      <div className="flex items-center justify-between gap-2 mb-2 font-sans">
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+            isLight ? 'text-cyan-700' : 'text-cyan-400'
+          }`}>
+            <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+            <span>3D Lean Angle</span>
           </span>
-
-          {/* Mount Selector */}
-          <div className={`flex border rounded-lg p-0.5 text-[9px] ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#223140]'}`}>
-            <button
-              onClick={() => onSetMountMode('handlebar')}
-              className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                mountMode === 'handlebar' ? 'bg-cyan-500 text-slate-950 font-bold' : subTextColor
-              }`}
-            >
-              🏍️ Bar
-            </button>
-            <button
-              onClick={() => onSetMountMode('pocket')}
-              className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                mountMode === 'pocket' ? 'bg-cyan-500 text-slate-950 font-bold' : subTextColor
-              }`}
-            >
-              👖 Pocket
-            </button>
-          </div>
+          {mountMode === 'handlebar' && mountOrientation !== 'auto' && (
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${
+              isLight ? 'bg-slate-100 border-slate-300 text-slate-600' : 'bg-slate-900 border-slate-700 text-slate-400'
+            }`}>
+              {mountOrientation}
+            </span>
+          )}
         </div>
 
-        {/* Handlebar Calibration Controls */}
+        {/* Zero Angle Calibration Control (setup moved to Settings) */}
         {mountMode === 'handlebar' && (
           <div className="flex items-center gap-1">
-            {/* Orientation Mode */}
-            <div className={`flex items-center rounded-lg p-0.5 border text-[9px] ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-[#0d131a] border-[#223140]'}`}>
-              <button
-                onClick={() => onSetMountOrientation('landscape')}
-                title="Force Landscape (Horizontal clamp on handlebars)"
-                className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors font-bold ${
-                  mountOrientation === 'landscape' ? 'bg-cyan-500 text-slate-950' : subTextColor
-                }`}
-              >
-                🔄 Land
-              </button>
-              <button
-                onClick={() => onSetMountOrientation('portrait')}
-                title="Force Portrait (Vertical clamp)"
-                className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors font-bold ${
-                  mountOrientation === 'portrait' ? 'bg-cyan-500 text-slate-950' : subTextColor
-                }`}
-              >
-                📱 Port
-              </button>
-              <button
-                onClick={() => onSetMountOrientation('auto')}
-                title="Auto-detect phone orientation"
-                className={`px-1 py-0.5 rounded cursor-pointer transition-colors ${
-                  mountOrientation === 'auto' ? 'bg-cyan-500 text-slate-950 font-bold' : subTextColor
-                }`}
-              >
-                ⚡Auto
-              </button>
-            </div>
-
-            {/* Zero Angle Setup Button */}
             <button
+              type="button"
               onClick={handleTare}
-              title="Set bike upright and tap to calibrate 0.0° reference on handlebar mount"
-              className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-sm ${
+              title="Hold bike upright and tap to calibrate 0.0° reference on handlebar mount"
+              aria-label="Calibrate zero lean angle"
+              className={`px-2.5 py-1 rounded-lg border text-[11px] font-sans font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs ${
                 isCalibrated
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
-                  : 'bg-cyan-500 text-slate-950 border-cyan-400 ring-2 ring-cyan-400/40'
+                  ? (isLight ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60')
+                  : 'bg-cyan-500 text-slate-950 border-cyan-400 font-black ring-2 ring-cyan-400/40'
               }`}
             >
-              <Crosshair className="w-3 h-3" />
+              <Crosshair className="w-3.5 h-3.5" />
               <span>{isCalibrated ? 'Zeroed' : 'Zero 0°'}</span>
             </button>
 
             {isCalibrated && (
               <button
+                type="button"
                 onClick={handleReset}
                 title="Reset Zero Angle Calibration"
-                className="p-1 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                aria-label="Reset lean calibration"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  isLight ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800'
+                }`}
               >
-                <RotateCcw className="w-3 h-3" />
+                <RotateCcw className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -186,14 +136,14 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
             </div>
 
             {/* Dial Tick Arcs (-50° to +50°) */}
-            <div className="absolute inset-x-4 top-2 flex justify-between text-[8px] font-mono text-slate-500 font-bold pointer-events-none select-none">
-              <span className="text-rose-400/80">◀ 50°</span>
+            <div className="absolute inset-x-4 top-2 flex justify-between text-[8px] font-mono telemetry-num text-slate-500 font-bold pointer-events-none select-none">
+              <span className="text-rose-400/80 flex items-center gap-0.5"><ArrowLeft className="w-2.5 h-2.5" />50°</span>
               <span className="text-amber-400/80">35°</span>
               <span className="text-slate-400">20°</span>
               <span className="text-emerald-400 font-black">0°</span>
               <span className="text-slate-400">20°</span>
               <span className="text-amber-400/80">35°</span>
-              <span className="text-rose-400/80">50° ▶</span>
+              <span className="text-rose-400/80 flex items-center gap-0.5">50°<ArrowRight className="w-2.5 h-2.5" /></span>
             </div>
 
             {/* 3D MOTORCYCLE SILHOUETTE (Rotates & Banks in true 3D space) */}
@@ -247,12 +197,12 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
             </div>
 
             {/* Live Lean Readout Center Tag */}
-            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-20 px-3 py-0.5 rounded-full bg-slate-950/90 border border-slate-700/80 shadow-lg flex items-center gap-2 font-mono">
+            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-20 px-3 py-0.5 rounded-full bg-slate-950/90 border border-slate-700/80 shadow-lg flex items-center gap-2 font-mono telemetry-num">
               <span className={`text-base font-black tracking-tight ${leanColor}`}>
                 {absLean}°
               </span>
-              <span className={`text-[10px] font-bold ${subTextColor}`}>
-                {leanAngle < 0 ? 'LEFT ◀' : leanAngle > 0 ? '▶ RIGHT' : 'UPRIGHT'}
+              <span className="text-[10px] font-bold text-slate-300 flex items-center gap-0.5">
+                {leanAngle < 0 ? (<>LEFT <ArrowLeft className="w-2.5 h-2.5" /></>) : leanAngle > 0 ? (<><ArrowRight className="w-2.5 h-2.5" /> RIGHT</>) : 'UPRIGHT'}
               </span>
               {gForceLateral > 0.05 && (
                 <span className="text-[10px] text-cyan-400 font-bold border-l border-slate-700 pl-2">
@@ -263,32 +213,29 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
 
             {/* Pitch Tag (Climb / Dive) */}
             {Math.abs(pitchAngle) >= 3 && (
-              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-slate-900/85 border border-slate-700 text-[9px] font-mono font-bold text-slate-300">
-                {pitchAngle > 0 ? `▲ +${pitchAngle}° Rise` : `▼ ${pitchAngle}° Dive`}
+              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-slate-900/85 border border-slate-700 text-[9px] font-mono telemetry-num font-bold text-slate-300 flex items-center gap-0.5">
+                {pitchAngle > 0 ? (<><ArrowUp className="w-2.5 h-2.5" /> +{pitchAngle}°</>) : (<><ArrowDown className="w-2.5 h-2.5" /> {pitchAngle}°</>)}
               </div>
             )}
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              DYNAMIC HORIZONTAL LEAN SWEEP BAR & MOTOGP PEAK TILES
-          ───────────────────────────────────────────────────────────── */}
-          <div className="space-y-1 font-mono">
+          <div className="space-y-1 font-mono telemetry-num">
             {/* Dual Peak Badges: Max Left vs Max Right */}
             <div className="flex items-center justify-between text-[10px]">
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">PEAK L:</span>
-                <strong className={`font-black ${maxLeftLean > 35 ? 'text-rose-400' : 'text-amber-300'}`}>
+                <span className={subTextColor}>PEAK L:</span>
+                <strong className={`font-black ${maxLeftLean > 35 ? (isLight ? 'text-rose-700' : 'text-rose-400') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
                   {maxLeftLean}°
                 </strong>
               </div>
 
-              <div className="text-[9px] text-slate-500">
-                {isCalibrated ? 'Handlebar Calibrated' : 'Tap Zero 0° to tare mount'}
+              <div className={`text-[9px] font-sans ${subTextColor}`}>
+                {isCalibrated ? 'Calibrated' : 'Tap Zero 0° upright'}
               </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">PEAK R:</span>
-                <strong className={`font-black ${maxRightLean > 35 ? 'text-rose-400' : 'text-amber-300'}`}>
+                <span className={subTextColor}>PEAK R:</span>
+                <strong className={`font-black ${maxRightLean > 35 ? (isLight ? 'text-rose-700' : 'text-rose-400') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
                   {maxRightLean}°
                 </strong>
               </div>
@@ -323,14 +270,15 @@ export const Gyro3DVisualizer: React.FC<Gyro3DVisualizerProps> = ({
         </div>
       ) : (
         /* Pocket Mode State */
-        <div className={`p-3 rounded-xl border text-xs font-mono leading-relaxed ${
+        <div className={`p-3 rounded-xl border text-xs font-sans leading-relaxed ${
           isLight ? 'bg-sky-50 border-sky-200 text-sky-900' : 'bg-sky-950/20 border-sky-500/20 text-sky-300'
         }`}>
           <div className="font-bold flex items-center gap-1.5 mb-1">
-            <span>👖 Pocket Mode Active</span>
+            <BatteryCharging className="w-4 h-4 shrink-0" />
+            <span>Pocket Mode Active</span>
           </div>
-          <p className="text-[11px] opacity-80 leading-normal">
-            Phone is riding in your pocket. Gyro tilt sensor is muted to save battery. Lean angles are automatically calculated post-ride using GPS centrifugal cornering physics.
+          <p className="text-[11px] opacity-85 leading-normal">
+            Gyro display is paused to save battery while in your pocket. Lean angles are derived from cornering speed and GPS trajectory.
           </p>
         </div>
       )}

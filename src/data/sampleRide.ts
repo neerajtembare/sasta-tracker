@@ -1,7 +1,7 @@
 // @ts-ignore
-import saturdayMorningRaw from '../../Saturday morning.gpx?raw';
+import saturdayMorningRaw from '../../docs/examples/Saturday morning.gpx?raw';
 // @ts-ignore
-import mulshiReturnRaw from '../../Mulshi_return.gpx?raw';
+import mulshiReturnRaw from '../../docs/examples/Mulshi_return.gpx?raw';
 
 export const SATURDAY_MORNING_NAME = "Saturday Morning Ride (Pune - Wai - Satara)";
 export const SATURDAY_MORNING_GPX = saturdayMorningRaw;

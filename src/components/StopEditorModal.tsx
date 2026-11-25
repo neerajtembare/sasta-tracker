@@ -47,8 +47,6 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   totalDistanceKm,
   theme = 'dark',
 }) => {
-  if (!isOpen) return null;
-
   const isLight = theme === 'light';
   const isEditing = !!stopToEdit;
 
@@ -65,6 +63,7 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   const [distanceKm, setDistanceKm] = useState<number>(
     stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0)
   );
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -73,8 +72,11 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
       setNotes(stopToEdit?.notes || '');
       setDurationMinutes(stopToEdit ? Math.max(1, Math.round(stopToEdit.durationSeconds / 60)) : 15);
       setDistanceKm(stopToEdit ? stopToEdit.distanceKm : (defaultPoint ? defaultPoint.distanceFromStartKm : 0));
+      setConfirmDelete(false);
     }
   }, [isOpen, stopToEdit, defaultPoint]);
+
+  if (!isOpen) return null;
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -110,7 +112,7 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
   return (
     <div 
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
+      className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn cursor-pointer"
     >
       <div 
         className={`w-full max-w-lg border rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain cursor-default ${modalBg}`}
@@ -269,19 +271,43 @@ export const StopEditorModal: React.FC<StopEditorModalProps> = ({
           {/* Footer Actions */}
           <div className={`pt-3 border-t flex items-center justify-between gap-3 ${footerBg}`}>
             {isEditing ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Remove stop "${stopToEdit.name}"?`)) {
-                    onDeleteStop(stopToEdit.id);
-                    onClose();
-                  }
-                }}
-                className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/40 text-rose-400 hover:text-rose-300 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Stop</span>
-              </button>
+              confirmDelete ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteStop(stopToEdit.id);
+                      onClose();
+                    }}
+                    className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className={`px-2 py-2 rounded-xl text-xs cursor-pointer ${
+                      isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className={`px-3 py-2 border rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isLight
+                      ? 'bg-rose-50 hover:bg-rose-100 border-rose-300 text-rose-700'
+                      : 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/40 text-rose-400 hover:text-rose-300'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Stop</span>
+                </button>
+              )
             ) : (
               <div />
             )}

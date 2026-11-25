@@ -1,7 +1,37 @@
 /**
- * Sasta Tracker — Native Google Maps & Turn-by-Turn Navigation Launcher
+ * ThrottleLog — Native Google Maps & Turn-by-Turn Navigation Launcher
  * Supports Android Native Intent (google.navigation:q=), Apple Maps (iOS), and Web Fallback.
  */
+
+function launchUrlWithVisibilityFallback(primaryUrl: string, webFallbackUrl: string): void {
+  let fallbackTimer: any = null;
+  const cleanup = () => {
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pagehide', cleanup);
+  };
+
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      cleanup();
+    }
+  };
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', cleanup, { once: true });
+
+  window.location.href = primaryUrl;
+
+  fallbackTimer = setTimeout(() => {
+    cleanup();
+    if (!document.hidden) {
+      window.open(webFallbackUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, 1000);
+}
 
 export function openGoogleMapsNavigation(lat: number, lon: number, label?: string): void {
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
@@ -9,49 +39,18 @@ export function openGoogleMapsNavigation(lat: number, lon: number, label?: strin
 
   const cleanLat = lat.toFixed(6);
   const cleanLon = lon.toFixed(6);
+  const queryCoord = `${cleanLat},${cleanLon}`;
 
   if (isAndroid) {
-    // 1. Android Intent: Opens Google Maps app directly in active turn-by-turn voice navigation mode
-    const intentUrl = `google.navigation:q=${cleanLat},${cleanLon}&mode=d`;
-    const webFallback = `https://www.google.com/maps/dir/?api=1&destination=${cleanLat},${cleanLon}&travelmode=driving`;
-
-    let fallbackTimer: any = null;
-    const cleanup = () => {
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
-      }
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('pagehide', cleanup);
-    };
-
-    const onVisibilityChange = () => {
-      // If the app is hidden, native Google Maps successfully launched — cancel web tab
-      if (document.hidden) {
-        cleanup();
-      }
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', cleanup, { once: true });
-
-    // Attempt native intent
-    window.location.href = intentUrl;
-
-    // Safety fallback: only if the app remains in the foreground after 1000ms
-    fallbackTimer = setTimeout(() => {
-      cleanup();
-      if (!document.hidden) {
-        window.open(webFallback, '_blank', 'noopener,noreferrer');
-      }
-    }, 1000);
+    const intentUrl = `google.navigation:q=${queryCoord}&mode=d`;
+    const webFallback = `https://www.google.com/maps/dir/?api=1&destination=${queryCoord}&travelmode=driving`;
+    launchUrlWithVisibilityFallback(intentUrl, webFallback);
   } else if (isIOS) {
-    // Apple Maps turn-by-turn driving directions
-    const appleUrl = `https://maps.apple.com/?daddr=${cleanLat},${cleanLon}&dirflg=d`;
+    const qParam = label ? `&q=${encodeURIComponent(label)}` : '';
+    const appleUrl = `https://maps.apple.com/?daddr=${queryCoord}&dirflg=d${qParam}`;
     window.open(appleUrl, '_blank', 'noopener,noreferrer');
   } else {
-    // Desktop & universal Web Google Maps driving directions
-    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${cleanLat},${cleanLon}&travelmode=driving`;
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${queryCoord}&travelmode=driving`;
     window.open(webUrl, '_blank', 'noopener,noreferrer');
   }
 }
@@ -60,33 +59,10 @@ export function openGoogleMapsRoute(originLat: number, originLon: number, destLa
   const cleanOrigin = `${originLat.toFixed(6)},${originLon.toFixed(6)}`;
   const cleanDest = `${destLat.toFixed(6)},${destLon.toFixed(6)}`;
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+  const webUrl = `https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`;
 
   if (isAndroid) {
-    let fallbackTimer: any = null;
-    const cleanup = () => {
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
-      }
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('pagehide', cleanup);
-    };
-
-    const onVisibilityChange = () => {
-      if (document.hidden) cleanup();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', cleanup, { once: true });
-
-    // Direct voice turn-by-turn to destination
-    window.location.href = `google.navigation:q=${cleanDest}&mode=d`;
-    fallbackTimer = setTimeout(() => {
-      cleanup();
-      if (!document.hidden) {
-        window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
-      }
-    }, 1000);
+    launchUrlWithVisibilityFallback(`google.navigation:q=${cleanDest}&mode=d`, webUrl);
   } else {
     window.open(`https://www.google.com/maps/dir/?api=1&origin=${cleanOrigin}&destination=${cleanDest}&travelmode=driving`, '_blank', 'noopener,noreferrer');
   }
@@ -121,8 +97,35 @@ export function openGoogleMapsMultiStop(
   const mapsUrl = `https://www.google.com/maps/dir/?${params.toString()}`;
   const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
   if (isAndroid) {
-    // On Android, opening https://www.google.com/maps/dir/?... hands off natively to Google Maps app with full stops
-    window.location.href = mapsUrl;
+    let fallbackTimer: any = null;
+    const cleanup = () => {
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', cleanup);
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) cleanup();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', cleanup, { once: true });
+
+    const popup = window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      const a = document.createElement('a');
+      a.href = mapsUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    fallbackTimer = setTimeout(() => {
+      cleanup();
+    }, 1200);
   } else {
     window.open(mapsUrl, '_blank', 'noopener,noreferrer');
   }

@@ -590,40 +590,77 @@ export function parseGoogleMapsCoordinates(input: string): ParsedDestination | n
   };
 }
 
+let lastNominatimRequestAt = 0;
+let nominatimQueue: Promise<void> = Promise.resolve();
+const geocodeCache = new Map<string, ParsedDestination | null>();
+const NOMINATIM_MIN_INTERVAL_MS = 1100;
+
 /**
- * Geocodes a place name to coordinates using OpenStreetMap Nominatim
+ * Geocodes a place name to coordinates using OpenStreetMap Nominatim.
+ * Sequential rate-limiting (>= 1.1s between requests) and AbortController timeouts
+ * satisfy Nominatim usage limits without sending forbidden browser User-Agent headers.
  */
 export async function geocodePlaceName(query: string): Promise<ParsedDestination | null> {
   if (!query || query.trim().length < 2) return null;
   const clean = query.trim();
-  try {
-    const encoded = encodeURIComponent(clean);
-    const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`;
-    const resp = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'ThrottleLog-Motorcycle-Tracker/1.0',
-      },
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (Array.isArray(data) && data.length > 0) {
-      const item = data[0];
-      const lat = parseFloat(item.lat);
-      const lon = parseFloat(item.lon);
-      if (isValidCoord(lat, lon)) {
-        return {
-          name: item.display_name?.split(',')[0] || clean,
-          lat,
-          lon,
-          rawText: clean,
-        };
-      }
-    }
-  } catch (e) {
-    console.warn('Geocoding failed:', e);
+  const cacheKey = clean.toLowerCase();
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey) || null;
   }
-  return null;
+
+  let result: ParsedDestination | null = null;
+  const runRequest = async (): Promise<void> => {
+    const now = Date.now();
+    const waitMs = NOMINATIM_MIN_INTERVAL_MS - (now - lastNominatimRequestAt);
+    if (waitMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    lastNominatimRequestAt = Date.now();
+    try {
+      const encoded = encodeURIComponent(clean);
+      const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`;
+      const resp = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const item = data[0];
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        if (isValidCoord(lat, lon)) {
+          result = {
+            name: item.display_name?.split(',')[0] || clean,
+            lat,
+            lon,
+            rawText: clean,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Geocoding failed:', e);
+    } finally {
+      clearTimeout(timeoutId);
+      lastNominatimRequestAt = Date.now();
+    }
+  };
+
+  const ticket = nominatimQueue.then(runRequest, runRequest);
+  nominatimQueue = ticket.catch(() => {});
+  await ticket;
+
+  if (geocodeCache.size >= 50) {
+    const firstKey = geocodeCache.keys().next().value;
+    if (firstKey !== undefined) geocodeCache.delete(firstKey);
+  }
+  geocodeCache.set(cacheKey, result);
+  return result;
 }
 
 async function resolveMissingStopCoordinates(plan: ParsedRoutePlan): Promise<ParsedRoutePlan | null> {

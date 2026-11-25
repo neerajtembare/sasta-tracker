@@ -1,25 +1,40 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
+import {Capacitor} from '@capacitor/core';
 import App from './App.tsx';
+import {ErrorBoundary} from './components/ErrorBoundary';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary sectionLabel="ThrottleLog">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );
 
-// Register offline Service Worker for full PWA and remote offline capability
-if ('serviceWorker' in navigator && (import.meta.env.PROD || (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production'))) {
-  window.addEventListener('load', () => {
+const isNativeCapacitor =
+  Capacitor.isNativePlatform() ||
+  (typeof window !== 'undefined' && window.location?.protocol === 'capacitor:');
+
+if ('serviceWorker' in navigator) {
+  if (isNativeCapacitor) {
+    // Native Android/iOS APK loads bundled local assets directly; unregister any stale web SW.
     navigator.serviceWorker
-      .register('/sw.js')
-      .then(reg => {
-        console.log('ThrottleLog Service Worker registered:', reg.scope);
-      })
-      .catch(err => {
-        console.warn('Service Worker registration failed:', err);
-      });
-  });
+      .getRegistrations()
+      .then(regs => regs.forEach(reg => reg.unregister().catch(() => {})))
+      .catch(() => {});
+  } else if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(reg => {
+          console.log('ThrottleLog Service Worker registered:', reg.scope);
+        })
+        .catch(err => {
+          console.warn('Service Worker registration failed:', err);
+        });
+    });
+  }
 }
 

@@ -3,56 +3,56 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroTelemetry } from './components/HeroTelemetry';
 import { RideInsightsCard } from './components/RideInsightsCard';
 import { SpeedZoneHistogram } from './components/SpeedZoneHistogram';
-import { MapViewer } from './components/MapViewer';
-import { TelemetryCharts } from './components/TelemetryCharts';
 import { SpeedTrapsAndSectors } from './components/SpeedTrapsAndSectors';
 import { LiveCockpitLogger } from './components/LiveCockpitLogger';
-import { FaqAndArchitecture } from './components/FaqAndArchitecture';
-import { GarageModal } from './components/GarageModal';
 import { StopEditorModal } from './components/StopEditorModal';
 import { RideDetailsEditorModal } from './components/RideDetailsEditorModal';
 import { RideCalibrationModal } from './components/RideCalibrationModal';
 import { LandingView } from './components/LandingView';
 import { JourneyTimeline } from './components/JourneyTimeline';
 import { CorneringProfileCard } from './components/CorneringProfileCard';
-import { RideStoryModal } from './components/RideStoryModal';
-import { RideReportModal } from './components/RideReportModal';
-import { TrackComparisonModal } from './components/TrackComparisonModal';
-import { CrewDashboard } from './components/CrewDashboard';
 import { CalloutBanner } from './components/CalloutBanner';
-import { CloudSyncModal } from './components/CloudSyncModal';
 import { DownloadAppModal } from './components/DownloadAppModal';
+
+const MapViewer = lazy(() => import('./components/MapViewer').then(m => ({ default: m.MapViewer })));
+const TelemetryCharts = lazy(() => import('./components/TelemetryCharts').then(m => ({ default: m.TelemetryCharts })));
+const CrewDashboard = lazy(() => import('./components/CrewDashboard').then(m => ({ default: m.CrewDashboard })));
+const FaqAndArchitecture = lazy(() => import('./components/FaqAndArchitecture').then(m => ({ default: m.FaqAndArchitecture })));
+const GarageModal = lazy(() => import('./components/GarageModal').then(m => ({ default: m.GarageModal })));
+const TrackComparisonModal = lazy(() => import('./components/TrackComparisonModal').then(m => ({ default: m.TrackComparisonModal })));
+const CloudSyncModal = lazy(() => import('./components/CloudSyncModal').then(m => ({ default: m.CloudSyncModal })));
+const RideStoryModal = lazy(() => import('./components/RideStoryModal').then(m => ({ default: m.RideStoryModal })));
+const RideReportModal = lazy(() => import('./components/RideReportModal').then(m => ({ default: m.RideReportModal })));
+const RideDiagnosticsModal = lazy(() => import('./components/RideDiagnosticsModal').then(m => ({ default: m.RideDiagnosticsModal })));
+const RiderProfileModal = lazy(() => import('./components/RiderProfileModal').then(m => ({ default: m.RiderProfileModal })));
+const GoogleMapsImportModal = lazy(() => import('./components/GoogleMapsImportModal').then(m => ({ default: m.GoogleMapsImportModal })));
 import { CrashAlertModal } from './components/CrashAlertModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { FirstLaunchNameModal } from './components/FirstLaunchNameModal';
 import { PermissionsModal, BackgroundTrackingMode } from './components/PermissionsModal';
 import { SoloRideStartModal } from './components/SoloRideStartModal';
-import { RiderProfileModal } from './components/RiderProfileModal';
-import { GoogleMapsImportModal } from './components/GoogleMapsImportModal';
-import { getRiderProfile, StartupScreen } from './utils/riderProfile';
+import { getRiderProfile } from './utils/riderProfile';
+import { readMigratedStorageKey, writeMigratedStorageKey, formatDurationSummary } from './utils/units';
 import { crashDetector, CrashEvent } from './utils/crashDetection';
-import { useGroupRide, SharedRouteInfo } from './hooks/useGroupRide';
+import { useGroupRide } from './hooks/useGroupRide';
 import { useGPS } from './hooks/useGPS';
 import { parseGPX } from './utils/gpxParser';
-import { exportAnalysisToGPX, exportPointsToGPX, downloadFile } from './utils/gpxExporter';
-import { triggerHaptic, playWaypointChime } from './utils/audioChimes';
+import { exportAnalysisToGPX, exportPointsToGPX } from './utils/gpxExporter';
+import { triggerHaptic } from './utils/audioChimes';
 import { startNativeRadarKeepAlive, stopNativeRadarKeepAlive, addNativeCrashListener, getNativeLastSharedText, clearNativeLastSharedText, addNativeSharedTextListener } from './utils/nativeKeepAlive';
 import { InAppBrowserBanner } from './components/InAppBrowserBanner';
-import { saveRideToGarage, updateGarageRide } from './utils/storage';
-import { runConvoyWatchdog, triggerConvoyRollCall } from './utils/convoyWatchdog';
-import { 
-  SAMPLE_GPX_DATA, 
-  SAMPLE_GPX_NAME
-} from './data/sampleRide';
+import { getGarageRides, saveRideToGarage, updateGarageRide, SavedRide } from './utils/storage';
+import { runConvoyWatchdog, triggerConvoyRollCall, resetConvoyWatchdog } from './utils/convoyWatchdog';
 import { RideAnalysis, PitStop, TrackPoint, AppTheme, UnitSystem } from './types';
 import { 
-  Radio, Gauge, HelpCircle, FolderArchive, Home, Users,
+  Radio, FolderArchive, Home, Users, Settings, AlertTriangle, Play, Navigation, UploadCloud, Sparkles,
   Map as MapIcon, Activity, History, Bike as BikeIcon, X 
 } from 'lucide-react';
-import { RideDiagnosticsModal } from './components/RideDiagnosticsModal';
 
 export type AppTab = 'home' | 'analysis' | 'cockpit' | 'crew' | 'faq';
 export type AnalysisSubTab = 'map' | 'telemetry' | 'timeline' | 'bike';
@@ -64,14 +64,14 @@ export default function App() {
         const params = new URLSearchParams(window.location.search);
         if (params.get('tab')) return params.get('tab') as AppTab;
         if (params.get('room') || params.get('crew') || params.get('squad')) return 'crew';
-        const sessionTab = sessionStorage.getItem('sasta_session_tab');
+        const sessionTab = sessionStorage.getItem('throttlelog_session_tab') || sessionStorage.getItem('sasta_session_tab');
         if (sessionTab && ['home', 'cockpit', 'crew', 'faq'].includes(sessionTab)) {
           return sessionTab as AppTab;
         }
         const profile = getRiderProfile();
         if (profile.defaultStartupScreen === 'cockpit') return 'cockpit';
         if (profile.defaultStartupScreen === 'map') return 'crew';
-        return 'home'; // Default to Option B: Solo Dashboard!
+        return 'home';
       }
     } catch {}
     return 'home';
@@ -81,8 +81,9 @@ export default function App() {
     setCurrentTabState(prev => {
       const next = typeof action === 'function' ? action(prev) : action;
       try {
+        sessionStorage.setItem('throttlelog_session_tab', next);
         sessionStorage.setItem('sasta_session_tab', next);
-        localStorage.setItem('sasta_active_tab', next);
+        writeMigratedStorageKey('throttlelog_active_tab', 'sasta_active_tab', next);
       } catch {}
 
       if (pushHistory && next !== prev && typeof window !== 'undefined') {
@@ -123,14 +124,14 @@ export default function App() {
 
   // Global Theme State
   const [theme, setTheme] = useState<AppTheme>(() => {
-    const saved = localStorage.getItem('sasta_theme');
+    const saved = readMigratedStorageKey('throttlelog_theme', 'sasta_theme');
     return (saved === 'light' || saved === 'dark') ? (saved as AppTheme) : 'dark';
   });
 
   const toggleTheme = () => {
     setTheme(prev => {
       const next = prev === 'dark' ? 'light' : 'dark';
-      localStorage.setItem('sasta_theme', next);
+      writeMigratedStorageKey('throttlelog_theme', 'sasta_theme', next);
       return next;
     });
   };
@@ -158,61 +159,115 @@ export default function App() {
     }
   });
 
-  const isAnyModalOpen = isGarageOpen || isDiagnosticsOpen || isDownloadModalOpen || 
-    isStopEditorOpen || isRideNameEditorOpen || isCalibrationOpen || 
-    isShareModalOpen || isReportModalOpen || isCompareModalOpen || isCloudSyncOpen || isPermissionsModalOpen || isSoloRideModalOpen || isProfileModalOpen || isGoogleMapsModalOpen;
+  // Ordered LIFO modal stack so browser / Android Back closes only the topmost active modal
+  const modalStackRef = useRef<Array<{ key: string; close: () => void }>>([]);
+  const prevOpenStatesRef = useRef<Record<string, boolean>>({});
+  const popTriggeredCloseRef = useRef(false);
+  const pendingHistoryBacksRef = useRef(0);
 
-  const modalHistoryPushedRef = useRef(false);
+  const modalEntries = React.useMemo(() => [
+    { key: 'profile', open: isProfileModalOpen, close: () => setIsProfileModalOpen(false) },
+    { key: 'garage', open: isGarageOpen, close: () => setIsGarageOpen(false) },
+    { key: 'cloud', open: isCloudSyncOpen, close: () => setIsCloudSyncOpen(false) },
+    { key: 'download', open: isDownloadModalOpen, close: () => setIsDownloadModalOpen(false) },
+    { key: 'permissions', open: isPermissionsModalOpen, close: () => setIsPermissionsModalOpen(false) },
+    { key: 'solo', open: isSoloRideModalOpen, close: () => setIsSoloRideModalOpen(false) },
+    { key: 'gmaps', open: isGoogleMapsModalOpen, close: () => setIsGoogleMapsModalOpen(false) },
+    { key: 'diagnostics', open: isDiagnosticsOpen, close: () => setIsDiagnosticsOpen(false) },
+    { key: 'stop', open: isStopEditorOpen, close: () => setIsStopEditorOpen(false) },
+    { key: 'ridename', open: isRideNameEditorOpen, close: () => setIsRideNameEditorOpen(false) },
+    { key: 'calibration', open: isCalibrationOpen, close: () => setIsCalibrationOpen(false) },
+    { key: 'share', open: isShareModalOpen, close: () => setIsShareModalOpen(false) },
+    { key: 'report', open: isReportModalOpen, close: () => setIsReportModalOpen(false) },
+    { key: 'compare', open: isCompareModalOpen, close: () => setIsCompareModalOpen(false) },
+  ], [
+    isProfileModalOpen, isGarageOpen, isCloudSyncOpen, isDownloadModalOpen, isPermissionsModalOpen,
+    isSoloRideModalOpen, isGoogleMapsModalOpen, isDiagnosticsOpen, isStopEditorOpen,
+    isRideNameEditorOpen, isCalibrationOpen, isShareModalOpen, isReportModalOpen, isCompareModalOpen,
+  ]);
 
-  const closeAllModals = useCallback(() => {
-    setIsGarageOpen(false);
-    setIsDiagnosticsOpen(false);
-    setIsDownloadModalOpen(false);
-    setIsStopEditorOpen(false);
-    setIsRideNameEditorOpen(false);
-    setIsCalibrationOpen(false);
-    setIsShareModalOpen(false);
-    setIsReportModalOpen(false);
-    setIsCompareModalOpen(false);
-    setIsCloudSyncOpen(false);
-    setIsPermissionsModalOpen(false);
-    setIsSoloRideModalOpen(false);
-    setIsProfileModalOpen(false);
-    setIsGoogleMapsModalOpen(false);
+  const closeTopModal = useCallback(() => {
+    const top = modalStackRef.current.pop();
+    if (top) {
+      top.close();
+      return true;
+    }
+    return false;
   }, []);
 
-  // Sync browser / Android back gesture with open modals
   useEffect(() => {
-    if (isAnyModalOpen) {
-      if (!modalHistoryPushedRef.current) {
-        modalHistoryPushedRef.current = true;
-        try {
-          window.history.pushState({ sastaModal: true }, '');
-        } catch {}
+    const closingKeys: string[] = [];
+    const openingEntries: Array<{ key: string; close: () => void }> = [];
+
+    modalEntries.forEach((entry) => {
+      const wasOpen = Boolean(prevOpenStatesRef.current[entry.key]);
+      if (entry.open && !wasOpen) {
+        openingEntries.push({ key: entry.key, close: entry.close });
+      } else if (!entry.open && wasOpen) {
+        closingKeys.push(entry.key);
       }
-    } else {
-      if (modalHistoryPushedRef.current) {
-        modalHistoryPushedRef.current = false;
-        if (typeof window !== 'undefined' && window.history.state?.sastaModal) {
-          try {
-            window.history.back();
-          } catch {}
+      prevOpenStatesRef.current[entry.key] = entry.open;
+    });
+
+    let poppedMatchingHistory = false;
+    closingKeys.forEach((key) => {
+      const idx = modalStackRef.current.findIndex(m => m.key === key);
+      if (idx >= 0) {
+        modalStackRef.current.splice(idx, 1);
+        if (typeof window !== 'undefined' && window.history.state?.throttlelogModal === key) {
+          poppedMatchingHistory = true;
         }
       }
-    }
-  }, [isAnyModalOpen]);
+    });
 
-  // Global popstate handler for back / forward navigation and modal dismissal
+    if (closingKeys.length > 0 && openingEntries.length > 0 && poppedMatchingHistory) {
+      // Handoff transition (e.g. Settings -> Permissions): swap history state in place without async back() race
+      openingEntries.forEach((entry, idx) => {
+        modalStackRef.current = [...modalStackRef.current.filter(m => m.key !== entry.key), entry];
+        if (typeof window !== 'undefined') {
+          try {
+            if (idx === 0) {
+              window.history.replaceState({ throttlelogModal: entry.key }, '');
+            } else {
+              window.history.pushState({ throttlelogModal: entry.key }, '');
+            }
+          } catch {}
+        }
+      });
+    } else {
+      if (poppedMatchingHistory && !popTriggeredCloseRef.current && openingEntries.length === 0 && typeof window !== 'undefined') {
+        try {
+          pendingHistoryBacksRef.current += 1;
+          window.history.back();
+        } catch {}
+      }
+      openingEntries.forEach((entry) => {
+        modalStackRef.current = [...modalStackRef.current.filter(m => m.key !== entry.key), entry];
+        if (typeof window !== 'undefined') {
+          try {
+            window.history.pushState({ throttlelogModal: entry.key }, '');
+          } catch {}
+        }
+      });
+    }
+
+    popTriggeredCloseRef.current = false;
+  }, [modalEntries]);
+
+  // Global popstate handler for back / forward navigation and LIFO modal dismissal
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
-      // 1. If any modal was open when user pressed back -> close all modals and consume pop
-      if (modalHistoryPushedRef.current) {
-        modalHistoryPushedRef.current = false;
-        closeAllModals();
+      if (pendingHistoryBacksRef.current > 0) {
+        pendingHistoryBacksRef.current -= 1;
         return;
       }
 
-      // 2. Otherwise navigate between tabs
+      if (modalStackRef.current.length > 0) {
+        popTriggeredCloseRef.current = true;
+        closeTopModal();
+        return;
+      }
+
       try {
         const params = new URLSearchParams(window.location.search);
         const tab = (e.state?.sastaTab || params.get('tab')) as AppTab;
@@ -224,7 +279,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [closeAllModals, setCurrentTab]);
+  }, [closeTopModal, setCurrentTab]);
   const groupRide = useGroupRide();
   const [myLocation, setMyLocation] = useState<{
     lat: number;
@@ -248,13 +303,11 @@ export default function App() {
     let cancelled = false;
     let cleanupNative: (() => void) | null = null;
     addNativeCrashListener((nativeData) => {
-      if (crashDetector.isEnabled()) {
-        setCrashModalEvent({
-          timestamp: nativeData.timestamp || Date.now(),
-          peakG: nativeData.peakG,
-          preImpactSpeedKmh: nativeData.preImpactSpeedKmh,
-        });
-      }
+      crashDetector.notifyExternalCrash({
+        timestamp: nativeData.timestamp || Date.now(),
+        peakG: nativeData.peakG,
+        preImpactSpeedKmh: nativeData.preImpactSpeedKmh,
+      });
     }).then((unsub) => {
       if (cancelled) {
         if (unsub) unsub();
@@ -305,10 +358,15 @@ export default function App() {
   // Periodic Convoy Watchdog (Checks Battery <=15% and <=8%, Runaway >1.2km, Separation >1km, Route Deviation >450m, 20-min Roll Call)
   useEffect(() => {
     const isConvoyActive = (gps.isTrackingActive ?? true) && (groupRide.isOnRadar || isRecordingLive);
-    if (!isConvoyActive) return;
+    if (!isConvoyActive) {
+      resetConvoyWatchdog(groupRide.isOnRadar ? groupRide.roomCode : 'solo');
+      return;
+    }
 
+    const sessionKey = groupRide.isOnRadar ? `crew:${groupRide.roomCode}` : 'solo';
     const interval = setInterval(() => {
       runConvoyWatchdog({
+        sessionKey,
         myLocation,
         myBattery: groupRide.myBattery,
         members: groupRide.members,
@@ -327,6 +385,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [
     groupRide.isOnRadar,
+    groupRide.roomCode,
     isRecordingLive,
     myLocation,
     groupRide.myBattery,
@@ -366,16 +425,6 @@ export default function App() {
       stopNativeRadarKeepAlive();
     }
   }, [isRecordingLive, groupRide.isOnRadar, gps.isTrackingActive, gps.mountMode]);
-
-  // First-Launch Permissions & Background Mode Setup Onboarding Prompt
-  useEffect(() => {
-    try {
-      const setupCompleted = localStorage.getItem('throttlelog_permissions_setup_completed');
-      if (!setupCompleted) {
-        setIsPermissionsModalOpen(true);
-      }
-    } catch {}
-  }, []);
 
   // Check for shared links or text coming from Android Share Sheet (e.g. Google Maps -> Share -> ThrottleLog)
   useEffect(() => {
@@ -452,20 +501,20 @@ export default function App() {
       groupRide.toggleOnRadar(false);
       stopNativeRadarKeepAlive();
       setMyLocation(null);
-      setSessionNotice('🛡️ Privacy Mode Active: GPS hardware, background services, and radar broadcasts stopped.');
+      setSessionNotice('Privacy Mode Active: GPS hardware and radar broadcasts stopped.');
       setTimeout(() => setSessionNotice(null), 5000);
       triggerHaptic(30);
     } else {
       controls.startGpsTracking();
       groupRide.toggleOnRadar(true);
-      setSessionNotice('🟢 Live Tracking Active: GPS location and squad radar broadcasting resumed.');
+      setSessionNotice('Live Tracking Active: GPS location and squad radar resumed.');
       setTimeout(() => setSessionNotice(null), 5000);
       triggerHaptic(30);
     }
   }, [gps.isTrackingActive, groupRide, controls]);
 
-  // Check URL query for room invite link (e.g. ?rider=Rahul or ?crew=SUNDAY)
-  // Zero-friction 1-tap auto-join: joins immediately and switches to crew radar!
+  // Check URL query for room invite link (e.g. ?crew=SUNDAY or ?rider=Rahul for first-time setup)
+  // Never overwrite an already-customized rider profile from a query string
   const hasProcessedInviteRef = useRef(false);
   useEffect(() => {
     if (hasProcessedInviteRef.current) return;
@@ -475,13 +524,15 @@ export default function App() {
     if (riderParam || roomParam) {
       hasProcessedInviteRef.current = true;
       setCurrentTab('crew');
-      const activeName = riderParam?.trim() || groupRide.riderName;
+      const hasNamedProfile = Boolean(groupRide.riderName && groupRide.riderName !== 'Rider');
+      const inviteSuggestedName = !hasNamedProfile ? riderParam?.trim() : undefined;
+      const activeName = inviteSuggestedName || groupRide.riderName;
       if (roomParam?.trim()) {
-        groupRide.joinRoom(roomParam.trim(), riderParam?.trim());
-      } else if (riderParam?.trim()) {
-        groupRide.updateRiderName(riderParam.trim());
+        groupRide.joinRoom(roomParam.trim(), inviteSuggestedName);
+      } else if (inviteSuggestedName) {
+        groupRide.updateRiderName(inviteSuggestedName);
       }
-      setSessionNotice(`🏍️ Welcome ${activeName}! Live on Crew Radar ${roomParam ? `in Squad [${roomParam.trim().toUpperCase()}]` : ''}.`);
+      setSessionNotice(`Welcome ${activeName}! Live on Crew Radar${roomParam ? ` in Squad [${roomParam.trim().toUpperCase()}]` : ''}.`);
       setTimeout(() => setSessionNotice(null), 6000);
       try {
         window.history.replaceState({}, '', window.location.pathname);
@@ -540,61 +591,6 @@ export default function App() {
     }
   }, [analysis?.name, analysis?.totalDistanceKm, groupRide.broadcastActiveRoute]);
 
-  // 1-Tap Join Friend's Shared Route on Crew Radar
-  const handleJoinSharedRoute = useCallback((route: SharedRouteInfo) => {
-    isLocallyInitiatedRouteRef.current = false;
-    const rawPts = route.points && route.points.length > 0 ? route.points : [route.destination];
-    const pts: TrackPoint[] = rawPts.map((p, idx) => ({
-      lat: p.lat,
-      lon: p.lon,
-      ele: null,
-      time: new Date(Date.now() + idx * 1000).toISOString(),
-      speed: 0,
-      speedKmh: 0,
-      bearing: null,
-      sat: null,
-      hdop: null,
-      vdop: null,
-      pdop: null,
-      geoidheight: null,
-      segmentIndex: 0,
-      distanceFromStartKm: (route.distanceKm / Math.max(1, rawPts.length - 1)) * idx,
-    }));
-
-    const syntheticAnalysis: RideAnalysis = {
-      name: route.routeName,
-      startTime: new Date().toISOString(),
-      endTime: new Date().toISOString(),
-      totalDurationSeconds: 0,
-      movingTimeSeconds: 0,
-      stoppedTimeSeconds: 0,
-      totalDistanceKm: route.distanceKm,
-      maxSpeedKmh: 0,
-      overallAvgSpeedKmh: 0,
-      movingAvgSpeedKmh: 0,
-      elevGainM: 0,
-      elevLossM: 0,
-      elevMinM: null,
-      elevMaxM: null,
-      elevStartM: null,
-      elevEndM: null,
-      avgSatellites: null,
-      maxSatellites: null,
-      bestHdop: null,
-      maxEstimatedLean: 0,
-      points: pts,
-      pitStops: [],
-      speedTraps: [],
-      segments: [],
-    };
-
-    setAnalysis(syntheticAnalysis);
-    triggerHaptic(50);
-    playWaypointChime();
-    setSessionNotice(`🗺️ Joined ${route.riderName}'s route: "${route.routeName}"!`);
-    setTimeout(() => setSessionNotice(null), 5000);
-  }, []);
-
   const globalFileInputRef = useRef<HTMLInputElement>(null);
 
   // Capture PWA install prompt for 1-tap installation
@@ -630,7 +626,7 @@ export default function App() {
       if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
 
       if (e.key === 'Escape') {
-        closeAllModals();
+        closeTopModal();
         return;
       }
 
@@ -648,13 +644,19 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, [analysis, closeAllModals, setCurrentTab]);
+  }, [analysis, closeTopModal, setCurrentTab]);
 
-  const handleLoadSample = (gpxData?: string, name?: string) => {
+  const handleLoadSample = async (gpxData?: string, name?: string) => {
     try {
-      const dataToParse = gpxData || SAMPLE_GPX_DATA;
+      let dataToParse = gpxData;
+      let sampleName = name;
+      if (!dataToParse) {
+        const sampleMod = await import('./data/sampleRide');
+        dataToParse = sampleMod.SAMPLE_GPX_DATA;
+        sampleName = sampleName || sampleMod.SAMPLE_GPX_NAME;
+      }
       const parsed = parseGPX(dataToParse);
-      parsed.name = name || SAMPLE_GPX_NAME;
+      parsed.name = sampleName || 'Sample Ride';
       isLocallyInitiatedRouteRef.current = true;
       setAnalysis(parsed);
       setCurrentRideId(null);
@@ -680,7 +682,7 @@ export default function App() {
       setCurrentTab('analysis');
       setErrorMessage(null);
       if (rideId) {
-        setSessionNotice(`📁 Loaded "${parsed.name}" from your Garage.`);
+        setSessionNotice(`Loaded "${parsed.name}" from your Garage.`);
       } else {
         setSessionNotice('Ride loaded in session only. Refresh to clear, or use My Rides → Save to keep it.');
       }
@@ -693,7 +695,10 @@ export default function App() {
   const handleLiveRideRecorded = useCallback((gpxText: string, keepOnMap: boolean = false) => {
     try {
       const parsed = parseGPX(gpxText);
-      const squadPrefix = groupRide.roomCode ? `[Crew ${groupRide.roomCode}] ` : '';
+      const isCrewSession = groupRide.isOnRadar;
+      const squadPrefix = isCrewSession
+        ? (groupRide.roomCode && groupRide.roomCode !== 'Global Crew' ? `[Crew ${groupRide.roomCode}] ` : '[Crew] ')
+        : '';
       const rideName = `${squadPrefix}Live Ride — ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
       parsed.name = rideName;
       isLocallyInitiatedRouteRef.current = true;
@@ -716,7 +721,7 @@ export default function App() {
         const avgSpeedKmh = parsed.movingAvgSpeedKmh || parsed.overallAvgSpeedKmh || 0;
         const movingTimeSeconds = parsed.movingTimeSeconds || 0;
         const elevGainM = parsed.elevGainM || 0;
-        const rideType = groupRide.roomCode ? 'crew' : 'solo';
+        const rideType = isCrewSession ? 'crew' : 'solo';
         const mountMode = gps.mountMode;
 
         const saved = saveRideToGarage({
@@ -742,7 +747,7 @@ export default function App() {
     } catch (err: any) {
       setErrorMessage('Error analyzing recorded ride: ' + err.message);
     }
-  }, [groupRide.roomCode, setCurrentTab, gps.mountMode]);
+  }, [groupRide.isOnRadar, groupRide.roomCode, setCurrentTab, gps.mountMode]);
 
   const handleStartRecording = useCallback(() => {
     controls.startNewRecording();
@@ -760,14 +765,20 @@ export default function App() {
     if (!gps.isTrackingActive) {
       controls.startGpsTracking();
     }
+    try {
+      const isNative = Boolean((window as any)?.Capacitor?.isNativePlatform?.());
+      if (isNative && !localStorage.getItem('throttlelog_permissions_setup_completed')) {
+        setIsPermissionsModalOpen(true);
+      }
+    } catch {}
     controls.setMountMode(mountMode);
     startNativeRadarKeepAlive(mountMode === 'pocket');
     handleStartRecording();
     setCurrentTab(view === 'map' ? 'crew' : 'cockpit');
     setSessionNotice(
       mountMode === 'pocket'
-        ? '🔋 Pocket Mode Active: Lock phone in pocket. Solo ride private on this phone.'
-        : '📱 Handlebar Mount Active: Screen awake. Solo ride private on this phone.'
+        ? 'Pocket Mode Active: Lock phone in pocket. Solo ride private on this phone.'
+        : 'Handlebar Mount Active: Screen awake. Solo ride private on this phone.'
     );
     setTimeout(() => setSessionNotice(null), 5000);
   }, [controls, gps.isTrackingActive, groupRide, handleStartRecording, setCurrentTab]);
@@ -786,8 +797,8 @@ export default function App() {
     setScrubIndex(null);
     setSessionNotice(
       canBroadcast
-        ? `🏁 Route to "${route.name}" set & shared with squad (${route.totalDistanceKm} km)`
-        : `🏁 Route to "${route.name}" loaded (${route.totalDistanceKm} km)`
+        ? `Route to "${route.name}" set & shared with squad (${route.totalDistanceKm} km)`
+        : `Route to "${route.name}" loaded (${route.totalDistanceKm} km)`
     );
     setTimeout(() => setSessionNotice(null), 5000);
     setCurrentTab('cockpit');
@@ -826,13 +837,6 @@ export default function App() {
     globalFileInputRef.current?.click();
   };
 
-  const handleExportGpx = () => {
-    if (!analysis) return;
-    const gpxText = exportAnalysisToGPX(analysis);
-    const safeName = (analysis.name || 'ride').replace(/\s+/g, '_');
-    downloadFile(gpxText, `${safeName}.gpx`);
-  };
-
   const handleSaveActiveToGarage = () => {
     if (!analysis) return;
     try {
@@ -846,12 +850,12 @@ export default function App() {
         avgSpeedKmh: analysis.movingAvgSpeedKmh || analysis.overallAvgSpeedKmh,
         movingTimeSeconds: analysis.movingTimeSeconds,
         elevGainM: analysis.elevGainM,
-        rideType: groupRide.roomCode ? 'crew' : 'solo',
+        rideType: groupRide.isOnRadar ? 'crew' : 'solo',
         mountMode: gps.mountMode,
         gpxContent: gpxText,
       });
       setCurrentRideId(saved.id);
-      setSessionNotice(`🏍️ "${saved.name}" saved to your Garage!`);
+      setSessionNotice(`"${saved.name}" saved to your Garage!`);
       setTimeout(() => setSessionNotice(null), 4000);
     } catch (e: any) {
       setErrorMessage('Failed to save ride to Garage: ' + (e.message || String(e)));
@@ -864,7 +868,6 @@ export default function App() {
     setAnalysis(null);
     setCurrentRideId(null);
     setScrubIndex(null);
-    setCurrentTab('home');
   };
 
   // Stop handlers
@@ -950,7 +953,7 @@ export default function App() {
           name: newName,
           gpxContent: gpxText,
         });
-        setSessionNotice('💾 Title updated in your Garage!');
+        setSessionNotice('Title updated in your Garage!');
         setTimeout(() => setSessionNotice(null), 3000);
       } catch (e) {
         console.warn('Failed to update garage ride title:', e);
@@ -980,7 +983,7 @@ export default function App() {
           gpxContent: gpxText,
           distanceKm: calib.userDistanceOverrideKm ?? updated.totalDistanceKm,
         });
-        setSessionNotice('💾 Bike specs updated in your Garage!');
+        setSessionNotice('Bike specs updated in your Garage!');
         setTimeout(() => setSessionNotice(null), 3000);
       } catch (e) {
         console.warn('Failed to sync calibration with garage:', e);
@@ -1029,29 +1032,16 @@ export default function App() {
         }}
       />
 
-      {/* Navigation - Only shown on secondary views (Cockpit, Analysis, FAQ); Map is clean full-screen Google Maps style */}
+      {/* Navigation - Only shown on secondary views (Cockpit, Analysis, FAQ); Map is clean full-screen */}
       {currentTab !== 'crew' && (
         <Navbar
           currentTab={currentTab}
           setCurrentTab={setCurrentTab}
           onHomeClick={() => setCurrentTab('home')}
-          onLoadSample={handleLoadSample}
           onUploadClick={triggerUploadClick}
-          onOpenGarage={() => setIsGarageOpen(true)}
-          onOpenCompare={() => setIsCompareModalOpen(true)}
-          onOpenGroupRide={() => setCurrentTab('crew')}
-          onOpenCloudSync={() => setIsCloudSyncOpen(true)}
-          groupRideConnected={groupRide.isConnected}
-          groupRoomCode={groupRide.roomCode}
-          onExportGpx={handleExportGpx}
-          onOpenReport={() => setIsReportModalOpen(true)}
+          groupRideConnected={groupRide.isConnected && groupRide.isOnRadar}
           isRecordingLive={isRecordingLive}
           hasActiveRide={!!analysis}
-          rideName={
-            analysis
-              ? analysis.name
-              : 'No track loaded'
-          }
           theme={theme}
           onOpenSettings={() => setIsProfileModalOpen(true)}
         />
@@ -1133,13 +1123,13 @@ export default function App() {
           )}
 
           {sessionNotice && (
-            <div className={`pointer-events-auto w-full max-w-md px-3.5 py-2.5 border text-xs font-mono rounded-2xl flex items-center justify-between shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
+            <div className={`pointer-events-auto w-full max-w-md px-3.5 py-2.5 border text-xs font-sans rounded-2xl flex items-center justify-between gap-2 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 ${
               theme === 'light'
                 ? 'bg-sky-50/95 border-sky-300 text-sky-900'
-                : 'bg-[#0d131a]/95 border-sky-500/50 text-sky-300'
+                : 'bg-[#0d131a]/95 border-sky-500/50 text-sky-200'
             }`}>
-              <span className="truncate sm:whitespace-normal">🔒 {sessionNotice}</span>
-              <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
+              <span className="min-w-0 leading-snug">{sessionNotice}</span>
+              <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-2 shrink-0">
                 Got it
               </button>
             </div>
@@ -1164,14 +1154,14 @@ export default function App() {
       }`}>
         {/* Global Interrupted Session Recovery Banner (Surfaced on non-map/non-cockpit views) */}
         {controls.hasRecoverableRide && controls.recoverableData && currentTab !== 'cockpit' && currentTab !== 'crew' && (
-          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-mono text-xs animate-in fade-in duration-200 ${
+          <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg font-sans text-xs animate-in fade-in duration-200 ${
             theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
           }`}>
             <div className="flex items-center gap-2.5 w-full sm:w-auto">
-              <span className="text-lg">⚠️</span>
+              <AlertTriangle className={`w-5 h-5 shrink-0 ${theme === 'light' ? 'text-amber-700' : 'text-amber-400'}`} />
               <div>
                 <div className="font-bold text-sm">Interrupted Ride Session Found!</div>
-                <div className="text-[11px] opacity-80">
+                <div className="text-[11px] opacity-80 telemetry-num">
                   {controls.recoverableData.points?.length || 0} unsaved GPS points ({((controls.recoverableData.totalDistanceMeters || 0) / 1000).toFixed(1)} km) from your previous ride.
                 </div>
               </div>
@@ -1199,34 +1189,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Error message alert */}
-        {errorMessage && (
-          <div className={`p-3 border font-sans text-xs rounded-lg flex items-center justify-between shadow-sm ${
-            theme === 'light'
-              ? 'bg-rose-50 border-rose-200 text-rose-800'
-              : 'bg-red-950/60 border-red-500/50 text-red-300'
-          }`}>
-            <span>{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {/* Session-only data notice toast */}
-        {sessionNotice && (
-          <div className={`p-3 border text-xs font-mono rounded-lg flex items-center justify-between transition-all animate-in fade-in duration-200 ${
-            theme === 'light'
-              ? 'bg-sky-50 border-sky-200 text-sky-800'
-              : 'bg-sky-500/10 border-sky-500/30 text-sky-300'
-          }`}>
-            <span>🔒 {sessionNotice}</span>
-            <button onClick={() => setSessionNotice(null)} className="underline font-bold cursor-pointer ml-3 shrink-0">
-              Got it
-            </button>
-          </div>
-        )}
-
         {/* Tab 0: Landing Page — always shown when Home is selected */}
         {currentTab === 'home' && (
           <div className="animate-in fade-in duration-300">
@@ -1237,7 +1199,6 @@ export default function App() {
                 startSoloRideFlow(mountMode || 'handlebar', 'cockpit');
               }}
               onOpenCrew={() => setCurrentTab('crew')}
-              onOpenCockpit={() => setCurrentTab('cockpit')}
               onOpenProfile={() => setIsProfileModalOpen(true)}
               onOpenGoogleMaps={() => setIsGoogleMapsModalOpen(true)}
               theme={theme}
@@ -1247,7 +1208,6 @@ export default function App() {
               onResumeRide={() => setCurrentTab('analysis')}
               onClearRide={handleClearActiveRoute}
               onOpenGarage={() => setIsGarageOpen(true)}
-              onOpenDownloadApp={handleOpenDownloadApp}
               riderName={groupRide.riderName}
               bikeModel={groupRide.bikeModel}
               myColor={groupRide.myColor}
@@ -1255,59 +1215,150 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 1: Ride Stats & Telemetry Analysis */}
-        {/* If analysis tab is active but no ride is loaded, show landing */}
-        {currentTab === 'analysis' && !analysis && (
-          <div className="animate-in fade-in duration-300">
-            <LandingView
-              onFileLoaded={handleFileLoaded}
-              onSelectRide={(gpxData, routeName) => handleLoadSample(gpxData, routeName)}
-              onStartRecording={(mountMode) => {
-                startSoloRideFlow(mountMode || 'handlebar', 'cockpit');
-              }}
-              onOpenCrew={() => setCurrentTab('crew')}
-              onOpenCockpit={() => setCurrentTab('cockpit')}
-              onOpenProfile={() => setIsProfileModalOpen(true)}
-              onOpenGoogleMaps={() => setIsGoogleMapsModalOpen(true)}
-              theme={theme}
-              unitSystem={unitSystem}
-              activeRideName={null}
-              activeRideDistanceKm={null}
-              onOpenGarage={() => setIsGarageOpen(true)}
-              onOpenDownloadApp={handleOpenDownloadApp}
-              riderName={groupRide.riderName}
-              bikeModel={groupRide.bikeModel}
-              myColor={groupRide.myColor}
-            />
-          </div>
-        )}
+        {/* Tab 1: My Rides & Telemetry Analysis */}
+        {currentTab === 'analysis' && !analysis && (() => {
+          const savedRides: SavedRide[] = getGarageRides();
+          return (
+            <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in duration-300">
+              <div className={`p-4 sm:p-5 rounded-3xl border shadow-lg space-y-4 ${
+                theme === 'light' ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0d131a] border-[#1e2a38] text-white'
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
+                      theme === 'light' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/15 border-sky-500/30 text-sky-400'
+                    }`}>
+                      <FolderArchive className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="font-heading font-black text-base uppercase tracking-wider">My Rides Library</h2>
+                      <p className={`text-[11px] font-sans ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
+                        Tap any recorded ride to open speed curves, corner lean, and GPX map
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsGarageOpen(true)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer shrink-0 ${
+                      theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    Garage &amp; Backups
+                  </button>
+                </div>
+
+                {savedRides.length > 0 ? (
+                  <div className="space-y-2">
+                    {savedRides.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleFileLoaded(r.gpxContent, r.name, r.id)}
+                        className={`w-full text-left p-3.5 rounded-2xl border flex items-center justify-between gap-3 cursor-pointer transition-all active:scale-[0.99] ${
+                          theme === 'light'
+                            ? 'bg-slate-50 hover:bg-sky-50 border-slate-200 hover:border-sky-300 text-slate-900'
+                            : 'bg-[#131b24] hover:bg-[#19232f] border-[#1e2a38] hover:border-sky-500/40 text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+                          }`}>
+                            <Navigation className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs truncate">{r.name}</div>
+                            <div className={`text-[11px] flex items-center gap-1.5 flex-wrap telemetry-num ${
+                              theme === 'light' ? 'text-slate-600' : 'text-slate-400'
+                            }`}>
+                              <span>{r.distanceKm.toFixed(1)} km</span>
+                              {r.durationSeconds ? (
+                                <>
+                                  <span>•</span>
+                                  <span>{formatDurationSummary(r.durationSeconds)}</span>
+                                </>
+                              ) : null}
+                              <span>•</span>
+                              <span className={theme === 'light' ? 'text-rose-700 font-bold' : 'text-rose-400 font-bold'}>
+                                Max {Math.round(r.maxSpeedKmh)} km/h
+                              </span>
+                              <span>•</span>
+                              <span>{r.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Play className={`w-4 h-4 shrink-0 ${theme === 'light' ? 'text-sky-700' : 'text-sky-400'}`} />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={`p-6 rounded-2xl border border-dashed text-center space-y-2 ${
+                    theme === 'light' ? 'bg-slate-50 border-slate-300 text-slate-600' : 'bg-black/30 border-slate-800 text-slate-400'
+                  }`}>
+                    <p className="font-bold text-xs">No saved rides in your Garage yet</p>
+                    <p className="text-[11px]">Record a ride from the Cockpit, import a GPX track, or try the demo route.</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={triggerUploadClick}
+                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                      theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Import GPX</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLoadSample()}
+                    className={`py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                      theme === 'light' ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-800' : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/40 text-cyan-300'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Explore Demo Ride</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {currentTab === 'analysis' && analysis && (
+          <ErrorBoundary theme={theme} sectionLabel="Ride Telemetry" onResetToHome={() => setCurrentTab('home')}>
           <div className="space-y-4 animate-in fade-in duration-300">
-            {/* Direct Return to Dashboard / Live Map Banner */}
-            <div className={`p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-md font-mono text-xs ${
-              theme === 'light' ? 'bg-cyan-50 border-cyan-200 text-slate-800' : 'bg-cyan-950/40 border-cyan-500/30 text-white'
+            {/* Single Slim Contextual Header Strip */}
+            <div className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs font-sans shadow-xs ${
+              theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0d131a] border-[#1e2a38] text-slate-200'
             }`}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTab('home')}
-                  className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95 shrink-0"
-                >
-                  <Home className="w-4 h-4 text-cyan-400" />
-                  <span>Dashboard</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTab('crew')}
-                  className="py-1.5 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95 shrink-0"
-                >
-                  <Users className="w-4 h-4 stroke-[2.5]" />
-                  <span>Live Map</span>
-                </button>
-              </div>
-              <div className="text-right truncate hidden xs:block">
-                <span className="text-[11px] text-slate-400">Viewing Saved Ride Telemetry</span>
-              </div>
+              <button
+                type="button"
+                onClick={handleCloseTrack}
+                className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  theme === 'light'
+                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
+                    : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-sky-400'
+                }`}
+              >
+                <FolderArchive className="w-3.5 h-3.5" />
+                <span>All Saved Rides</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={triggerUploadClick}
+                className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  theme === 'light'
+                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                    : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
+                }`}
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>Import GPX</span>
+              </button>
             </div>
 
             {/* Hero Metrics Bar with Edit Ride Name, Calibration & Share Story */}
@@ -1316,11 +1367,9 @@ export default function App() {
               activeScrubPoint={activeScrubPoint}
               onEditRideName={() => setIsRideNameEditorOpen(true)}
               onOpenStops={() => handleOpenAddStop()}
-              onOpenCalibration={() => setIsCalibrationOpen(true)}
               onOpenShare={() => setIsShareModalOpen(true)}
               onOpenReport={() => setIsReportModalOpen(true)}
               onOpenCompare={() => setIsCompareModalOpen(true)}
-              onCloseTrack={handleCloseTrack}
               onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
               onSaveToGarage={handleSaveActiveToGarage}
               isSavedInGarage={currentRideId !== null}
@@ -1328,49 +1377,8 @@ export default function App() {
               unitSystem={unitSystem}
             />
 
-            {/* Contextual Action Strip */}
-            <div className={`p-2 sm:p-2.5 rounded-xl border flex items-center justify-between flex-wrap gap-2 text-xs font-mono shadow-sm ${
-              theme === 'light' ? 'bg-white border-slate-200' : 'bg-[#0d131a] border-[#1e2a38]'
-            }`}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={handleCloseTrack}
-                  className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    theme === 'light'
-                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-sky-700'
-                      : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-sky-400'
-                  }`}
-                  title="Return to all saved rides in garage"
-                >
-                  <FolderArchive className="w-3.5 h-3.5" />
-                  <span>← All Saved Rides</span>
-                </button>
-
-                <button
-                  onClick={triggerUploadClick}
-                  className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    theme === 'light'
-                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                      : 'bg-[#131b24] hover:bg-[#1a2530] border-[#1e2a38] text-slate-300'
-                  }`}
-                  title="Upload another GPX file"
-                >
-                  <span>Import GPX</span>
-                </button>
-              </div>
-
-              <button
-                onClick={() => setCurrentTab('cockpit')}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ml-auto"
-                title="Open live handlebar GPS dashboard"
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>Record New Ride</span>
-              </button>
-            </div>
-
             {/* Sticky Segmented Sub-Tab Switcher */}
-            <div className={`sticky top-[58px] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${
+            <div className={`sticky top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-30 py-2 -mx-3 px-3 sm:-mx-6 sm:px-6 backdrop-blur-md transition-colors ${
               theme === 'light' ? 'bg-slate-100/90' : 'bg-[#080c10]/90'
             }`}>
               <div className={`flex items-center p-1 rounded-xl border text-xs font-mono font-bold shadow-md overflow-x-auto no-scrollbar gap-1 ${
@@ -1412,7 +1420,11 @@ export default function App() {
                   <span>Timeline</span>
                   {analysis.pitStops.length > 0 && (
                     <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
-                      analysisSubTab === 'timeline' ? 'bg-slate-950 text-sky-400' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      analysisSubTab === 'timeline'
+                        ? 'bg-slate-950 text-sky-400'
+                        : theme === 'light'
+                        ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                     }`}>
                       {analysis.pitStops.length}
                     </span>
@@ -1436,18 +1448,18 @@ export default function App() {
             {/* TAB 1: Map Route & Scrubber View */}
             {analysisSubTab === 'map' && (
               <div className="space-y-4 animate-in fade-in duration-200">
-                <MapViewer
-                  analysis={analysis}
-                  scrubIndex={scrubIndex}
-                  onScrubChange={setScrubIndex}
-                  onOpenAddStopAtPoint={(pt) => handleOpenAddStop(pt)}
-                  onEditStop={(stop) => handleOpenEditStop(stop)}
-                  focusedCoordinate={focusedCoordinate}
-                  theme={theme}
-                  onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-                  groupMembers={groupRide.members}
-                  unitSystem={unitSystem}
-                />
+                <Suspense fallback={null}>
+                  <MapViewer
+                    analysis={analysis}
+                    scrubIndex={scrubIndex}
+                    onScrubChange={setScrubIndex}
+                    onEditStop={(stop) => handleOpenEditStop(stop)}
+                    focusedCoordinate={focusedCoordinate}
+                    theme={theme}
+                    onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+                    groupMembers={groupRide.members}
+                  />
+                </Suspense>
               </div>
             )}
 
@@ -1464,13 +1476,15 @@ export default function App() {
                   theme={theme} 
                 />
 
-                <TelemetryCharts
-                  analysis={analysis}
-                  scrubIndex={scrubIndex}
-                  onScrubChange={setScrubIndex}
-                  theme={theme}
-                  unitSystem={unitSystem}
-                />
+                <Suspense fallback={null}>
+                  <TelemetryCharts
+                    analysis={analysis}
+                    scrubIndex={scrubIndex}
+                    onScrubChange={setScrubIndex}
+                    theme={theme}
+                    unitSystem={unitSystem}
+                  />
+                </Suspense>
               </div>
             )}
 
@@ -1485,6 +1499,7 @@ export default function App() {
                   }}
                   onOpenAddStop={() => handleOpenAddStop()}
                   onEditStop={(stop) => handleOpenEditStop(stop)}
+                  onDeleteStop={(stopId) => handleDeleteStop(stopId)}
                   theme={theme}
                 />
 
@@ -1510,15 +1525,16 @@ export default function App() {
                   analysis={analysis}
                   onOpenCalibration={() => setIsCalibrationOpen(true)}
                   theme={theme}
-                  unitSystem={unitSystem}
                 />
               </div>
             )}
           </div>
+          </ErrorBoundary>
         )}
 
         {/* Tab 2: Live GPS Logger (Kept mounted to maintain uninterrupted background recording & crew location sync when switching tabs) */}
         <div className={currentTab === 'cockpit' ? 'animate-in fade-in duration-300 space-y-3' : 'hidden'}>
+          <ErrorBoundary theme={theme} sectionLabel="Ride Cockpit" onResetToHome={() => setCurrentTab('home')}>
           <LiveCockpitLogger
             onRideRecorded={handleLiveRideRecorded}
             isRecording={gps.isRecording}
@@ -1545,14 +1561,17 @@ export default function App() {
             onOpenGoogleMapsImport={() => setIsGoogleMapsModalOpen(true)}
             onOpenSettings={() => setIsProfileModalOpen(true)}
           />
+          </ErrorBoundary>
         </div>
 
         {/* Tab 3: Dedicated First-Class Crew Command Center */}
         {currentTab === 'crew' && (
           <div className="w-full h-full flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
+            <ErrorBoundary theme={theme} sectionLabel="Live Map" onResetToHome={() => setCurrentTab('home')}>
+            <Suspense fallback={null}>
             <CrewDashboard
               roomCode={groupRide.roomCode}
-              lastRoomCode={groupRide.lastRoomCode}
+              onJoinRoom={groupRide.joinRoom}
               riderName={groupRide.riderName}
               riderId={groupRide.riderId}
               myColor={groupRide.myColor}
@@ -1563,8 +1582,6 @@ export default function App() {
               onSetSquadLeader={groupRide.setSquadLeader}
               onClaimSquadLeader={groupRide.claimSquadLeader}
               isConnected={groupRide.isConnected}
-              connectionStatus={groupRide.connectionStatus}
-              statusMessage={groupRide.statusMessage}
               members={groupRide.members}
               sosAlert={groupRide.sosAlert}
               crewNotification={groupRide.crewNotification}
@@ -1572,33 +1589,21 @@ export default function App() {
               onTriggerSos={groupRide.triggerSos}
               onCancelSos={groupRide.cancelSos}
               onDismissSos={groupRide.dismissSos}
-              onUpdateRiderName={groupRide.updateRiderName}
-              onAddSquadFriend={groupRide.addSquadFriend}
               getFriendInviteUrl={groupRide.getFriendInviteUrl}
               onGoToCockpit={() => setCurrentTab('cockpit')}
               theme={theme}
-              onToggleTheme={toggleTheme}
-              unitSystem={unitSystem}
               isRecording={gps.isRecording}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopAndSaveRecording}
-              pointsCount={gps.pointsCount}
               totalDistanceMeters={gps.totalDistanceMeters}
               activeRoute={analysis}
               onClearActiveRoute={handleClearActiveRoute}
-              onLoadSampleRide={() => handleLoadSample()}
               isOnRadar={groupRide.isOnRadar}
               onToggleRadar={groupRide.toggleOnRadar}
               isTrackingActive={gps.isTrackingActive}
               onToggleTracking={handleToggleTracking}
-              onJoinSharedRoute={handleJoinSharedRoute}
-              activeVoiceBlast={groupRide.activeVoiceBlast}
-              onDismissVoiceBlast={groupRide.dismissVoiceBlast}
               onSendVoiceBlast={groupRide.sendVoiceBlast}
-              isConvoyRegrouped={groupRide.isConvoyRegrouped}
               onOpenGarage={() => setIsGarageOpen(true)}
-              onOpenDownloadApp={handleOpenDownloadApp}
-              onOpenFaq={() => setCurrentTab('faq')}
               finishedRideSummary={finishedRideSummary}
               onDismissRideSummary={() => setFinishedRideSummary(null)}
               onViewTelemetry={() => {
@@ -1609,21 +1614,27 @@ export default function App() {
               onDismissCallout={groupRide.dismissCallout}
               onSendCallout={groupRide.sendCallout}
               gpsError={gps.gpsError}
+              onRetryGps={() => {
+                controls.stopGpsTracking();
+                setTimeout(() => controls.startGpsTracking(), 150);
+              }}
               onTriggerRollCall={handleManualRollCall}
-              onOpenPermissionsModal={() => setIsPermissionsModalOpen(true)}
               mountMode={gps.mountMode}
               onOpenSoloRide={() => setIsSoloRideModalOpen(true)}
               onGoToDashboard={() => setCurrentTab('home')}
               onOpenProfile={() => setIsProfileModalOpen(true)}
-              onOpenGoogleMaps={() => setIsGoogleMapsModalOpen(true)}
             />
+            </Suspense>
+            </ErrorBoundary>
           </div>
         )}
 
         {/* Tab 4: Tips & Help Guide */}
         {currentTab === 'faq' && (
           <div className="animate-in fade-in duration-300">
-            <FaqAndArchitecture theme={theme} />
+            <Suspense fallback={null}>
+              <FaqAndArchitecture theme={theme} />
+            </Suspense>
           </div>
         )}
       </main>
@@ -1632,59 +1643,89 @@ export default function App() {
       {currentTab !== 'crew' && (
         <nav
           aria-label="Mobile Landscape Navigation Dock"
-          className={`hidden mobile-landscape-dock fixed left-0 top-0 bottom-0 w-14 z-50 flex-col items-center justify-around py-4 backdrop-blur-lg border-r shadow-2xl transition-colors ${
+          className={`hidden mobile-landscape-dock fixed left-0 top-0 bottom-0 w-14 z-50 flex-col items-center justify-around py-2 backdrop-blur-lg border-r shadow-2xl transition-colors ${
             theme === 'light' ? 'bg-white/95 border-slate-200 text-slate-600' : 'bg-[#0d131a]/95 border-[#1e2a38] text-[#8f9ca8]'
           }`}
           style={{
-            paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
-            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+            paddingTop: 'max(0.35rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(0.35rem, env(safe-area-inset-bottom))',
             paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
           }}
         >
-          {/* Tab 0: Solo Dashboard */}
+          {/* Tab 0: Home */}
           <button
+            type="button"
             onClick={() => setCurrentTab('home')}
-            className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'home' ? 'text-cyan-400 bg-cyan-500/15 font-black' : 'hover:text-white'
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
+              currentTab === 'home'
+                ? theme === 'light' ? 'text-cyan-700 bg-cyan-50 font-black' : 'text-cyan-400 bg-cyan-500/15 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
             }`}
-            title="Solo Dashboard"
+            title="Home Dashboard"
+            aria-label="Home Dashboard"
           >
-            <Home className="w-5 h-5" />
+            <Home className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Home</span>
           </button>
 
-          {/* Tab 1: Crew Map */}
+          {/* Tab 1: Map */}
           <button
+            type="button"
             onClick={() => setCurrentTab('crew')}
-            className="flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer hover:text-white"
-            title="Crew Map"
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
+            }`}
+            title="Live Map"
+            aria-label="Open Live Map"
           >
-            <Users className="w-5 h-5" />
+            <Users className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Map</span>
           </button>
 
           {/* Tab 2: Cockpit */}
           <button
+            type="button"
             onClick={() => setCurrentTab('cockpit')}
-            className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'cockpit' ? 'text-emerald-400 bg-emerald-500/15 font-black' : 'hover:text-white'
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
+              currentTab === 'cockpit'
+                ? theme === 'light' ? 'text-emerald-700 bg-emerald-50 font-black' : 'text-emerald-400 bg-emerald-500/15 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
             }`}
             title="Ride Cockpit"
+            aria-label="Open Ride Cockpit"
           >
-            <Radio className="w-5 h-5" />
+            <Radio className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Ride</span>
           </button>
 
           {/* Tab 3: Rides / Analysis */}
           <button
+            type="button"
             onClick={() => setCurrentTab('analysis')}
-            className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer ${
-              currentTab === 'analysis' ? 'text-sky-400 bg-sky-500/15 font-black' : 'hover:text-white'
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
+              currentTab === 'analysis'
+                ? theme === 'light' ? 'text-sky-700 bg-sky-50 font-black' : 'text-sky-400 bg-sky-500/15 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' : 'hover:text-white hover:bg-white/5'
             }`}
             title="My Rides"
+            aria-label="Open My Rides"
           >
-            <FolderArchive className="w-5 h-5" />
+            <FolderArchive className="w-4 h-4" />
             <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Rides</span>
+          </button>
+
+          {/* Settings Quick Button (since top Navbar hides in compact landscape) */}
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'text-slate-600 hover:text-cyan-700 hover:bg-slate-100' : 'hover:text-cyan-300 hover:bg-white/5'
+            }`}
+            title="App Settings"
+            aria-label="Open App Settings"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="text-[8px] font-mono uppercase font-bold mt-0.5">Prefs</span>
           </button>
         </nav>
       )}
@@ -1698,14 +1739,15 @@ export default function App() {
           }`}
           aria-label="Mobile Bottom Navigation"
         >
-          {/* Tab 0: Solo Dashboard */}
+          {/* Tab 0: Home */}
           <button
             id="mobile-tab-home"
+            type="button"
             onClick={() => setCurrentTab('home')}
             className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
               currentTab === 'home'
-                ? theme === 'light' ? 'text-cyan-600 font-black' : 'text-cyan-400 font-black'
-                : theme === 'light' ? 'text-slate-500 hover:text-cyan-600' : 'text-[#8f9ca8] hover:text-cyan-400'
+                ? theme === 'light' ? 'text-cyan-700 font-black' : 'text-cyan-400 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
             }`}
           >
             <div className="relative">
@@ -1714,17 +1756,18 @@ export default function App() {
             <span className="text-[10px] uppercase tracking-wider font-bold">Home</span>
           </button>
 
-          {/* Tab 1: Crew Map */}
+          {/* Tab 1: Live Map */}
           <button
             id="mobile-tab-crew"
+            type="button"
             onClick={() => setCurrentTab('crew')}
             className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
-              theme === 'light' ? 'text-slate-500 hover:text-cyan-600' : 'text-[#8f9ca8] hover:text-cyan-400'
+              theme === 'light' ? 'text-slate-600 hover:text-cyan-700' : 'text-[#8f9ca8] hover:text-cyan-400'
             }`}
           >
             <div className="relative">
               <Users className="w-5 h-5" />
-              {groupRide.isConnected && (
+              {groupRide.isConnected && groupRide.isOnRadar && (
                 <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-0.5 -right-1" />
               )}
             </div>
@@ -1734,11 +1777,12 @@ export default function App() {
           {/* Tab 2: Ride Cockpit */}
           <button
             id="mobile-tab-cockpit"
+            type="button"
             onClick={() => setCurrentTab('cockpit')}
             className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
               currentTab === 'cockpit'
-                ? 'text-emerald-400 font-black'
-                : theme === 'light' ? 'text-slate-500 hover:text-emerald-600' : 'text-[#8f9ca8] hover:text-emerald-400'
+                ? theme === 'light' ? 'text-emerald-700 font-black' : 'text-emerald-400 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-emerald-700' : 'text-[#8f9ca8] hover:text-emerald-400'
             }`}
           >
             <div className="relative">
@@ -1753,56 +1797,68 @@ export default function App() {
           {/* Tab 3: My Rides & Stats */}
           <button
             id="mobile-tab-rides"
+            type="button"
             onClick={() => setCurrentTab('analysis')}
             className={`flex flex-col items-center gap-0.5 relative cursor-pointer transition-all flex-1 py-1 ${
               currentTab === 'analysis'
-                ? theme === 'light' ? 'text-sky-600 font-black' : 'text-sky-400 font-black'
-                : theme === 'light' ? 'text-slate-500 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
+                ? theme === 'light' ? 'text-sky-700 font-black' : 'text-sky-400 font-black'
+                : theme === 'light' ? 'text-slate-600 hover:text-slate-900' : 'text-[#8f9ca8] hover:text-white'
             }`}
           >
             <div className="relative">
               <FolderArchive className="w-5 h-5" />
               {analysis && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -top-0.5 -right-1" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500 absolute -top-0.5 -right-1" />
               )}
             </div>
             <span className="text-[10px] uppercase tracking-wider font-bold">
-              {analysis ? 'Stats & Map' : 'My Rides'}
+              {analysis ? 'Stats' : 'My Rides'}
             </span>
           </button>
         </nav>
       )}
 
       {/* Saved Rides Garage Modal */}
-      <GarageModal
-        isOpen={isGarageOpen}
-        onClose={() => setIsGarageOpen(false)}
-        currentAnalysis={analysis}
-        onSelectRide={(gpxText, name, id) => {
-          handleFileLoaded(gpxText, name, id);
-        }}
-        onLoadSample={handleLoadSample}
-        onCloseTrack={handleCloseTrack}
-        onOpenCompare={() => setIsCompareModalOpen(true)}
-        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
-        theme={theme}
-      />
+      {isGarageOpen && (
+        <Suspense fallback={null}>
+          <GarageModal
+            isOpen={isGarageOpen}
+            onClose={() => setIsGarageOpen(false)}
+            currentAnalysis={analysis}
+            onSelectRide={(gpxText, name, id) => {
+              handleFileLoaded(gpxText, name, id);
+            }}
+            onLoadSample={handleLoadSample}
+            onCloseTrack={handleCloseTrack}
+            onOpenCompare={() => setIsCompareModalOpen(true)}
+            onOpenCloudSync={() => setIsCloudSyncOpen(true)}
+            theme={theme}
+          />
+        </Suspense>
+      )}
 
       {/* Dual Track Comparison / Ghost Track Modal */}
-      <TrackComparisonModal
-        isOpen={isCompareModalOpen}
-        onClose={() => setIsCompareModalOpen(false)}
-        currentAnalysis={analysis}
-        theme={theme}
-      />
-
+      {isCompareModalOpen && (
+        <Suspense fallback={null}>
+          <TrackComparisonModal
+            isOpen={isCompareModalOpen}
+            onClose={() => setIsCompareModalOpen(false)}
+            currentAnalysis={analysis}
+            theme={theme}
+          />
+        </Suspense>
+      )}
 
       {/* Personal Cloud Backup & Sync Modal */}
-      <CloudSyncModal
-        isOpen={isCloudSyncOpen}
-        onClose={() => setIsCloudSyncOpen(false)}
-        theme={theme}
-      />
+      {isCloudSyncOpen && (
+        <Suspense fallback={null}>
+          <CloudSyncModal
+            isOpen={isCloudSyncOpen}
+            onClose={() => setIsCloudSyncOpen(false)}
+            theme={theme}
+          />
+        </Suspense>
+      )}
 
       {/* Stop Add / Edit Modal */}
       {analysis && (
@@ -1841,43 +1897,47 @@ export default function App() {
       )}
 
       {/* 4:5 Instagram / WhatsApp Story Share Card Modal */}
-      {analysis && (
-        <RideStoryModal
-          isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
-          analysis={analysis}
-          theme={theme}
-          unitSystem={unitSystem}
-        />
+      {analysis && isShareModalOpen && (
+        <Suspense fallback={null}>
+          <RideStoryModal
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            analysis={analysis}
+            theme={theme}
+          />
+        </Suspense>
       )}
 
       {/* Official Ride Telemetry Report & PDF Dossier Modal */}
-      {analysis && (
-        <RideReportModal
-          isOpen={isReportModalOpen}
-          onClose={() => setIsReportModalOpen(false)}
-          analysis={analysis}
-          theme={theme}
-          unitSystem={unitSystem}
-        />
+      {analysis && isReportModalOpen && (
+        <Suspense fallback={null}>
+          <RideReportModal
+            isOpen={isReportModalOpen}
+            onClose={() => setIsReportModalOpen(false)}
+            analysis={analysis}
+            theme={theme}
+          />
+        </Suspense>
       )}
 
       {/* Full Telemetry & Diagnostics Modal */}
-      {analysis && (
-        <RideDiagnosticsModal
-          isOpen={isDiagnosticsOpen}
-          onClose={() => setIsDiagnosticsOpen(false)}
-          analysis={analysis}
-          theme={theme}
-          onSelectCoordinate={(lat, lon, label) => {
-            setFocusedCoordinate({ lat, lon, label });
-            setAnalysisSubTab('map');
-          }}
-          onScrubToIndex={(idx) => {
-            setScrubIndex(idx);
-            setAnalysisSubTab('map');
-          }}
-        />
+      {analysis && isDiagnosticsOpen && (
+        <Suspense fallback={null}>
+          <RideDiagnosticsModal
+            isOpen={isDiagnosticsOpen}
+            onClose={() => setIsDiagnosticsOpen(false)}
+            analysis={analysis}
+            theme={theme}
+            onSelectCoordinate={(lat, lon, label) => {
+              setFocusedCoordinate({ lat, lon, label });
+              setAnalysisSubTab('map');
+            }}
+            onScrubToIndex={(idx) => {
+              setScrubIndex(idx);
+              setAnalysisSubTab('map');
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Native Android APK & App Install Modal */}
@@ -1896,6 +1956,16 @@ export default function App() {
         onCancel={handleCancelCrashSos}
         onConfirmSos={handleConfirmCrashSos}
         unitSystem={unitSystem}
+        theme={theme}
+      />
+
+      {/* Global First-Launch Profile Setup Modal (Mounted once at root) */}
+      <FirstLaunchNameModal
+        currentName={groupRide.riderName}
+        currentBike={groupRide.bikeModel}
+        currentColor={groupRide.myColor}
+        onSaveProfile={(name, bike, color) => groupRide.updateRiderName(name, bike, color)}
+        theme={theme}
       />
 
       {/* Permissions Onboarding & Background Tracking Preference Modal */}
@@ -1916,49 +1986,67 @@ export default function App() {
       />
 
       {/* Global App Settings Hub (Profile, Display Theme/HUD, Privacy & Safety, Maps/Backup, APK/Help) */}
-      <RiderProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        riderName={groupRide.riderName}
-        bikeModel={groupRide.bikeModel}
-        myColor={groupRide.myColor}
-        isOnRadar={groupRide.isOnRadar}
-        onToggleRadar={() => {
-          const turningOn = !groupRide.isOnRadar;
-          if (turningOn && !gps.isTrackingActive) {
-            controls.startGpsTracking();
-          }
-          groupRide.toggleOnRadar(turningOn);
-        }}
-        onSaveProfile={(name, bike, color) => groupRide.updateRiderName(name, bike, color)}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onOpenGarage={() => setIsGarageOpen(true)}
-        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
-        onOpenPermissions={() => setIsPermissionsModalOpen(true)}
-        onOpenDownloadApp={handleOpenDownloadApp}
-        onOpenFaq={() => setCurrentTab('faq')}
-        onStartupScreenChanged={(screen) => {
-          if (screen === 'dashboard') setCurrentTab('home');
-          else if (screen === 'cockpit') setCurrentTab('cockpit');
-          else if (screen === 'map') setCurrentTab('crew');
-        }}
-      />
+      {isProfileModalOpen && (
+        <Suspense fallback={null}>
+          <RiderProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            riderName={groupRide.riderName}
+            bikeModel={groupRide.bikeModel}
+            myColor={groupRide.myColor}
+            isOnRadar={groupRide.isOnRadar}
+            onToggleRadar={() => {
+              const turningOn = !groupRide.isOnRadar;
+              if (turningOn && !gps.isTrackingActive) {
+                controls.startGpsTracking();
+              }
+              groupRide.toggleOnRadar(turningOn);
+            }}
+            roomCode={groupRide.roomCode}
+            onJoinRoom={(code) => groupRide.joinRoom(code)}
+            myLocation={myLocation || (gps.currentCoords ? { lat: gps.currentCoords.lat, lon: gps.currentCoords.lon } : null)}
+            activeRoute={analysis}
+            gpsMountOrientation={gps.mountOrientation}
+            onSetMountOrientation={(orient) => controls.setMountOrientation(orient)}
+            backgroundMode={backgroundMode}
+            onSetBackgroundMode={(mode) => setBackgroundMode(mode)}
+            isVoiceBlastMuted={groupRide.isVoiceBlastMuted}
+            onToggleVoiceBlastMuted={() => groupRide.toggleVoiceBlastMuted()}
+            onSaveProfile={(name, bike, color) => groupRide.updateRiderName(name, bike, color)}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onOpenGarage={() => setIsGarageOpen(true)}
+            onOpenCloudSync={() => setIsCloudSyncOpen(true)}
+            onOpenPermissions={() => setIsPermissionsModalOpen(true)}
+            onOpenDownloadApp={handleOpenDownloadApp}
+            onOpenFaq={() => setCurrentTab('faq')}
+            onStartupScreenChanged={(screen) => {
+              if (screen === 'dashboard') setCurrentTab('home');
+              else if (screen === 'cockpit') setCurrentTab('cockpit');
+              else if (screen === 'map') setCurrentTab('crew');
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Google Maps Route & Destination Import Modal */}
-      <GoogleMapsImportModal
-        isOpen={isGoogleMapsModalOpen}
-        onClose={() => {
-          setIsGoogleMapsModalOpen(false);
-          setSharedIntentText(null);
-        }}
-        myLocation={myLocation || (gps.currentCoords ? { lat: gps.currentCoords.lat, lon: gps.currentCoords.lon } : null)}
-        onRouteGenerated={handleRouteGeneratedFromGoogleMaps}
-        theme={theme}
-        unitSystem={unitSystem}
-        isCrewConnected={groupRide.isConnected && groupRide.isOnRadar}
-        initialSharedText={sharedIntentText}
-      />
+      {isGoogleMapsModalOpen && (
+        <Suspense fallback={null}>
+          <GoogleMapsImportModal
+            isOpen={isGoogleMapsModalOpen}
+            onClose={() => {
+              setIsGoogleMapsModalOpen(false);
+              setSharedIntentText(null);
+            }}
+            myLocation={myLocation || (gps.currentCoords ? { lat: gps.currentCoords.lat, lon: gps.currentCoords.lon } : null)}
+            onRouteGenerated={handleRouteGeneratedFromGoogleMaps}
+            theme={theme}
+            unitSystem={unitSystem}
+            isCrewConnected={groupRide.isConnected && groupRide.isOnRadar}
+            initialSharedText={sharedIntentText}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

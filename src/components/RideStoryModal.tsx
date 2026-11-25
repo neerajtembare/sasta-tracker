@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { RideAnalysis, AppTheme, UnitSystem } from '../types';
-import { convertSpeed, convertDistance } from '../utils/units';
+import { RideAnalysis, AppTheme } from '../types';
+import { formatDurationSummary } from '../utils/units';
+import { getRiderProfile } from '../utils/riderProfile';
 import { X, Download, Share2, Sparkles } from 'lucide-react';
 
 interface RideStoryModalProps {
@@ -8,7 +9,6 @@ interface RideStoryModalProps {
   onClose: () => void;
   analysis: RideAnalysis;
   theme?: AppTheme;
-  unitSystem?: UnitSystem;
 }
 
 function drawRoundedRect(
@@ -39,7 +39,6 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
   onClose,
   analysis,
   theme = 'dark',
-  unitSystem = 'metric',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -111,14 +110,15 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('🏍️ THROTTLELOG • RIDE LOG', 105, 112);
+    ctx.fillText('THROTTLELOG • RIDE DOSSIER', 105, 112);
 
     // Bike Model Tag (if any) — auto-sized to text so it never overflows
-    const rawBike = (analysis.bikeModel || 'MOTORCYCLE').toUpperCase();
+    const profile = getRiderProfile();
+    const rawBike = (analysis.bikeModel || profile.bikeModel || 'MOTORCYCLE').toUpperCase();
     const bikeLabel = rawBike.length > 20 ? rawBike.slice(0, 18) + '..' : rawBike;
     ctx.font = 'bold 20px monospace';
-    const bikeTextW = ctx.measureText(`⚡ ${bikeLabel}`).width;
-    const badgeW = Math.max(160, Math.min(380, bikeTextW + 40));
+    const bikeTextW = ctx.measureText(bikeLabel).width;
+    const badgeW = Math.max(160, Math.min(380, bikeTextW + 44));
     const badgeX = W - 80 - badgeW;
 
     ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
@@ -130,7 +130,7 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
 
     ctx.fillStyle = '#34d399';
     ctx.textAlign = 'center';
-    ctx.fillText(`⚡ ${bikeLabel}`, badgeX + badgeW / 2, 112);
+    ctx.fillText(bikeLabel, badgeX + badgeW / 2, 112);
 
     // Ride Title — word-wrap cleanly to fit within the card without overflowing
     ctx.fillStyle = '#ffffff';
@@ -187,23 +187,21 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     // Two rows of metrics cards
     const metricsY = footerY - 40 - (2 * cardH + cardGap); // ends 40px above footer (e.g. 1240 - 40 - 320 = 880)
 
-    // Unit conversions
-    const convertedDist = convertDistance(analysis.totalDistanceKm || 0, unitSystem);
-    const convertedMaxSpd = convertSpeed(analysis.maxSpeedKmh || 0, unitSystem);
-    const convertedAvgSpd = convertSpeed(analysis.movingAvgSpeedKmh || 0, unitSystem);
+    // Metric telemetry (metric / km/h standard)
+    const distKm = analysis.userDistanceOverrideKm || analysis.totalDistanceKm || 0;
+    const maxSpdKmh = analysis.maxSpeedKmh || 0;
+    const avgSpdKmh = analysis.movingAvgSpeedKmh || 0;
 
     const movingSec = analysis.movingTimeSeconds || 0;
     const totalSec = analysis.totalDurationSeconds || 0;
-    const movingHrs = Math.floor(movingSec / 3600);
-    const movingMins = Math.floor((movingSec % 3600) / 60);
-    const movingTimeStr = movingHrs > 0 ? `${movingHrs}h ${movingMins}m` : `${movingMins}m`;
+    const movingTimeStr = formatDurationSummary(movingSec);
     const saddlePacePct = totalSec > 0 ? Math.min(100, Math.round((movingSec / totalSec) * 100)) : 100;
 
     const metrics = [
       {
         label: 'TOTAL RUN',
-        val: convertedDist.value.toFixed(1),
-        unit: convertedDist.unit.toUpperCase(),
+        val: distKm.toFixed(1),
+        unit: 'KM',
         color: '#38bdf8',
         sub: `${analysis.segments?.length || 1} segments`,
         x: 80,
@@ -220,10 +218,10 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
       },
       {
         label: 'TOP VELOCITY',
-        val: convertedMaxSpd.value.toFixed(0),
-        unit: convertedMaxSpd.unit.toUpperCase(),
+        val: maxSpdKmh.toFixed(0),
+        unit: 'KM/H',
         color: '#f43f5e',
-        sub: `Avg: ${convertedAvgSpd.value.toFixed(1)} ${convertedAvgSpd.unit}`,
+        sub: `Avg: ${avgSpdKmh.toFixed(1)} km/h`,
         x: 80,
         y: metricsY + cardH + cardGap,
       },
@@ -368,17 +366,19 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     ctx.fillStyle = '#64748b';
     ctx.font = '600 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('⚡ TRACKED WITH THROTTLELOG', W / 2, footerY);
+    ctx.fillText('TRACKED WITH THROTTLELOG', W / 2, footerY);
     ctx.fillStyle = '#475569';
     ctx.font = '500 15px monospace';
     ctx.fillText('100% FREE & PRIVATE MOTORCYCLE GPS', W / 2, footerY + 26);
 
+    const rawHost = typeof window !== 'undefined' ? window.location.host : '';
+    const hostLabel = rawHost && !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(rawHost) ? rawHost : 'OFFLINE • ON-DEVICE GPX';
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 18px monospace';
-    ctx.fillText('throttlelog.vercel.app', W / 2, footerY + 54);
+    ctx.fillText(hostLabel, W / 2, footerY + 54);
 
     setDataUrl(canvas.toDataURL('image/png'));
-  }, [isOpen, analysis, unitSystem]);
+  }, [isOpen, analysis]);
 
   if (!isOpen) return null;
 
@@ -387,7 +387,9 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `${(analysis.name || 'ride_story').replace(/\s+/g, '_')}_story.png`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
   };
 
   const handleShare = async () => {
@@ -413,32 +415,34 @@ export const RideStoryModal: React.FC<RideStoryModalProps> = ({
   const isLight = theme === 'light';
   const modalBg = isLight ? 'bg-white border-slate-200 text-slate-900 shadow-slate-200/50' : 'bg-[#0b0f14] border-[#1e2a38] text-white shadow-black/80';
   const headerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#111922] border-[#1e2a38]';
-  const subTextColor = isLight ? 'text-slate-500' : 'text-slate-400';
+  const subTextColor = isLight ? 'text-slate-600' : 'text-slate-400';
   const footerBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#111922] border-[#1e2a38]';
   const closeBtnStyle = isLight
-    ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200'
+    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
     : 'text-slate-400 hover:text-white hover:bg-slate-800';
   const previewBorder = isLight ? 'border-slate-300' : 'border-slate-700/60';
 
   return (
-    <div 
+    <div
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      className={`fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 cursor-pointer ${isLight ? 'bg-black/50' : 'bg-black/85'}`}
+      className={`fixed inset-0 z-[9000] flex items-center justify-center p-3 sm:p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-md animate-in fade-in duration-200 cursor-pointer ${isLight ? 'bg-black/50' : 'bg-black/85'}`}
     >
-      <div 
+      <div
         onClick={e => e.stopPropagation()}
-        className={`border rounded-2xl w-full max-w-lg max-h-[92dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+        className={`border rounded-2xl w-full max-w-lg max-h-[90dvh] overscroll-contain flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
       >
         {/* Header */}
         <div className={`px-4 py-3 border-b flex items-center justify-between ${headerBg}`}>
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sky-400" />
+            <Sparkles className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
             <h3 className="font-heading font-black text-sm uppercase tracking-wider">
               Share Ride Story
             </h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close share ride story modal"
             className={`p-1.5 rounded-lg transition-colors cursor-pointer ${closeBtnStyle}`}
           >
             <X className="w-5 h-5" />

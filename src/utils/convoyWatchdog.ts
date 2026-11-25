@@ -18,6 +18,7 @@ import { playWarningChime, playChime, triggerHaptic } from './audioChimes';
 import { speakAlert } from './tts';
 
 export interface ConvoyWatchdogOptions {
+  sessionKey?: string;
   myLocation: {
     lat: number;
     lon: number;
@@ -150,6 +151,8 @@ function formatSpokenDistance(meters: number, unitSystem: 'metric' | 'imperial' 
 // ── Watchdog Internal State & Cooldowns ──────────────────────────────
 
 interface WatchdogState {
+  activeSessionKey: string | null;
+
   // Battery debounces: Map<riderId, { lastWarning: number; lastCritical: number }>
   batteryDebounce: Map<string, { lastWarning: number; lastCritical: number }>;
   
@@ -170,6 +173,7 @@ interface WatchdogState {
 }
 
 const state: WatchdogState = {
+  activeSessionKey: null,
   batteryDebounce: new Map(),
   runawayDebounce: new Map(),
   separationDebounce: new Map(),
@@ -178,10 +182,24 @@ const state: WatchdogState = {
   lastRollCallTimestamp: Date.now(),
 };
 
+/**
+ * Resets per-session cooldowns and deviation counters (e.g., on squad leave/switch).
+ */
+export function resetConvoyWatchdog(nextSessionKey: string | null = null): void {
+  state.activeSessionKey = nextSessionKey;
+  state.batteryDebounce.clear();
+  state.runawayDebounce.clear();
+  state.separationDebounce.clear();
+  state.deviationTracker.clear();
+  state.signalLossDebounce.clear();
+  state.lastRollCallTimestamp = Date.now();
+}
+
 // ── Main Convoy Safety Watchdog Runner ────────────────────────────────
 
 export function runConvoyWatchdog(options: ConvoyWatchdogOptions): void {
   const {
+    sessionKey,
     myLocation,
     myBattery,
     members,
@@ -190,7 +208,30 @@ export function runConvoyWatchdog(options: ConvoyWatchdogOptions): void {
     onAlertBanner,
   } = options;
 
+  if (sessionKey !== undefined) {
+    if (state.activeSessionKey !== null && state.activeSessionKey !== sessionKey) {
+      resetConvoyWatchdog(sessionKey);
+    } else if (state.activeSessionKey === null) {
+      state.activeSessionKey = sessionKey;
+    }
+  }
+
   const now = Date.now();
+  const activeIds = new Set(members.map(m => m.riderId));
+  activeIds.add('self');
+  for (const key of state.runawayDebounce.keys()) {
+    if (!activeIds.has(key)) state.runawayDebounce.delete(key);
+  }
+  for (const key of state.separationDebounce.keys()) {
+    if (!activeIds.has(key)) state.separationDebounce.delete(key);
+  }
+  for (const key of state.signalLossDebounce.keys()) {
+    if (!activeIds.has(key)) state.signalLossDebounce.delete(key);
+  }
+  for (const key of state.deviationTracker.keys()) {
+    if (!activeIds.has(key)) state.deviationTracker.delete(key);
+  }
+
   const onlineMembers = members.filter(m => m.isOnline);
 
   // ─────────────────────────────────────────────────────────────────────
@@ -522,7 +563,7 @@ export function runConvoyWatchdog(options: ConvoyWatchdogOptions): void {
 
 // ── Manual / On-Demand Squad Roll Call Trigger ────────────────────────
 
-export function triggerConvoyRollCall(options: ConvoyWatchdogOptions, isManual: boolean = true): void {
+export function triggerConvoyRollCall(options: ConvoyWatchdogOptions, _isManual: boolean = true): void {
   const {
     myLocation,
     myBattery,

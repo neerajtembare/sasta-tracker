@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RideAnalysis, AppTheme } from '../types';
-import { X, Gauge, Fuel, Bike, Check, RotateCcw, Info, Sparkles, IndianRupee } from 'lucide-react';
+import { X, Gauge, Fuel, Bike, Check, RotateCcw, Info } from 'lucide-react';
+import { getRiderProfile } from '../utils/riderProfile';
 
 interface RideCalibrationModalProps {
   isOpen: boolean;
@@ -26,16 +27,21 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
 }) => {
   const isLight = theme === 'light';
 
-  // Local state initialized with current analysis or defaults
+  const profile = getRiderProfile();
+  const defaultMileage = profile.fuelMileageKmpl || 32;
+  const defaultFuelPrice = profile.fuelPricePerLiter || 104;
+  const currencySymbol = profile.currencySymbol || '₹';
+
+  // Local state initialized with current analysis or saved bike profile defaults
   const [distanceMode, setDistanceMode] = useState<'gps' | 'odometer'>(
     analysis.userDistanceOverrideKm ? 'odometer' : 'gps'
   );
   const [odometerKm, setOdometerKm] = useState<string>(
     analysis.userDistanceOverrideKm ? String(analysis.userDistanceOverrideKm) : analysis.totalDistanceKm.toFixed(1)
   );
-  const [bikeModel, setBikeModel] = useState<string>(analysis.bikeModel || 'Motorcycle');
-  const [fuelMileage, setFuelMileage] = useState<number>(analysis.fuelMileageKmpl || 32);
-  const [fuelPrice, setFuelPrice] = useState<number>(analysis.fuelPricePerLiter || 104);
+  const [bikeModel, setBikeModel] = useState<string>(analysis.bikeModel || profile.bikeModel || 'Motorcycle');
+  const [fuelMileage, setFuelMileage] = useState<number>(analysis.fuelMileageKmpl || defaultMileage);
+  const [fuelPrice, setFuelPrice] = useState<number>(analysis.fuelPricePerLiter || defaultFuelPrice);
   const [fuelMode, setFuelMode] = useState<'mileage' | 'actualLiters'>(
     analysis.customFuelLiters ? 'actualLiters' : 'mileage'
   );
@@ -43,6 +49,22 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
     analysis.customFuelLiters ? String(analysis.customFuelLiters) : ''
   );
   const [userNotes, setUserNotes] = useState<string>(analysis.userNotes || '');
+
+  // Keep modal inputs synchronized when opening a different ride
+  useEffect(() => {
+    if (!isOpen) return;
+    const latestProfile = getRiderProfile();
+    setDistanceMode(analysis.userDistanceOverrideKm ? 'odometer' : 'gps');
+    setOdometerKm(
+      analysis.userDistanceOverrideKm ? String(analysis.userDistanceOverrideKm) : analysis.totalDistanceKm.toFixed(1)
+    );
+    setBikeModel(analysis.bikeModel || latestProfile.bikeModel || 'Motorcycle');
+    setFuelMileage(analysis.fuelMileageKmpl || latestProfile.fuelMileageKmpl || 32);
+    setFuelPrice(analysis.fuelPricePerLiter || latestProfile.fuelPricePerLiter || 104);
+    setFuelMode(analysis.customFuelLiters ? 'actualLiters' : 'mileage');
+    setActualLiters(analysis.customFuelLiters ? String(analysis.customFuelLiters) : '');
+    setUserNotes(analysis.userNotes || '');
+  }, [isOpen, analysis]);
 
   if (!isOpen) return null;
 
@@ -89,47 +111,51 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
     setDistanceMode('gps');
     setOdometerKm(rawGpsKm.toFixed(1));
     setFuelMode('mileage');
-    setFuelMileage(32);
-    setFuelPrice(104);
+    setFuelMileage(defaultMileage);
+    setFuelPrice(defaultFuelPrice);
     setActualLiters('');
   };
 
   const modalBg = isLight ? 'bg-white text-slate-900' : 'bg-[#0d131a] text-white';
   const cardBg = isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#141d26] border-[#223140]';
   const inputBg = isLight ? 'bg-white border-slate-300 text-slate-900 focus:border-sky-500' : 'bg-[#0a0f14] border-[#223140] text-white focus:border-sky-400';
-  const subText = isLight ? 'text-slate-500' : 'text-[#8f9ca8]';
+  const subText = isLight ? 'text-slate-600' : 'text-[#8f9ca8]';
 
   return (
-    <div 
+    <div
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
+      className="fixed inset-0 z-[9000] flex items-center justify-center p-3 sm:p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
     >
       <div
         onClick={e => e.stopPropagation()}
-        className={`w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col max-h-[92dvh] overscroll-contain overflow-hidden cursor-default ${modalBg} ${
+        className={`w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col max-h-[90dvh] overscroll-contain overflow-hidden cursor-default ${modalBg} ${
           isLight ? 'border-slate-300' : 'border-[#1e2a38]'
         }`}
       >
         {/* Modal Header */}
         <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${isLight ? 'border-slate-200 bg-slate-50' : 'border-[#1e2a38] bg-[#111922]'}`}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${
+              isLight ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+            }`}>
               <Gauge className="w-4 h-4" />
             </div>
             <div>
               <h2 className="font-heading font-black text-sm sm:text-base uppercase tracking-wider">
-                Ride Calibration & Bike Settings
+                Ride Calibration &amp; Bike Settings
               </h2>
               <p className={`text-xs ${subText}`}>
-                Adjust distance to match your bike's odometer & calibrate fuel
+                Adjust distance to match your bike's odometer &amp; calibrate fuel
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close ride calibration modal"
             className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              isLight ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1a2530]'
+              isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-[#1a2530]'
             }`}
           >
             <X className="w-5 h-5" />
@@ -142,10 +168,10 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
           <div className={`p-4 rounded-xl border space-y-3 ${cardBg}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Gauge className="w-4 h-4 text-sky-400" />
+                <Gauge className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
                 <span className="font-bold text-sm">Total Distance Calibration</span>
               </div>
-              <span className={`text-[11px] font-mono ${subText}`}>
+              <span className={`text-[11px] font-mono telemetry-num ${subText}`}>
                 Raw GPS: {rawGpsKm.toFixed(1)} km
               </span>
             </div>
@@ -163,7 +189,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                 }`}
               >
                 <div className="text-xs">Raw GPS Distance</div>
-                <div className="font-mono text-sm font-black text-sky-400">{rawGpsKm.toFixed(1)} km</div>
+                <div className={`font-mono text-sm font-black telemetry-num ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>{rawGpsKm.toFixed(1)} km</div>
               </button>
 
               <button
@@ -178,8 +204,8 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                 }`}
               >
                 <div className="text-xs">Bike Odometer / Trip Meter</div>
-                <div className="font-mono text-sm font-black text-emerald-400">
-                  {odometerKm || '227.0'} km
+                <div className={`font-mono text-sm font-black telemetry-num ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
+                  {odometerKm || rawGpsKm.toFixed(1)} km
                 </div>
               </button>
             </div>
@@ -197,7 +223,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                     value={odometerKm}
                     onChange={e => setOdometerKm(e.target.value)}
                     className={`w-full px-3 py-2 rounded-lg border font-mono font-bold text-sm ${inputBg}`}
-                    placeholder="e.g. 227.0"
+                    placeholder={rawGpsKm.toFixed(1)}
                   />
                   <span className="font-mono text-xs font-bold">KM</span>
                 </div>
@@ -207,9 +233,9 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
             <div className={`text-[11px] leading-relaxed p-2.5 rounded-lg flex items-start gap-2 ${
               isLight ? 'bg-sky-50 text-sky-900 border border-sky-100' : 'bg-sky-950/40 text-sky-200 border border-sky-800/40'
             }`}>
-              <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+              <Info className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
               <span>
-                <strong>Why does GPS differ from your bike odometer?</strong> GPS logger intervals (30s–60s) cut corners on winding mountain roads (Ghats), yielding straight chords instead of curved asphalt arcs. Calibrate to your motorcycle odometer to see exact real-world distance & accurate speed/mileage averages!
+                <strong>Why does GPS differ from your bike odometer?</strong> Longer GPS intervals can cut tight corners on winding mountain passes, yielding straight chords instead of curved asphalt arcs. Calibrate to your motorcycle odometer to see exact real-world distance and fuel averages.
               </span>
             </div>
           </div>
@@ -217,7 +243,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
           {/* 2. Bike Profile & Model */}
           <div className={`p-4 rounded-xl border space-y-3 ${cardBg}`}>
             <div className="flex items-center gap-2">
-              <Bike className="w-4 h-4 text-amber-400" />
+              <Bike className={`w-4 h-4 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
               <span className="font-bold text-sm">Motorcycle Details</span>
             </div>
 
@@ -230,7 +256,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                 value={bikeModel}
                 onChange={e => setBikeModel(e.target.value)}
                 className={`w-full px-3 py-2 rounded-lg border font-medium ${inputBg}`}
-                placeholder="e.g. KTM 390 Adventure, Himalayan 450, Hunter 350"
+                placeholder="e.g. Himalayan 450, Duke 390, Interceptor 650"
               />
             </div>
           </div>
@@ -239,11 +265,11 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
           <div className={`p-4 rounded-xl border space-y-3 ${cardBg}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Fuel className="w-4 h-4 text-emerald-400" />
-                <span className="font-bold text-sm">Fuel Consumption & Cost</span>
+                <Fuel className={`w-4 h-4 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
+                <span className="font-bold text-sm">Fuel Consumption &amp; Cost</span>
               </div>
-              <span className="text-[11px] font-mono text-emerald-400 font-bold">
-                ~{calculatedLiters.toFixed(1)} L (₹{Math.round(calculatedCost)})
+              <span className={`text-[11px] font-mono font-bold telemetry-num ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
+                ~{calculatedLiters.toFixed(1)} L ({currencySymbol}{Math.round(calculatedCost)})
               </span>
             </div>
 
@@ -269,7 +295,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                     : subText
                 }`}
               >
-                Enter Petrol Filled (Liters)
+                Enter Fuel Filled (Liters)
               </button>
             </div>
 
@@ -277,7 +303,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className={`text-[11px] font-medium ${subText}`}>Average Mileage:</label>
-                  <span className="font-mono font-bold text-emerald-400">{fuelMileage} km/L</span>
+                  <span className={`font-mono font-bold telemetry-num ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{fuelMileage} km/L</span>
                 </div>
                 <input
                   type="range"
@@ -325,18 +351,20 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
                   <span className="font-mono text-xs font-bold">Liters</span>
                 </div>
                 {parseFloat(actualLiters) > 0 && (
-                  <div className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
-                    ✨ Real-world Calculated Mileage: <strong>{calculatedRealMileage.toFixed(1)} km/L</strong> for {effectiveDistanceKm.toFixed(1)} km.
+                  <div className={`text-[11px] font-mono border p-2 rounded-lg telemetry-num ${
+                    isLight ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                  }`}>
+                    Real-world Calculated Mileage: <strong>{calculatedRealMileage.toFixed(1)} km/L</strong> for {effectiveDistanceKm.toFixed(1)} km.
                   </div>
                 )}
               </div>
             )}
 
-            {/* Petrol Price */}
+            {/* Fuel Price */}
             <div className={`pt-2 flex items-center justify-between gap-4 border-t ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
-              <span className={`text-[11px] ${subText}`}>Petrol Price per Liter:</span>
+              <span className={`text-[11px] ${subText}`}>Fuel Price per Liter:</span>
               <div className="flex items-center gap-1">
-                <span className="font-bold text-xs">₹</span>
+                <span className="font-bold text-xs">{currencySymbol}</span>
                 <input
                   type="number"
                   step="1"
@@ -358,7 +386,7 @@ export const RideCalibrationModal: React.FC<RideCalibrationModalProps> = ({
               onChange={e => setUserNotes(e.target.value)}
               rows={2}
               className={`w-full px-3 py-2 rounded-lg border text-xs ${inputBg}`}
-              placeholder="e.g. Breakfast run to Wai, good tarmac on NH48, twisties on mountain pass."
+              placeholder="e.g. Breakfast run, great tarmac on highway, twisties on mountain pass."
             />
           </div>
         </div>

@@ -142,5 +142,5 @@ export function downloadFile(content: string, filename: string, mimeType: string
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }

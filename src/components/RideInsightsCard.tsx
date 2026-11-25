@@ -1,56 +1,44 @@
 import React, { useState } from 'react';
-import { RideAnalysis, AppTheme, UnitSystem } from '../types';
-import { convertSpeed, convertDistance, convertElevation, convertFuelVolume, convertFuelEconomy } from '../utils/units';
-import { 
-  Flame, 
-  Fuel, 
-  Compass, 
-  Gauge, 
-  Zap, 
-  Clock, 
-  Mountain, 
-  TrendingUp,
-  Settings2,
+import { RideAnalysis, AppTheme } from '../types';
+import { formatDurationSummary } from '../utils/units';
+import { getRiderProfile } from '../utils/riderProfile';
+import {
+  Flame,
+  Fuel,
+  Zap,
+  Clock,
   Info,
   SlidersHorizontal,
-  HelpCircle,
-  IndianRupee
+  HelpCircle
 } from 'lucide-react';
 
 interface RideInsightsCardProps {
   analysis: RideAnalysis;
   onOpenCalibration?: () => void;
   theme?: AppTheme;
-  unitSystem?: UnitSystem;
 }
 
 export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
   analysis,
   onOpenCalibration,
   theme = 'dark',
-  unitSystem = 'metric',
 }) => {
   const isLight = theme === 'light';
-  const isImperial = unitSystem === 'imperial';
   const [showLeanHelp, setShowLeanHelp] = useState<boolean>(false);
+  const profile = getRiderProfile();
 
   // Effective distance: calibrated odometer distance or raw GPS distance
   const effectiveDistance = analysis.userDistanceOverrideKm || analysis.totalDistanceKm;
   const isDistanceCalibrated = Boolean(analysis.userDistanceOverrideKm);
 
-  // Fuel calculations
-  const kmPerLiter = analysis.fuelMileageKmpl || 32;
-  const fuelPrice = analysis.fuelPricePerLiter || 104;
-  const estimatedFuelLiters = analysis.customFuelLiters 
-    ? analysis.customFuelLiters 
+  // Fuel calculations (using ride calibration override -> saved bike profile default)
+  const kmPerLiter = analysis.fuelMileageKmpl || profile.fuelMileageKmpl || 32;
+  const fuelPrice = analysis.fuelPricePerLiter || profile.fuelPricePerLiter || 104;
+  const currencySymbol = profile.currencySymbol || '₹';
+  const estimatedFuelLiters = analysis.customFuelLiters
+    ? analysis.customFuelLiters
     : kmPerLiter > 0 ? effectiveDistance / kmPerLiter : 0;
   const estimatedFuelCost = estimatedFuelLiters * fuelPrice;
-
-  const fuelVolumeConverted = convertFuelVolume(estimatedFuelLiters, unitSystem);
-  const fuelEconomyConverted = convertFuelEconomy(kmPerLiter, unitSystem);
-  const distConverted = convertDistance(effectiveDistance, unitSystem);
-  const maxSpeedConverted = convertSpeed(analysis.maxSpeedKmh, unitSystem);
-  const movingAvgConverted = convertSpeed(analysis.movingAvgSpeedKmh, unitSystem);
 
   // Moving ratio
   const totalSec = analysis.totalDurationSeconds || 1;
@@ -59,18 +47,38 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
   // Lean angle rating (Physics estimation from centripetal turn radius & velocity)
   const lean = analysis.maxEstimatedLean || 0;
   const getLeanRating = (deg: number) => {
-    if (deg >= 45) return { label: 'Trackday Knee-Down', color: 'text-rose-500', bg: 'bg-rose-500/15' };
-    if (deg >= 35) return { label: 'Aggressive Canyon Lean', color: 'text-amber-400', bg: 'bg-amber-400/15' };
-    if (deg >= 22) return { label: 'Sport Touring Flow', color: 'text-emerald-400', bg: 'bg-emerald-400/15' };
-    return { label: 'Upright Highway Cruise', color: 'text-sky-400', bg: 'bg-sky-400/15' };
+    if (deg >= 45) {
+      return {
+        label: 'Trackday Knee-Down',
+        color: isLight ? 'text-rose-700' : 'text-rose-400',
+        bg: isLight ? 'bg-rose-50 border border-rose-200' : 'bg-rose-500/15',
+      };
+    }
+    if (deg >= 35) {
+      return {
+        label: 'Aggressive Canyon Lean',
+        color: isLight ? 'text-amber-700' : 'text-amber-400',
+        bg: isLight ? 'bg-amber-50 border border-amber-200' : 'bg-amber-400/15',
+      };
+    }
+    if (deg >= 22) {
+      return {
+        label: 'Sport Touring Flow',
+        color: isLight ? 'text-emerald-700' : 'text-emerald-400',
+        bg: isLight ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-400/15',
+      };
+    }
+    return {
+      label: 'Upright Highway Cruise',
+      color: isLight ? 'text-sky-700' : 'text-sky-400',
+      bg: isLight ? 'bg-sky-50 border border-sky-200' : 'bg-sky-400/15',
+    };
   };
   const leanRating = getLeanRating(lean);
 
-  // Elevation climb rate (meters per kilometer or feet per mile)
-  const climbRate = isImperial
-    ? (distConverted.value > 0 ? ((analysis.elevGainM * 3.28084) / distConverted.value) : 0)
-    : (effectiveDistance > 0 ? (analysis.elevGainM / effectiveDistance) : 0);
-  const climbUnit = isImperial ? 'ft / mi' : 'm / km';
+  // Elevation climb rate (meters gained per kilometer)
+  const climbRate = effectiveDistance > 0 ? (analysis.elevGainM / effectiveDistance) : 0;
+  const bikeLabel = analysis.bikeModel || profile.bikeModel || 'Motorcycle';
 
   return (
     <div
@@ -87,22 +95,26 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
         }`}
       >
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+          <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
+            isLight ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+          }`}>
             <Flame className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider">
-                Ride Performance & Insights
+                Ride Performance &amp; Insights
               </h3>
               {isDistanceCalibrated && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                  isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                }`}>
                   Odo Calibrated: {effectiveDistance.toFixed(1)} km
                 </span>
               )}
             </div>
-            <p className={`text-[11px] font-mono ${isLight ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
-              {analysis.bikeModel || 'Motorcycle'} • GPS Telemetry & Efficiency Analysis
+            <p className={`text-[11px] font-sans ${isLight ? 'text-slate-600' : 'text-[#8f9ca8]'}`}>
+              {bikeLabel} • GPS Telemetry &amp; Efficiency Analysis
             </p>
           </div>
         </div>
@@ -113,13 +125,13 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
             onClick={onOpenCalibration}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold rounded-lg border transition-all cursor-pointer ${
               isLight
-                ? 'bg-white hover:bg-sky-50 text-sky-600 border-sky-200 shadow-sm'
+                ? 'bg-white hover:bg-sky-50 text-sky-700 border-sky-200 shadow-sm'
                 : 'bg-[#1a2533] hover:bg-sky-500/20 text-sky-400 border-sky-500/30'
             }`}
             title="Edit distance, bike model & fuel mileage"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Calibrate Distance & Fuel</span>
+            <span>Calibrate Distance &amp; Fuel</span>
           </button>
         )}
       </div>
@@ -128,14 +140,14 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
       {showLeanHelp && (
         <div
           className={`p-3.5 border-b text-xs leading-relaxed flex items-start gap-2.5 ${
-            isLight ? 'bg-amber-50/80 border-amber-200 text-amber-950' : 'bg-amber-950/30 border-amber-800/40 text-amber-200'
+            isLight ? 'bg-amber-50/90 border-amber-200 text-amber-950' : 'bg-amber-950/30 border-amber-800/40 text-amber-200'
           }`}
         >
-          <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
+          <Info className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
+          <div className="space-y-1 font-sans">
             <p className="font-bold">How is Lean Angle calculated without a Gyro?</p>
             <p className="text-[11px]">
-              Standard GPX files recorded by phone apps (or GPS watches) do <strong>not</strong> contain physical IMU gyroscope sensors. We calculate lean angle using classical motorcycle physics: <code>θ = arctan(v² / g·R)</code> based on your velocity <code>v</code> and the turning radius <code>R</code> derived from consecutive GPS heading deltas. On cambered roads or with countersteering, this provides an accurate benchmark for cornering aggression!
+              Standard GPX files recorded by GPS loggers do <strong>not</strong> contain physical IMU gyroscope sensors. We estimate lean angle using motorcycle cornering physics: <code className="font-mono">θ = arctan(v² / g·R)</code> based on your velocity <code className="font-mono">v</code> and turning radius <code className="font-mono">R</code> derived from consecutive GPS heading deltas.
             </p>
           </div>
         </div>
@@ -151,12 +163,14 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
         >
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
+              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-[#8f9ca8]'}`}>
                 EST. CORNER LEAN
               </span>
               <button
+                type="button"
                 onClick={() => setShowLeanHelp(!showLeanHelp)}
-                className="text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                aria-label="How is corner lean estimated?"
+                className={`transition-colors cursor-pointer ${isLight ? 'text-slate-600 hover:text-amber-700' : 'text-slate-400 hover:text-amber-400'}`}
                 title="How is lean estimated?"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
@@ -164,10 +178,10 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
             </div>
 
             <div className="flex items-baseline gap-1.5">
-              <span className="font-heading font-black text-3xl tracking-tight">
+              <span className="font-heading font-black text-3xl tracking-tight telemetry-num">
                 {lean}°
               </span>
-              <span className="text-xs font-mono font-bold text-emerald-400">EST. ROLL</span>
+              <span className={`text-xs font-mono font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>EST. ROLL</span>
             </div>
 
             <div className="mt-2.5">
@@ -179,7 +193,7 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
             </div>
           </div>
 
-          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-500 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
+          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-600 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
             Physics model: centripetal turn radius (v²/gR)
           </p>
         </div>
@@ -192,33 +206,33 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
         >
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
+              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-[#8f9ca8]'}`}>
                 TOP SPEED RECORDED
               </span>
-              <Zap className="w-4 h-4 text-rose-500" />
+              <Zap className={`w-4 h-4 ${isLight ? 'text-rose-600' : 'text-rose-500'}`} />
             </div>
 
             <div className="flex items-baseline gap-1.5">
-              <span className="font-heading font-black text-3xl tracking-tight text-rose-500">
-                {maxSpeedConverted.value.toFixed(1)}
+              <span className={`font-heading font-black text-3xl tracking-tight telemetry-num ${isLight ? 'text-rose-700' : 'text-rose-500'}`}>
+                {analysis.maxSpeedKmh.toFixed(1)}
               </span>
-              <span className="text-xs font-mono font-bold text-rose-400 uppercase">{maxSpeedConverted.unit}</span>
+              <span className={`text-xs font-mono font-bold uppercase ${isLight ? 'text-rose-700' : 'text-rose-400'}`}>km/h</span>
             </div>
 
             <div className="mt-2.5">
               <span
                 className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                  isLight ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  isLight ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                 }`}
               >
-                {movingAvgConverted.value > 0
-                  ? `+${(maxSpeedConverted.value - movingAvgConverted.value).toFixed(1)} ${maxSpeedConverted.unit} burst over moving avg`
+                {analysis.movingAvgSpeedKmh > 0
+                  ? `+${Math.max(0, analysis.maxSpeedKmh - analysis.movingAvgSpeedKmh).toFixed(1)} km/h burst over moving avg`
                   : 'Recorded Peak'}
               </span>
             </div>
           </div>
 
-          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-500 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
+          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-600 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
             Verified across consecutive GPS Doppler fixes
           </p>
         </div>
@@ -231,32 +245,32 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
         >
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
+              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-[#8f9ca8]'}`}>
                 FUEL CONSUMPTION
               </span>
-              <Fuel className="w-4 h-4 text-sky-400" />
+              <Fuel className={`w-4 h-4 ${isLight ? 'text-sky-700' : 'text-sky-400'}`} />
             </div>
 
             <div className="flex items-baseline gap-1.5">
-              <span className="font-heading font-black text-3xl tracking-tight text-sky-400">
-                {fuelVolumeConverted.value.toFixed(2)}
+              <span className={`font-heading font-black text-3xl tracking-tight telemetry-num ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
+                {estimatedFuelLiters.toFixed(2)}
               </span>
-              <span className="text-xs font-mono font-bold text-sky-400 uppercase">{fuelVolumeConverted.unit}</span>
+              <span className={`text-xs font-mono font-bold uppercase ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>L</span>
             </div>
 
             <div className="mt-2.5 flex items-center gap-2">
               <span
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold telemetry-num ${
                   isLight ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-sky-500/15 text-sky-400'
                 }`}
               >
-                ~₹{Math.round(estimatedFuelCost)} (@ ₹{fuelPrice}/L)
+                ~{currencySymbol}{Math.round(estimatedFuelCost)} (@ {currencySymbol}{fuelPrice}/L)
               </span>
             </div>
           </div>
 
-          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-500 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
-            Configured at {fuelEconomyConverted.value} {fuelEconomyConverted.unit} for {distConverted.value.toFixed(1)} {distConverted.unit}
+          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-600 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
+            Configured at {kmPerLiter} km/L for {effectiveDistance.toFixed(1)} km
           </p>
         </div>
 
@@ -268,32 +282,32 @@ export const RideInsightsCard: React.FC<RideInsightsCardProps> = ({
         >
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-[#8f9ca8]'}`}>
+              <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-[#8f9ca8]'}`}>
                 SADDLE EFFICIENCY
               </span>
-              <Clock className="w-4 h-4 text-amber-400" />
+              <Clock className={`w-4 h-4 ${isLight ? 'text-amber-700' : 'text-amber-400'}`} />
             </div>
 
             <div className="flex items-baseline gap-1.5">
-              <span className="font-heading font-black text-3xl tracking-tight text-amber-400">
+              <span className={`font-heading font-black text-3xl tracking-tight telemetry-num ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
                 {movingRatio}%
               </span>
-              <span className="text-xs font-mono font-bold text-amber-400">ROLLING</span>
+              <span className={`text-xs font-mono font-bold ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>ROLLING</span>
             </div>
 
             <div className="mt-2.5">
               <span
-                className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                  isLight ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-amber-400/15 text-amber-300'
+                className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold telemetry-num ${
+                  isLight ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-amber-400/15 text-amber-300'
                 }`}
               >
-                Climbing Rate: {climbRate.toFixed(1)} {climbUnit}
+                Climbing Rate: {climbRate.toFixed(1)} m / km
               </span>
             </div>
           </div>
 
-          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-500 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
-            Total stopped duration: {Math.round(analysis.stoppedTimeSeconds / 60)} min
+          <p className={`text-[10px] font-mono mt-3 pt-2 border-t ${isLight ? 'text-slate-600 border-slate-200' : 'text-[#8f9ca8] border-[#1e2a38]'}`}>
+            Total stopped duration: {formatDurationSummary(analysis.stoppedTimeSeconds)}
           </p>
         </div>
       </div>

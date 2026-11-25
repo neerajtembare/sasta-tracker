@@ -15,7 +15,6 @@ import { getGarageRides } from '../utils/storage';
 import { downloadFile } from '../utils/gpxExporter';
 import { 
   Cloud, 
-  CloudRain, 
   UploadCloud, 
   DownloadCloud, 
   Key, 
@@ -25,10 +24,7 @@ import {
   AlertCircle, 
   X, 
   ExternalLink, 
-  RefreshCw, 
   ShieldCheck, 
-  FileText,
-  Sparkles,
   HardDrive,
   FolderDown,
   FolderUp
@@ -94,10 +90,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       token: tokenInput.trim(),
       gistId: gistIdInput.trim(),
       autoSync,
-      enabled: Boolean(tokenInput.trim()),
+      enabled: Boolean(tokenInput.trim() || gistIdInput.trim()),
     });
     setConfig(updated);
-    setStatusMessage({ type: 'info', text: 'Cloud credentials saved locally.' });
+    setStatusMessage({ type: 'info', text: 'Gist ID saved locally. PAT token is held in memory/session only.' });
   };
 
   const handlePushToCloud = async () => {
@@ -173,7 +169,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
     try {
       const payload = await exportEncryptedGarage(vaultPassword);
-      const filename = `sasta_garage_encrypted_${new Date().toISOString().slice(0, 10)}.enc.json`;
+      const filename = `throttlelog_garage_encrypted_${new Date().toISOString().slice(0, 10)}.enc.json`;
       downloadFile(payload, filename, 'application/json');
       setVaultSuccess('Encrypted vault exported! Keep your password safe to restore.');
     } catch (err: any) {
@@ -245,42 +241,52 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
   return (
     <div 
+      style={{
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+      }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
+      className="fixed inset-0 z-[9500] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn cursor-pointer"
     >
       <div 
         onClick={e => e.stopPropagation()}
-        className={`border rounded-2xl w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden cursor-default ${modalBg}`}
+        className={`border rounded-2xl w-full max-w-xl max-h-[90dvh] flex flex-col shadow-2xl overflow-hidden cursor-default font-sans ${modalBg}`}
       >
         
         {/* Header */}
-        <div className="p-4 border-b flex items-center justify-between gap-3 bg-slate-950/40">
+        <div className={`p-4 border-b flex items-center justify-between gap-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/40 border-[#1e2a38]'}`}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center">
+            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${isLight ? 'bg-sky-50 border-sky-200 text-sky-600' : 'bg-sky-500/15 border-sky-500/30 text-sky-400'}`}>
               <Cloud className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-heading font-black text-sm uppercase tracking-wider flex items-center gap-2">
                 <span>Personal Cloud Backup & Sync</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'}`}>
                   100% FREE
                 </span>
               </h3>
-              <p className={`text-[11px] font-mono ${subTextColor}`}>
-                Zero monthly server bills • Back up to your own private GitHub Gist
+              <p className={`text-[11px] ${subTextColor}`}>
+                Back up your rides to your own private GitHub Gist or local vault files
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg border border-slate-700/50 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Close Cloud Sync"
+            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+              isLight
+                ? 'border-slate-300 hover:bg-slate-200 text-slate-500 hover:text-slate-900'
+                : 'border-slate-700/50 hover:bg-slate-800 text-slate-400 hover:text-white'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-5 text-xs font-mono">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-5 text-xs">
           
           {/* Status Bar */}
           <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${cardBg}`}>
@@ -290,7 +296,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <p className="font-bold text-xs">
                   {config.lastSyncStatus === 'success' ? 'Cloud Sync Active' : 'Local Garage Only'}
                 </p>
-                <p className={`text-[11px] ${subTextColor}`}>
+                <p className={`text-[11px] telemetry-num ${subTextColor}`}>
                   {config.lastSyncTime 
                     ? `Last synced: ${config.lastSyncTime}` 
                     : `${ridesCount} rides currently saved on this device`}
@@ -301,8 +307,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <a
                 href={`https://gist.github.com/${config.gistId}`}
                 target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-[11px] text-sky-400 hover:underline shrink-0"
+                rel="noopener noreferrer"
+                className={`flex items-center gap-1 text-[11px] hover:underline shrink-0 ${isLight ? 'text-sky-700' : 'text-sky-400'}`}
               >
                 <span>View Gist</span>
                 <ExternalLink className="w-3 h-3" />
@@ -313,9 +319,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           {/* Feedback Message */}
           {statusMessage && (
             <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
-              statusMessage.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
-              statusMessage.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-              'bg-sky-500/10 border-sky-500/30 text-sky-300'
+              statusMessage.type === 'success'
+                ? isLight ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : statusMessage.type === 'error'
+                ? isLight ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-red-500/10 border-red-500/30 text-red-400'
+                : isLight ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-sky-500/10 border-sky-500/30 text-sky-300'
             }`}>
               {statusMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
               <span className="text-xs">{statusMessage.text}</span>
@@ -326,14 +334,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           <div className={`p-4 rounded-xl border space-y-3.5 ${cardBg}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-sky-400" />
+                <Key className={`w-4 h-4 ${isLight ? 'text-sky-600' : 'text-sky-400'}`} />
                 <span className="font-bold text-xs uppercase tracking-wider">GitHub Secret Gist Sync</span>
               </div>
               <a
-                href="https://github.com/settings/tokens/new?description=Sasta+Tracker+Backup&scopes=gist"
+                href="https://github.com/settings/tokens/new?description=ThrottleLog+Backup&scopes=gist"
                 target="_blank"
-                rel="noreferrer"
-                className="text-[10px] text-sky-400 hover:underline flex items-center gap-1"
+                rel="noopener noreferrer"
+                className={`text-[10px] hover:underline flex items-center gap-1 ${isLight ? 'text-sky-700' : 'text-sky-400'}`}
               >
                 <span>Get Token (30s)</span>
                 <ExternalLink className="w-2.5 h-2.5" />
@@ -341,12 +349,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
 
             <p className={`text-[11px] leading-relaxed ${subTextColor}`}>
-              Enter a GitHub Personal Access Token with <span className="text-sky-300">gist</span> scope. ThrottleLog will store a private <code className="text-amber-300">throttlelog_garage.json</code> backup directly under your account.
+              Enter a GitHub Personal Access Token with <span className={isLight ? 'text-sky-700 font-bold' : 'text-sky-300'}>gist</span> scope. ThrottleLog will store a private <code className={isLight ? 'text-amber-700 font-bold' : 'text-amber-300'}>throttlelog_garage.json</code> backup directly under your account.
             </p>
 
             {/* Token Input */}
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">GitHub Personal Access Token (PAT):</label>
+              <label className={`block text-[11px] mb-1 ${subTextColor}`}>
+                GitHub Personal Access Token (PAT) <span className="opacity-80">(session-only, never stored on disk)</span>:
+              </label>
               <input
                 type="password"
                 value={tokenInput}
@@ -358,8 +368,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
             {/* Gist ID Input */}
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">
-                Gist ID <span className="text-slate-500">(Leave blank to auto-create on first sync)</span>:
+              <label className={`block text-[11px] mb-1 ${subTextColor}`}>
+                Gist ID <span className="opacity-75">(Leave blank to auto-create on first sync)</span>:
               </label>
               <input
                 type="text"
@@ -378,7 +388,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 onChange={e => setAutoSync(e.target.checked)}
                 className="rounded border-slate-700 text-sky-500 focus:ring-0 cursor-pointer"
               />
-              <span className="text-xs text-slate-300">
+              <span className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                 Auto-sync newly saved rides to Gist in the background
               </span>
             </label>
@@ -397,7 +407,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <button
                 onClick={handlePullFromCloud}
                 disabled={isSyncing || !gistIdInput.trim()}
-                className="flex-1 min-w-[130px] py-2.5 px-3 rounded-xl border border-sky-500/40 hover:bg-sky-500/10 text-sky-400 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40"
+                className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 ${
+                  isLight
+                    ? 'border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-700'
+                    : 'border-sky-500/40 hover:bg-sky-500/10 text-sky-400'
+                }`}
               >
                 <DownloadCloud className="w-4 h-4" />
                 <span>Restore from Cloud</span>
@@ -405,7 +419,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
               <button
                 onClick={handleSaveConfig}
-                className="py-2.5 px-3 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs transition-colors cursor-pointer"
+                className={`py-2.5 px-3 rounded-xl border text-xs transition-colors cursor-pointer ${
+                  isLight
+                    ? 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                    : 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                }`}
               >
                 Save Credentials
               </button>
@@ -416,12 +434,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           <div className={`p-4 rounded-xl border space-y-3 ${cardBg}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <HardDrive className="w-4 h-4 text-sky-400" />
+                <HardDrive className={`w-4 h-4 ${isLight ? 'text-sky-600' : 'text-sky-400'}`} />
                 <span className="font-bold text-xs uppercase tracking-wider">
                   1-Tap Local Vault File (.json)
                 </span>
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${isLight ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-sky-500/15 text-sky-400 border-sky-500/30'}`}>
                 NO ACCOUNT REQUIRED
               </span>
             </div>
@@ -431,7 +449,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </p>
 
             {plainVaultStatus && (
-              <p className={`text-[11px] flex items-center gap-1.5 ${plainVaultStatus.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`text-[11px] flex items-center gap-1.5 ${plainVaultStatus.type === 'success' ? (isLight ? 'text-emerald-700' : 'text-emerald-400') : (isLight ? 'text-rose-700' : 'text-red-400')}`}>
                 {plainVaultStatus.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
                 <span>{plainVaultStatus.text}</span>
               </p>
@@ -441,7 +459,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <button
                 onClick={handleExportPlainJson}
                 disabled={ridesCount === 0}
-                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-sky-500/40 hover:bg-sky-500/10 text-sky-400 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-40"
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-40 ${
+                  isLight
+                    ? 'border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-700'
+                    : 'border-sky-500/40 hover:bg-sky-500/10 text-sky-400'
+                }`}
               >
                 <FolderDown className="w-3.5 h-3.5" />
                 <span>Download JSON Backup</span>
@@ -449,7 +471,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
               <button
                 onClick={() => plainFileInputRef.current?.click()}
-                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                  isLight
+                    ? 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                    : 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                }`}
               >
                 <FolderUp className="w-3.5 h-3.5" />
                 <span>Import JSON Backup</span>
@@ -468,7 +494,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           {/* Client-Side AES-GCM Encrypted Vault Section */}
           <div className={`p-4 rounded-xl border space-y-3.5 ${cardBg}`}>
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <ShieldCheck className={`w-4 h-4 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
               <span className="font-bold text-xs uppercase tracking-wider">
                 Encrypted Offline Vault (AES-GCM 256-bit)
               </span>
@@ -479,7 +505,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </p>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Vault Password:</label>
+              <label className={`block text-[11px] mb-1 ${subTextColor}`}>Vault Password:</label>
               <input
                 type="password"
                 value={vaultPassword}
@@ -490,14 +516,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
 
             {vaultError && (
-              <p className="text-[11px] text-red-400 flex items-center gap-1.5">
+              <p className={`text-[11px] flex items-center gap-1.5 ${isLight ? 'text-rose-700' : 'text-red-400'}`}>
                 <AlertCircle className="w-3.5 h-3.5" />
                 <span>{vaultError}</span>
               </p>
             )}
 
             {vaultSuccess && (
-              <p className="text-[11px] text-emerald-400 flex items-center gap-1.5">
+              <p className={`text-[11px] flex items-center gap-1.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>{vaultSuccess}</span>
               </p>
@@ -506,7 +532,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <div className="flex flex-wrap gap-2.5 pt-1">
               <button
                 onClick={handleExportEncrypted}
-                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                  isLight
+                    ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                    : 'border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-400'
+                }`}
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>Export Encrypted Vault</span>
@@ -514,7 +544,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 
               <button
                 onClick={() => encryptedFileInputRef.current?.click()}
-                className="flex-1 min-w-[130px] py-2 px-3 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                  isLight
+                    ? 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
+                    : 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                }`}
               >
                 <Unlock className="w-3.5 h-3.5" />
                 <span>Restore Encrypted Vault</span>
@@ -533,11 +567,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t flex items-center justify-between text-[11px] font-mono bg-slate-950/40">
+        <div className={`p-3 border-t flex items-center justify-between text-[11px] font-mono ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/40 border-[#1e2a38]'}`}>
           <span className={subTextColor}>End-to-end user custody • Zero cloud vendor lock-in</span>
           <button
             onClick={onClose}
-            className="py-1.5 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold cursor-pointer transition-colors"
+            className={`py-1.5 px-4 rounded-lg font-bold cursor-pointer transition-colors ${
+              isLight
+                ? 'bg-slate-900 hover:bg-slate-800 text-white'
+                : 'bg-slate-800 hover:bg-slate-700 text-white'
+            }`}
           >
             Done
           </button>

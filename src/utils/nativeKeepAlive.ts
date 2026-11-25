@@ -19,12 +19,13 @@ export interface NativeCrashData {
 }
 
 interface ThrottleLogNativePlugin {
-  startKeepAlive(): Promise<void>;
+  startKeepAlive(options?: { resetOdometer?: boolean; crashDetectionEnabled?: boolean }): Promise<void>;
   stopKeepAlive(): Promise<void>;
+  setCrashDetectionEnabled(options: { enabled: boolean }): Promise<void>;
   setKeepScreenOn(options: { enabled: boolean }): Promise<void>;
   isBatteryOptimizationIgnored(): Promise<{ isIgnored: boolean }>;
   requestBatteryOptimizationExemption(): Promise<void>;
-  speak(options: { text: string; rate?: number; pitch?: number; queue?: 'flush' | 'add' }): Promise<void>;
+  speak(options: { text: string; rate?: number; pitch?: number; queue?: 'flush' | 'add' }): Promise<{ utteranceId?: string }>;
   stopSpeaking(): Promise<void>;
   requestAudioFocus(): Promise<void>;
   abandonAudioFocus(): Promise<void>;
@@ -37,7 +38,7 @@ interface ThrottleLogNativePlugin {
   clearLastSharedText(): Promise<void>;
   unshortenUrl(options: { url: string }): Promise<{ resolvedUrl: string }>;
   addListener(
-    eventName: 'onNativeLocation' | 'onNativeCrashDetected' | 'onSharedTextReceived',
+    eventName: 'onNativeLocation' | 'onNativeCrashDetected' | 'onSharedTextReceived' | 'onTtsDone',
     listenerFunc: (data: any) => void
   ): Promise<any>;
 }
@@ -48,6 +49,7 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
   web: {
     startKeepAlive: async () => {},
     stopKeepAlive: async () => {},
+    setCrashDetectionEnabled: async () => {},
     setKeepScreenOn: async (options: { enabled: boolean }) => {
       if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
         if (options.enabled) {
@@ -68,7 +70,7 @@ const NativeBridge = registerPlugin<ThrottleLogNativePlugin>('ThrottleLogNative'
     },
     isBatteryOptimizationIgnored: async () => ({ isIgnored: true }),
     requestBatteryOptimizationExemption: async () => {},
-    speak: async () => {},
+    speak: async () => ({ utteranceId: '' }),
     stopSpeaking: async () => {},
     requestAudioFocus: async () => {},
     abandonAudioFocus: async () => {},
@@ -180,16 +182,32 @@ export async function nativeUnshortenUrl(url: string): Promise<string> {
   return await resolveViaVercelApi(url);
 }
 
-export async function startNativeRadarKeepAlive(pocketMode: boolean = false) {
+export async function startNativeRadarKeepAlive(pocketMode: boolean = false, resetOdometer: boolean = false) {
+  let crashDetectionEnabled = true;
+  try {
+    const saved = localStorage.getItem('throttlelog_crash_detection_v1') ?? localStorage.getItem('sasta_crash_detection_v1');
+    crashDetectionEnabled = saved !== 'false';
+  } catch {}
+
   if (Capacitor.isNativePlatform()) {
     try {
-      await NativeBridge.startKeepAlive();
+      await NativeBridge.startKeepAlive({ resetOdometer, crashDetectionEnabled });
       await NativeBridge.setKeepScreenOn({ enabled: !pocketMode });
     } catch (e) {
       console.warn('Native keep-alive start warning:', e);
     }
   } else {
     await NativeBridge.setKeepScreenOn({ enabled: !pocketMode });
+  }
+}
+
+export async function setNativeCrashDetectionEnabled(enabled: boolean): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativeBridge.setCrashDetectionEnabled({ enabled });
+    } catch (e) {
+      console.warn('Native crash toggle sync warning:', e);
+    }
   }
 }
 
@@ -274,17 +292,65 @@ export async function addNativeCrashListener(
   return null;
 }
 
+const pendingTtsCallbacks = new Map<string, () => void>();
+let ttsListenerRegistered = false;
+
+async function ensureNativeTtsListener(): Promise<void> {
+  if (ttsListenerRegistered || !Capacitor.isNativePlatform()) return;
+  ttsListenerRegistered = true;
+  try {
+    await NativeBridge.addListener('onTtsDone', (data: { utteranceId?: string }) => {
+      const id = data?.utteranceId;
+      if (id && pendingTtsCallbacks.has(id)) {
+        const cb = pendingTtsCallbacks.get(id)!;
+        pendingTtsCallbacks.delete(id);
+        cb();
+      }
+    });
+  } catch {
+    ttsListenerRegistered = false;
+  }
+}
+
 export async function nativeSpeak(
   text: string, 
   rate: number = 1.05, 
   pitch: number = 1.0,
-  queue: 'flush' | 'add' = 'flush'
+  queue: 'flush' | 'add' = 'flush',
+  onEnd?: () => void
 ): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     try {
-      await NativeBridge.speak({ text, rate, pitch, queue });
+      if (onEnd) {
+        await ensureNativeTtsListener();
+      }
+      const res = await NativeBridge.speak({ text, rate, pitch, queue });
+      const utteranceId = res?.utteranceId;
+      if (onEnd) {
+        if (utteranceId) {
+          let finished = false;
+          const safetyTimer = setTimeout(() => {
+            if (!finished) {
+              finished = true;
+              pendingTtsCallbacks.delete(utteranceId);
+              onEnd();
+            }
+          }, 15000);
+
+          pendingTtsCallbacks.set(utteranceId, () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(safetyTimer);
+              onEnd();
+            }
+          });
+        } else {
+          onEnd();
+        }
+      }
     } catch (e) {
       console.warn('Native TTS speak warning:', e);
+      onEnd?.();
     }
   }
 }
@@ -292,6 +358,7 @@ export async function nativeSpeak(
 export async function nativeStopSpeaking(): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     try {
+      pendingTtsCallbacks.clear();
       await NativeBridge.stopSpeaking();
     } catch (e) {
       console.warn('Native TTS stop warning:', e);

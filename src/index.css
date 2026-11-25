@@ -39,6 +39,10 @@
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
+
+  .telemetry-num {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 /* Modern Animations */
@@ -104,6 +108,7 @@
   margin: 10px 14px !important;
   line-height: 1.45 !important;
   font-size: 12px !important;
+  font-family: var(--font-chivo) !important;
 }
 
 .leaflet-bar {
@@ -233,7 +238,10 @@
     display: flex !important;
   }
   main.has-landscape-rail {
-    margin-left: calc(3.5rem + var(--safe-left)) !important;
+    margin-left: 0 !important;
+    padding-left: calc(4rem + var(--safe-left)) !important;
+    padding-right: max(0.5rem, var(--safe-right)) !important;
+    max-width: 100% !important;
   }
   header.navbar-landscape-offset {
     padding-left: calc(3.5rem + var(--safe-left)) !important;

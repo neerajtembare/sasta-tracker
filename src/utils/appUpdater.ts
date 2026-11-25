@@ -5,7 +5,7 @@
  * to 1-tap download and update their APK in-place without losing saved rides or garage logs.
  */
 
-export const CURRENT_APP_VERSION = '1.3.0';
+export const CURRENT_APP_VERSION = '1.4.0';
 export const GITHUB_REPO = 'neerajtembare/sasta-tracker';
 export const DIRECT_APK_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO}/releases/latest/download/throttlelog.apk`;
 export const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
@@ -27,7 +27,7 @@ function parseSemVer(v: string): number[] {
   return parts;
 }
 
-function isNewerVersion(latest: string, current: string): boolean {
+export function isNewerVersion(latest: string, current: string): boolean {
   const l = parseSemVer(latest);
   const c = parseSemVer(current);
   for (let i = 0; i < 3; i++) {

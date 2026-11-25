@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bike, Check, Sparkles } from 'lucide-react';
 import { triggerHaptic } from '../utils/audioChimes';
+import { readMigratedStorageKey, writeMigratedStorageKey } from '../utils/units';
 import { AppTheme } from '../types';
 
 interface FirstLaunchNameModalProps {
@@ -8,6 +9,7 @@ interface FirstLaunchNameModalProps {
   currentBike?: string;
   currentColor: string;
   onSaveProfile: (name: string, bike: string, color: string) => void;
+  onDismissed?: () => void;
   theme?: AppTheme;
 }
 
@@ -26,6 +28,7 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
   currentBike = '',
   currentColor,
   onSaveProfile,
+  onDismissed,
   theme = 'dark',
 }) => {
   const isLight = theme === 'light';
@@ -36,8 +39,8 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
 
   useEffect(() => {
     try {
-      const onboarded = localStorage.getItem('sasta_name_onboarded');
-      // If never onboarded and name is default 'Rider', prompt them gently
+      const onboarded = readMigratedStorageKey('throttlelog_name_onboarded', 'sasta_name_onboarded');
+      // If never onboarded and name is default 'Rider', prompt cleanly
       if (!onboarded && (!currentName || currentName.toLowerCase() === 'rider')) {
         setIsOpen(true);
       }
@@ -51,47 +54,46 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
     triggerHaptic(30);
     const cleanName = nameInput.trim() || 'Rider';
     const cleanBike = bikeInput.trim() || 'Motorcycle';
-    try {
-      localStorage.setItem('sasta_rider_name', cleanName);
-      localStorage.setItem('sasta_name_onboarded', 'true');
-    } catch {}
+    writeMigratedStorageKey('throttlelog_rider_name', cleanName, 'sasta_rider_name');
+    writeMigratedStorageKey('throttlelog_name_onboarded', 'true', 'sasta_name_onboarded');
     onSaveProfile(cleanName, cleanBike, selectedColor);
     setIsOpen(false);
+    onDismissed?.();
   };
 
   const handleSkip = () => {
     triggerHaptic(20);
-    try {
-      localStorage.setItem('sasta_name_onboarded', 'true');
-    } catch {}
-    // Assign a unique identifiable number instead of generic 'Rider'
+    writeMigratedStorageKey('throttlelog_name_onboarded', 'true', 'sasta_name_onboarded');
     const randomTag = `Rider-${Math.floor(100 + Math.random() * 900)}`;
     onSaveProfile(randomTag, bikeInput.trim() || 'Motorcycle', selectedColor);
     setIsOpen(false);
+    onDismissed?.();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div 
-        className={`w-full max-w-sm rounded-3xl p-5 border shadow-2xl font-mono space-y-4 ${
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        className={`w-full max-w-sm rounded-3xl p-4 sm:p-5 border shadow-2xl font-sans space-y-4 max-h-[90dvh] overflow-y-auto no-scrollbar ${
           isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-[#0d131a] border-cyan-500/50 text-white'
         }`}
       >
-        <div className={`flex items-center gap-2.5 pb-2 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
-          <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-xl shrink-0">
-            🏍️
+        <div className={`flex items-center gap-2.5 pb-2.5 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+          <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
+            isLight ? 'bg-cyan-50 border-cyan-300 text-cyan-700' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
+          }`}>
+            <Bike className="w-5 h-5" />
           </div>
           <div>
             <h2 className={`font-heading font-black text-sm tracking-wider uppercase flex items-center gap-1.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
-              <span>Welcome to Crew Radar</span>
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Welcome to ThrottleLog</span>
+              <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
             </h2>
-            <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>Set your name for your riding squad</p>
+            <p className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Set your rider callsign and bike</p>
           </div>
         </div>
 
         <p className={`text-xs font-sans leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
-          Enter your name so your friends recognize your bike on the map and hear your voice callouts:
+          Personalize your ride logs and optional squad callouts. Solo rides always stay private on your phone unless you enable Crew Radar.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -130,7 +132,7 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
           </div>
 
           <div>
-            <label className="text-[10px] text-slate-400 font-bold block mb-1 uppercase tracking-wider">
+            <label className={`text-[10px] font-bold block mb-1 uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               Radar Pin Color
             </label>
             <div className="flex items-center gap-2 flex-wrap">
@@ -140,7 +142,9 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
                   type="button"
                   onClick={() => setSelectedColor(color)}
                   className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
-                    selectedColor === color ? 'scale-115 border-white ring-2 ring-cyan-400/50' : 'border-transparent opacity-70 hover:opacity-100'
+                    selectedColor === color
+                      ? (isLight ? 'scale-110 border-slate-900 ring-2 ring-cyan-500/60' : 'scale-110 border-white ring-2 ring-cyan-400/50')
+                      : 'border-transparent opacity-70 hover:opacity-100'
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -154,13 +158,15 @@ export const FirstLaunchNameModal: React.FC<FirstLaunchNameModalProps> = ({
               className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-500/20 cursor-pointer transition-all active:scale-95"
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>Join Live Crew Radar</span>
+              <span>Start Riding</span>
             </button>
 
             <button
               type="button"
               onClick={handleSkip}
-              className="w-full py-1.5 text-center text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer font-bold transition-colors"
+              className={`w-full py-1.5 text-center text-[11px] cursor-pointer font-bold transition-colors ${
+                isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               Skip for now
             </button>
